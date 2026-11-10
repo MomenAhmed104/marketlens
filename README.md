@@ -3,7 +3,9 @@
 Live AI-assisted competitor intelligence demo for Stompbox. See [CLAUDE.md](CLAUDE.md)
 for the full plan, rules and phase breakdown.
 
-**Status:** Phase 1 (project foundation) complete. Phases 2–9 not started.
+**Status:** Phases 1 and 2 complete. Search and retrieval provider: **Exa**
+(Tavily optional, no automatic fallback; Brave disabled).
+See [docs/search-provider-evaluation.md](docs/search-provider-evaluation.md).
 
 ## Layout
 
@@ -14,10 +16,14 @@ backend/            FastAPI + Pydantic service
     core/           settings (environment-driven)
     schemas/        Pydantic models and shared status enums
     services/       catalogue/competitor loading, domain normalisation
+      search/       provider interface + Exa, Tavily, Brave adapters
+    benchmark/      search-provider benchmark (CLI)
     main.py         app factory; loads and validates the catalogue at startup
-  tests/            pytest suite
+  tests/            pytest suite (no network; HTTP is mocked)
 frontend/           React + Vite + TypeScript (foundation only)
 data/catalogue/     Stompbox 100-product workbook (source of products AND competitors)
+data/benchmark_runs/  raw benchmark output (git-ignored)
+docs/               evaluation reports and benchmark summaries
 ```
 
 ## Requirements
@@ -32,7 +38,7 @@ cd backend
 python -m venv .venv
 .venv/Scripts/activate          # Windows; use `source .venv/bin/activate` elsewhere
 pip install -r requirements-dev.txt
-cp .env.example .env            # optional; no settings are required in Phase 1
+cp .env.example .env            # then add search API keys
 uvicorn app.main:app --reload   # http://127.0.0.1:8000, docs at /docs
 pytest
 ```
@@ -51,8 +57,27 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `CATALOGUE_PRODUCTS_SHEET` | `Products` | Product sheet name |
 | `CATALOGUE_COMPETITORS_SHEET` | `Competitors` | Competitor sheet name |
 
-API keys (OpenRouter, search providers) are listed in `.env.example` but are not
-used until later phases. Never commit them.
+| `SEARCH_PROVIDER` | unset (set `exa`) | Active provider. `exa` is the chosen provider; `tavily` is optional; `brave` is disabled |
+| `EXA_API_KEY`, `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY` | unset | Provider keys (held as `SecretStr`, never logged) |
+| `SEARCH_TIMEOUT_SECONDS` / `CONTENT_TIMEOUT_SECONDS` | `20` / `45` | Per-request timeouts |
+| `SEARCH_MAX_RETRIES` | `2` | Retries on 429/5xx/timeouts (honours `Retry-After`) |
+
+Provider tuning options are listed in `.env.example`. `OPENROUTER_API_KEY` is
+not used until Phase 3. Never commit keys.
+
+### Search providers
+
+`app/services/search` defines `SearchProvider` (`search(query)`, `retrieve(urls)`)
+and the provider-neutral schemas in `app/schemas/search.py`. Use
+`get_configured_provider(settings)` to get the active one. Domain scope is
+enforced deterministically after every search, whatever the provider's own
+filter returns. Brave cannot retrieve page content.
+
+```bash
+python -m app.benchmark.search_benchmark --dry-run   # plan only
+python -m app.benchmark.search_benchmark             # Exa + Tavily (default)
+python -m app.benchmark.search_benchmark --rescore <run_id>   # re-score saved raw data, no API calls
+```
 
 ### API (Phase 1)
 

@@ -1,8 +1,9 @@
 # CLAUDE.md --- Stompbox Competitor Intelligence Live Demo
 
 **Purpose:** Implementation instructions for Claude Code.\
-**Status:** Phase 1 complete (10 Nov 2026), awaiting user approval
-before Phase 2. See "Phase 1 outcome" at the end of this file.\
+**Status:** Phases 1 and 2 complete and approved. Exa is the search and
+retrieval provider. Phase 3 has not started and awaits approval. See
+`docs/search-provider-evaluation.md`.\
 **Catalogue baseline:** 100 Stompbox products.\
 **Plan date:** 9 November 2026.
 
@@ -304,8 +305,12 @@ Use existing repository choices if present. If empty, proposed defaults:
 Resolved in Phase 1 (greenfield repository): new FastAPI backend in
 `backend/`; React + Vite + TypeScript frontend in `frontend/`.
 
-Pending user choices: - Search provider selection after benchmark. -
-Exact LLM 1 and LLM 2 models. - Domain confidence thresholds.
+Resolved in Phase 2: search and retrieval provider is Exa
+(`SEARCH_PROVIDER=exa`). Tavily is optional with no automatic fallback.
+Brave is disabled.
+
+Pending user choices: - Exact LLM 1 and LLM 2 models. - Domain
+confidence thresholds.
 
 Do not block foundational work on final model/provider selection. Build
 interfaces/configuration first.
@@ -567,3 +572,46 @@ or provide its path.
     (`relevant_categories` is empty, meaning unrestricted). Prices are a
     2026-11-09 snapshot. 39 products have listing-only evidence (see
     `provenance.source_type`).
+
+### Phase 2 progress (10 Nov 2026)
+
+-   Provider interface: `app/services/search/base.py` (`SearchProvider`
+    with `search` and `retrieve`). Schemas are in `app/schemas/search.py`.
+    Adapters: `exa.py`, `tavily.py`, `brave.py`. Factory and selection
+    via `SEARCH_PROVIDER` are in `app/services/search/__init__.py`.
+-   Domain scope is enforced deterministically in `finalize_results`
+    after every provider call. Off-domain results are dropped and
+    counted.
+-   Retries cover 429 (honouring `Retry-After`), 5xx and timeouts. Auth
+    errors and other 4xx errors are not retried. Error messages never
+    include keys. Keys are `SecretStr`.
+-   Cost comes from the provider response where reported (Exa; Tavily
+    search). Otherwise it is estimated from list prices in settings
+    (Brave; Tavily extract). The basis is recorded on each response.
+-   Brave has no content-retrieval API, so `retrieve` raises
+    `RetrievalNotSupportedError`.
+-   Benchmark: `python -m app.benchmark.search_benchmark`. Raw output
+    goes to `data/benchmark_runs/` (git-ignored). The summary JSON goes
+    to `docs/benchmarks/`. Method and pricing are in
+    `docs/search-provider-evaluation.md`.
+-   URL canonicalisation is in `app/services/urls.py`: trailing slash,
+    fragment, default port, and Gear4music `/<cc>/<lang>/` mapped to the
+    UK store. `SearchResult` keeps the original `url` (evidence) and a
+    separate `canonical_url`.
+-   The Exa live-crawl wait is capped at `EXA_LIVECRAWL_TIMEOUT_MS`
+    (default 15000).
+-   `RetrievalStatus.BLOCKED`: short bot-check or access-denied pages
+    (e.g. Bax "Client Challenge") are never treated as page content.
+-   Benchmark identity specs (base model plus variant, brand, condition
+    and accessory rules) are in `app/benchmark/products.py` and
+    `metrics.py`. They are benchmark fixtures; the catalogue is
+    unchanged. `--rescore RUN_ID` re-applies the rules to saved raw data
+    without API calls.
+-   Evidence: SB-028 is the "Les Paul Standard 60s **Figured**" (Stompbox
+    page text), although the catalogue name omits "Figured". The
+    Stompbox page shows "was £599 / now £579" and the catalogue stores
+    579, which is a sale-price question for the Phase 5/6 price policy.
+-   **Decision (10 Nov 2026, user-approved):** Exa is the default search
+    and retrieval provider (`SEARCH_PROVIDER=exa`). Tavily stays
+    implemented as an optional provider with **no automatic fallback**.
+    Brave stays disabled.

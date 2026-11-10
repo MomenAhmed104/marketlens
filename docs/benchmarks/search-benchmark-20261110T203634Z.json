@@ -1,0 +1,650 @@
+{
+  "run_id": "search-benchmark-20261110T203634Z",
+  "started_at": "2026-11-10T20:36:34.340201+00:00",
+  "finished_at": "2026-11-10T20:39:17.662283+00:00",
+  "providers_run": [
+    "exa",
+    "tavily"
+  ],
+  "settings": {
+    "exa_search_type": "auto",
+    "exa_content_max_age_hours": 24,
+    "exa_livecrawl_timeout_ms": 15000,
+    "tavily_search_depth": "basic",
+    "tavily_extract_depth": "basic",
+    "global_results": 10,
+    "domain_results": 5,
+    "retrieve_per_product_per_provider": 2,
+    "country": "GB",
+    "concurrency": {
+      "exa": 3,
+      "tavily": 4
+    }
+  },
+  "queries": {
+    "SB-001": "Boss RC-5",
+    "SB-081": "Line 6 Helix LT",
+    "SB-069": "JHS 3 Series Reverb",
+    "SB-075": "DigiTech Whammy DT",
+    "SB-013": "Mooer Ensemble King",
+    "SB-055": "Emma Electronics OMP-1",
+    "SB-028": "Epiphone Les Paul Standard 60s Left Handed Iced Tea",
+    "SB-021": "Cort G250 SE Vivid Burgundy",
+    "SB-035": "Ibanez BTB705LM Cosmic Blue Starburst",
+    "SB-044": "Bromo BAT4CEL",
+    "SB-049": "NUX Mighty 20 MKII",
+    "SB-047": "Blackstar St. James 50 6L6 Head",
+    "SB-091": "Chord RCT-4"
+  },
+  "rescored_at": "2026-11-10T20:46:20.042594+00:00",
+  "identity_specs": {
+    "SB-001": {
+      "product_id": "SB-001",
+      "base_model": "RC-5",
+      "required_variants": [],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "",
+      "rationale": "Major brand, widely stocked; must not match RC-500/RC-505",
+      "catalogue_source": "",
+      "tags": []
+    },
+    "SB-081": {
+      "product_id": "SB-081",
+      "base_model": "Helix LT",
+      "required_variants": [],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "",
+      "rationale": "High-value multi-effects; siblings Helix Floor/Stomp",
+      "catalogue_source": "",
+      "tags": []
+    },
+    "SB-069": {
+      "product_id": "SB-069",
+      "base_model": "3 Series Reverb",
+      "required_variants": [],
+      "forbidden": [
+        "\\bhall\\b"
+      ],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "",
+      "rationale": "Near-duplicate of '3 Series Hall Reverb'",
+      "catalogue_source": "",
+      "tags": []
+    },
+    "SB-075": {
+      "product_id": "SB-075",
+      "base_model": "Whammy DT",
+      "required_variants": [],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "",
+      "rationale": "Siblings Whammy V/Ricochet/MonoNeon",
+      "catalogue_source": "",
+      "tags": []
+    },
+    "SB-013": {
+      "product_id": "SB-013",
+      "base_model": "Ensemble King",
+      "required_variants": [],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "",
+      "rationale": "Budget brand",
+      "catalogue_source": "",
+      "tags": []
+    },
+    "SB-055": {
+      "product_id": "SB-055",
+      "base_model": "OMP-1",
+      "required_variants": [],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": "\\bemma\\b",
+      "query_extra": "",
+      "rationale": "Niche boutique brand ('Emma Electronic' in the product name)",
+      "catalogue_source": "",
+      "tags": []
+    },
+    "SB-028": {
+      "product_id": "SB-028",
+      "base_model": "Les Paul Standard 60s",
+      "required_variants": [
+        "left[\\s-]?hand(?:ed)?|\\bLH\\b|lefty",
+        "iced[\\s-]?tea|\\bITB\\b"
+      ],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [
+        "\\bfig(?:ured)?\\b|\\bF\\b"
+      ],
+      "brand_pattern": null,
+      "query_extra": "Left Handed Iced Tea",
+      "rationale": "Left-handed AND finish variant (Iced Tea Burst); Figured model",
+      "catalogue_source": "product_name: 'Left-Handed ... Iced Tea Burst'; model 'Les Paul Standard '60s LH'; Stompbox page text: 'Les Paul Standard 60s Figured'",
+      "tags": [
+        "left-handed",
+        "finish"
+      ]
+    },
+    "SB-021": {
+      "product_id": "SB-021",
+      "base_model": "G250 SE",
+      "required_variants": [
+        "vivid[\\s-]?burgundy|\\bVVB\\b"
+      ],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "Vivid Burgundy",
+      "rationale": "Finish-specific SKU",
+      "catalogue_source": "product_name: 'Vivid Burgundy'; stompbox_sku G250SEVVB",
+      "tags": [
+        "finish"
+      ]
+    },
+    "SB-035": {
+      "product_id": "SB-035",
+      "base_model": "BTB705LM",
+      "required_variants": [
+        "cosmic[\\s-]?blue"
+      ],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "Cosmic Blue Starburst",
+      "rationale": "5-string bass, alphanumeric code, finish variant",
+      "catalogue_source": "product_name: 'Cosmic Blue Starburst Low Gloss'",
+      "tags": [
+        "finish"
+      ]
+    },
+    "SB-044": {
+      "product_id": "SB-044",
+      "base_model": "BAT4CEL",
+      "required_variants": [],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "",
+      "rationale": "Niche left-handed electro-acoustic; the 'L' in the code is the LH variant",
+      "catalogue_source": "product_name: 'Left Handed'; model BAT4CEL (BAT4CE is right-handed)",
+      "tags": [
+        "left-handed"
+      ]
+    },
+    "SB-049": {
+      "product_id": "SB-049",
+      "base_model": "Mighty 20 MKII",
+      "required_variants": [],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "",
+      "rationale": "Generation suffix",
+      "catalogue_source": "",
+      "tags": []
+    },
+    "SB-047": {
+      "product_id": "SB-047",
+      "base_model": "St. James 50 6L6",
+      "required_variants": [
+        "\\bhead\\b"
+      ],
+      "forbidden": [
+        "2\\s?x\\s?12|\\b212\\b|\\bcab(?:inet)?\\b|\\bstack\\b|\\bcombo\\b"
+      ],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "Head",
+      "rationale": "Head vs head-and-cab configuration",
+      "catalogue_source": "product_name: 'Amplifier Head'",
+      "tags": [
+        "configuration"
+      ]
+    },
+    "SB-091": {
+      "product_id": "SB-091",
+      "base_model": "RCT-4",
+      "required_variants": [],
+      "forbidden": [],
+      "review_terms": [],
+      "review_if_missing": [],
+      "brand_pattern": null,
+      "query_extra": "",
+      "rationale": "Low-price accessory",
+      "catalogue_source": "",
+      "tags": []
+    }
+  },
+  "products": [
+    "SB-001",
+    "SB-081",
+    "SB-069",
+    "SB-075",
+    "SB-013",
+    "SB-055",
+    "SB-028",
+    "SB-021",
+    "SB-035",
+    "SB-044",
+    "SB-049",
+    "SB-047",
+    "SB-091"
+  ],
+  "retailer_domains": [
+    "andertons.co.uk",
+    "guitarguitar.co.uk",
+    "langleyguitarcentre.co.uk",
+    "themusicdept.com",
+    "gear4music.com",
+    "thomann.co.uk",
+    "bax-shop.co.uk",
+    "projectmusic.co.uk",
+    "the58sound.com",
+    "perfectpitch.co.uk",
+    "southlondonmusicshop.co.uk",
+    "yamahamusiclondon.com"
+  ],
+  "targeted_union_exact_pairs": 38,
+  "providers": {
+    "exa": {
+      "requests": {
+        "search": 169,
+        "search_errors": {},
+        "retrieval_batches": 10,
+        "retrieval_batch_errors": 0
+      },
+      "latency_ms": {
+        "global_search": {
+          "n": 13,
+          "p50": 1886.2197999987984,
+          "p95": 3443.2326999958605,
+          "max": 3443.2326999958605
+        },
+        "domain_search": {
+          "n": 156,
+          "p50": 1872.8263000011793,
+          "p95": 4300.635899999179,
+          "max": 6082.365400005074
+        },
+        "retrieval_batch": {
+          "n": 10,
+          "p50": 2466.1790000027395,
+          "p95": 4004.786999998032,
+          "max": 4004.786999998032
+        }
+      },
+      "cost": {
+        "search_usd": "1.092",
+        "retrieval_usd": "0.038",
+        "search_basis": [
+          "PROVIDER_REPORTED"
+        ],
+        "retrieval_basis": [
+          "PROVIDER_REPORTED"
+        ],
+        "credits_reported_search": null,
+        "credits_retrieval": null
+      },
+      "global": {
+        "queries": 13,
+        "results": 130,
+        "uk_host_results_pct": 16.2,
+        "known_retailer_results_pct": 5.4,
+        "identity_counts": {
+          "EXACT": 95,
+          "REVIEW": 17,
+          "NO_MATCH": 13,
+          "VARIANT_MISMATCH": 5
+        },
+        "products_with_exact_known_retailer_page_pct": 30.8,
+        "mean_rank_first_exact_known_retailer": 4.0,
+        "uk_hosts_with_exact_match": [
+          "andertons.co.uk",
+          "backalleymusic.co.uk",
+          "beckettsmusic.co.uk",
+          "ebay.co.uk",
+          "ev-entz.co.uk",
+          "gmmusic.co.uk",
+          "guitarguitar.co.uk",
+          "lisburnmusiccentreshop.co.uk",
+          "livelouder.co.uk",
+          "musicbits.co.uk",
+          "prebeat.co.uk",
+          "rguitars.co.uk",
+          "stompbox.co.uk",
+          "thomann.co.uk",
+          "volumemusicsolutions.co.uk"
+        ]
+      },
+      "targeted": {
+        "pairs_searched": 156,
+        "empty_responses": 13,
+        "pairs_with_exact_product_page": 38,
+        "coverage_pct": 24.4,
+        "recall_vs_union_pct": 100.0,
+        "pairs_only_variant_or_condition_mismatch": 7,
+        "top1_identity": {
+          "EXACT/product": 34,
+          "NO_MATCH/product": 94,
+          "NO_MATCH/other": 8,
+          "REVIEW/other": 1,
+          "REVIEW/product": 2,
+          "VARIANT_MISMATCH/product": 4
+        },
+        "top1_exact_product_page_pct": 23.8,
+        "out_of_scope_dropped": 0,
+        "per_retailer": {
+          "andertons.co.uk": {
+            "searched": 13,
+            "exact_product_page": 7
+          },
+          "guitarguitar.co.uk": {
+            "searched": 13,
+            "exact_product_page": 8
+          },
+          "langleyguitarcentre.co.uk": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "themusicdept.com": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "gear4music.com": {
+            "searched": 13,
+            "exact_product_page": 7
+          },
+          "thomann.co.uk": {
+            "searched": 13,
+            "exact_product_page": 8
+          },
+          "bax-shop.co.uk": {
+            "searched": 13,
+            "exact_product_page": 7
+          },
+          "projectmusic.co.uk": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "the58sound.com": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "perfectpitch.co.uk": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "southlondonmusicshop.co.uk": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "yamahamusiclondon.com": {
+            "searched": 13,
+            "exact_product_page": 1
+          }
+        },
+        "per_product_exact_retailers": {
+          "SB-001": 5,
+          "SB-081": 6,
+          "SB-069": 5,
+          "SB-075": 5,
+          "SB-013": 4,
+          "SB-055": 0,
+          "SB-028": 4,
+          "SB-021": 4,
+          "SB-035": 4,
+          "SB-044": 0,
+          "SB-049": 1,
+          "SB-047": 0,
+          "SB-091": 0
+        }
+      },
+      "retrieval": {
+        "pages": 42,
+        "ok_pct": 66.7,
+        "status_counts": {
+          "OK": 28,
+          "BLOCKED": 10,
+          "FAILED": 4
+        },
+        "failures_by_host": {
+          "bax-shop.co.uk": 10,
+          "andertons.co.uk": 2,
+          "thomann.co.uk": 1,
+          "gear4music.com": 1
+        },
+        "median_chars": 10963.5,
+        "candidates_ok": 24,
+        "candidate_content_identity": {
+          "EXACT": 20,
+          "REVIEW": 2,
+          "CONDITION_MISMATCH": 1,
+          "ACCESSORY": 1
+        },
+        "candidate_with_attributed_price_pct": 75.0,
+        "candidate_with_availability_pct": 95.8,
+        "median_distinct_gbp": 4.0,
+        "cache_source": {
+          "crawled": 23,
+          "cached": 5
+        }
+      }
+    },
+    "tavily": {
+      "requests": {
+        "search": 169,
+        "search_errors": {},
+        "retrieval_batches": 10,
+        "retrieval_batch_errors": 0
+      },
+      "latency_ms": {
+        "global_search": {
+          "n": 13,
+          "p50": 1534.6618999974453,
+          "p95": 3884.1268999967724,
+          "max": 3884.1268999967724
+        },
+        "domain_search": {
+          "n": 156,
+          "p50": 2425.7936000067275,
+          "p95": 3518.2537000000593,
+          "max": 3863.5957000005874
+        },
+        "retrieval_batch": {
+          "n": 10,
+          "p50": 1837.2955000013462,
+          "p95": 41567.92000000132,
+          "max": 41567.92000000132
+        }
+      },
+      "cost": {
+        "search_usd": "1.352",
+        "retrieval_usd": "0.0480",
+        "search_basis": [
+          "PROVIDER_REPORTED"
+        ],
+        "retrieval_basis": [
+          "ESTIMATED",
+          "PROVIDER_REPORTED"
+        ],
+        "credits_reported_search": "169",
+        "credits_retrieval": "6.0"
+      },
+      "global": {
+        "queries": 13,
+        "results": 129,
+        "uk_host_results_pct": 24.0,
+        "known_retailer_results_pct": 9.3,
+        "identity_counts": {
+          "EXACT": 71,
+          "NO_MATCH": 33,
+          "REVIEW": 14,
+          "ACCESSORY": 2,
+          "VARIANT_MISMATCH": 9
+        },
+        "products_with_exact_known_retailer_page_pct": 46.2,
+        "mean_rank_first_exact_known_retailer": 4.0,
+        "uk_hosts_with_exact_match": [
+          "absolutemusic.co.uk",
+          "amazon.co.uk",
+          "andertons.co.uk",
+          "backalleymusic.co.uk",
+          "beckettsmusic.co.uk",
+          "brittensmusic.co.uk",
+          "ebay.co.uk",
+          "ev-entz.co.uk",
+          "gmmusic.co.uk",
+          "guitarguitar.co.uk",
+          "lisburnmusiccentreshop.co.uk",
+          "prebeat.co.uk",
+          "rguitars.co.uk",
+          "stompbox.co.uk",
+          "thomann.co.uk",
+          "volumemusicsolutions.co.uk"
+        ]
+      },
+      "targeted": {
+        "pairs_searched": 156,
+        "empty_responses": 113,
+        "pairs_with_exact_product_page": 27,
+        "coverage_pct": 17.3,
+        "recall_vs_union_pct": 71.1,
+        "pairs_only_variant_or_condition_mismatch": 5,
+        "top1_identity": {
+          "EXACT/product": 21,
+          "NO_MATCH/other": 7,
+          "NO_MATCH/product": 9,
+          "CONDITION_MISMATCH/product": 2,
+          "REVIEW/product": 2,
+          "ACCESSORY/product": 1,
+          "VARIANT_MISMATCH/product": 1
+        },
+        "top1_exact_product_page_pct": 48.8,
+        "out_of_scope_dropped": 0,
+        "per_retailer": {
+          "andertons.co.uk": {
+            "searched": 13,
+            "exact_product_page": 4
+          },
+          "guitarguitar.co.uk": {
+            "searched": 13,
+            "exact_product_page": 4
+          },
+          "langleyguitarcentre.co.uk": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "themusicdept.com": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "gear4music.com": {
+            "searched": 13,
+            "exact_product_page": 6
+          },
+          "thomann.co.uk": {
+            "searched": 13,
+            "exact_product_page": 8
+          },
+          "bax-shop.co.uk": {
+            "searched": 13,
+            "exact_product_page": 4
+          },
+          "projectmusic.co.uk": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "the58sound.com": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "perfectpitch.co.uk": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "southlondonmusicshop.co.uk": {
+            "searched": 13,
+            "exact_product_page": 0
+          },
+          "yamahamusiclondon.com": {
+            "searched": 13,
+            "exact_product_page": 1
+          }
+        },
+        "per_product_exact_retailers": {
+          "SB-001": 4,
+          "SB-081": 3,
+          "SB-069": 5,
+          "SB-075": 5,
+          "SB-013": 2,
+          "SB-055": 0,
+          "SB-028": 2,
+          "SB-021": 3,
+          "SB-035": 2,
+          "SB-044": 0,
+          "SB-049": 1,
+          "SB-047": 0,
+          "SB-091": 0
+        }
+      },
+      "retrieval": {
+        "pages": 42,
+        "ok_pct": 33.3,
+        "status_counts": {
+          "OK": 14,
+          "FAILED": 28
+        },
+        "failures_by_host": {
+          "bax-shop.co.uk": 13,
+          "gear4music.com": 12,
+          "andertons.co.uk": 2,
+          "thomann.co.uk": 1
+        },
+        "median_chars": 12577.0,
+        "candidates_ok": 11,
+        "candidate_content_identity": {
+          "EXACT": 11
+        },
+        "candidate_with_attributed_price_pct": 90.9,
+        "candidate_with_availability_pct": 81.8,
+        "median_distinct_gbp": 4.0,
+        "cache_source": {
+          "n/a": 14
+        }
+      }
+    }
+  },
+  "price_agreement": {
+    "pages_ok_for_all": 14,
+    "same_attributed_price": 12,
+    "different_or_missing": {
+      "SB-013 https://www.andertons.co.uk/mooer-ensemble-king-analogue-chorus-pedal": {
+        "exa": "49.99",
+        "tavily": "10.00"
+      },
+      "SB-035 https://www.andertons.co.uk/ibanez-btb705lm-ctl-cosmic-blue-starburst-low-gloss": {
+        "exa": "999.00",
+        "tavily": null
+      }
+    }
+  }
+}
