@@ -17,21 +17,33 @@ from app.services.llm.openrouter import OpenRouterClient
 from app.services.search.http import ProviderHttpClient
 
 
-def build_llm1(settings: Settings, client: httpx.AsyncClient | None = None) -> LLMClient:
-    """LLM 1 (competitor discovery), configured independently of LLM 2."""
+def _build(settings: Settings, model: str | None, model_var: str, temperature: float, max_tokens: int,
+           client: httpx.AsyncClient | None) -> LLMClient:  # fmt: skip
     key = settings.openrouter_api_key.get_secret_value().strip() if settings.openrouter_api_key else ""
     if not key:
         raise LLMNotConfiguredError("openrouter", "OPENROUTER_API_KEY is not set")
-    if not settings.llm1_model:
-        raise LLMNotConfiguredError("openrouter", "LLM1_MODEL is not set")
+    if not model:
+        raise LLMNotConfiguredError("openrouter", f"{model_var} is not set")
     http = ProviderHttpClient("openrouter", client or httpx.AsyncClient(), max_retries=settings.llm_max_retries)
     return OpenRouterClient(
-        http, key, settings.llm1_model,
+        http, key, model,
         base_url=settings.openrouter_base_url,
-        temperature=settings.llm1_temperature,
-        max_completion_tokens=settings.llm1_max_completion_tokens,
+        temperature=temperature,
+        max_completion_tokens=max_tokens,
         timeout_s=settings.llm_timeout_seconds,
     )  # fmt: skip
+
+
+def build_llm1(settings: Settings, client: httpx.AsyncClient | None = None) -> LLMClient:
+    """LLM 1 (competitor discovery), configured independently of LLM 2."""
+    return _build(settings, settings.llm1_model, "LLM1_MODEL", settings.llm1_temperature,
+                  settings.llm1_max_completion_tokens, client)  # fmt: skip
+
+
+def build_llm2(settings: Settings, client: httpx.AsyncClient | None = None) -> LLMClient:
+    """LLM 2 (product intelligence / extraction), configured independently of LLM 1."""
+    return _build(settings, (settings.llm2_model or "").strip() or None, "LLM2_MODEL", settings.llm2_temperature,
+                  settings.llm2_max_completion_tokens, client)  # fmt: skip
 
 
 __all__ = [
@@ -42,5 +54,6 @@ __all__ = [
     "LLMUsage",
     "OpenRouterClient",
     "build_llm1",
+    "build_llm2",
     "strict_json_schema",
 ]

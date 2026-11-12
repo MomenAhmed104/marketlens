@@ -3,9 +3,11 @@
 **Purpose:** Implementation instructions for Claude Code.\
 **Status:** Phases 1 and 2 complete and approved (commit b2a4c70). Phase 3
 (competitor discovery, LLM 1) is complete and approved (commit 05290be). Phase 4
-(competitor domain review with persistent decisions) is implemented and tested,
-uncommitted, and awaiting review; see `docs/competitor-review.md`. Do not start
-Phase 5 until the user approves. Discovery runs in `LLM_DISABLED` mode until `OPENROUTER_API_KEY`
+(competitor domain review with persistent decisions) is complete (commit
+7371a44). Phase 5 (product intelligence, LLM 2) is implemented and tested,
+uncommitted, and awaiting review; see `docs/product-intelligence.md`. Do not
+start Phase 6 until the user approves. Product intelligence runs in
+`LLM_DISABLED` mode until `LLM2_MODEL` is configured. Discovery runs in `LLM_DISABLED` mode until `OPENROUTER_API_KEY`
 and `LLM1_MODEL` are configured (OpenRouter setup postponed by the user). See
 `docs/competitor-discovery.md`.\
 **Catalogue baseline:** 100 Stompbox products.\
@@ -682,8 +684,9 @@ or provide its path.
     be approved as `marketplace` and are never auto-approved by
     `rules.decide`. Preconfigured competitors cannot be reviewed (409), and
     decisions about them are ignored.
--   **Interpretation (needs user confirmation):** "approved, eligible domains"
-    in targeted searches means reviewer-APPROVED domains (plus the 13
+-   **Interpretation (followed by the Phase 5 brief: "search only domains
+    approved for searching; respect types and benchmark eligibility"):**
+    "approved, eligible domains" in targeted searches means reviewer-APPROVED domains (plus the 13
     preconfigured competitors and run-scoped auto-approvals). Benchmark
     eligibility rides on each `TargetedQuery.price_benchmark`, as Gibson's
     already did, so an approved marketplace is searched but never used as a
@@ -700,3 +703,60 @@ or provide its path.
     succeeded. Decisions survived an app restart. The next run searched 14
     domains: Amazon with `price_benchmark=false`, and the rejected domain
     not at all.
+
+### Phase 5 progress (12 Nov 2026)
+
+-   Agent: `app/agents/intelligence/` (agent, rules, prompts, schemas, CLI).
+    API: `GET /api/intelligence/config` and `POST /api/intelligence/runs`
+    (1-5 products, optional `domains` subset). Design, statuses and limits:
+    `docs/product-intelligence.md`.
+-   LLM 2 is configured independently (`LLM2_MODEL`, `LLM2_TEMPERATURE`,
+    `LLM2_MAX_COMPLETION_TOKENS`) through `build_llm2`. There is no default
+    model. Without it, the mode is `LLM_DISABLED`: real search and retrieval,
+    nothing extracted (`SKIPPED_NO_LLM`). Missing LLM configuration is
+    never an error.
+-   Search targets come from `eligible_search_targets`: the 13 preconfigured
+    competitors plus reviewer-APPROVED domains. Pending and rejected domains
+    are never searched. Approved `directory` domains are skipped
+    (`INTELLIGENCE_EXCLUDED_COMPANY_TYPES`). Benchmark eligibility is carried
+    unchanged on every candidate.
+-   `CompetitorProduct` (§8) is defined here. Every value needs a verbatim
+    quote that code finds in the page text, with the value inside the quote.
+    Otherwise the value stays null and `FieldEvidence` gives the status:
+    EXTRACTED, NOT_FOUND, UNSUPPORTED, EXCLUDED_SALE_PRICE, AMBIGUOUS,
+    CONFLICT or INVALID.
+-   Price policy as implemented: only the current displayed price is
+    extracted. Was/RRP/original/saving/"off" amounts are excluded
+    deterministically (`app/services/prices.py`) and through LLM 2's
+    `ignored_prices`. Conditional prices (from, per month, deposit) and
+    prices without an explicit currency are AMBIGUOUS. Zero is INVALID.
+    `sale_indicated` is informational only, and no discount is computed.
+-   Retrieval fetches the canonical URL, so Gear4music `/us/en/` maps to the
+    UK store. A live check showed the US storefront page had no GBP prices
+    and the UK page did.
+-   Live check (12 Nov 2026, Exa, LLM_DISABLED, SB-001 on Andertons,
+    Gear4music and Thomann): 3 searches ($0.021) and 6 of 6 pages retrieved
+    ($0.006). Selected pages included product pages, a secondhand Gear4music
+    listing and an Andertons guide page. LLM 2 extraction has not run
+    against a real model.
+-   No matching, price validation or price comparison was added (Phase 6).
+
+### Phase 5 finalisation (12 Nov 2026, no-LLM)
+
+-   **No-LLM mode is supported and is the current default.** Real Exa search
+    and retrieval have been tested end to end. Real LLM 2 extraction,
+    accuracy and cost evaluation are deferred until `OPENROUTER_API_KEY` and
+    `LLM2_MODEL` are configured; no code change is needed to activate them.
+-   The extraction status for retrieved pages without LLM 2 is
+    `SKIPPED_NO_LLM`, with the reason in `extraction_error`. Phase 3's
+    discovery status `SKIPPED_LLM_DISABLED` is unchanged.
+-   OpenRouter account errors (401, 402, 403) stop further LLM 2 calls within
+    the run instead of failing every page. A blank `LLM2_MODEL` or key counts
+    as unset.
+-   The live real-page check found Magento "Regular Price £219 Special Price
+    £197" (BopDJ). "Regular/normal price" is now treated as the original
+    price whenever a sale, special, offer or now price label is also shown.
+-   Live no-LLM API run: SB-001 and SB-060 on 5 domains, 10 searches
+    ($0.07) and 20 of 20 pages ($0.02). Approved directory and rejected
+    domains were skipped and pending ones excluded (422 when requested). See
+    `docs/product-intelligence.md`.

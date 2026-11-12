@@ -30,3 +30,6 @@ data/discovery_runs/
 
 # Competitor review decisions (Phase 4): local SQLite state, holds third-party snippets
 data/review/
+
+# Product intelligence run output (Phase 5; contains third-party page excerpts)
+data/intelligence_runs/

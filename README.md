@@ -3,14 +3,18 @@
 Live AI-assisted competitor intelligence demo for Stompbox. See [CLAUDE.md](CLAUDE.md)
 for the full plan, rules and phase breakdown.
 
-**Status:** Phases 1, 2 and 3 (competitor discovery, LLM 1) complete. Phase 4
-(competitor domain review, persistent decisions) is implemented and awaiting
-review. Discovery runs with or without an LLM (`LLM_DISABLED`
-mode needs no OpenRouter key). Search and retrieval provider: **Exa** (Tavily
+**Status:** Phases 1–4 complete (catalogue, search, competitor discovery with
+LLM 1, competitor domain review). Phase 5 (product intelligence, LLM 2) is
+implemented and awaiting review. It currently runs in no-LLM mode: real Exa
+search and retrieval are tested; LLM 2 extraction activates when
+`OPENROUTER_API_KEY` and `LLM2_MODEL` are set (accuracy and cost not yet
+evaluated). Discovery and product intelligence both run
+with or without an LLM (`LLM_DISABLED` mode needs no OpenRouter key). Search and retrieval provider: **Exa** (Tavily
 optional, no automatic fallback; Brave disabled). See
 [docs/search-provider-evaluation.md](docs/search-provider-evaluation.md) and
-[docs/competitor-discovery.md](docs/competitor-discovery.md) and
-[docs/competitor-review.md](docs/competitor-review.md).
+[docs/competitor-discovery.md](docs/competitor-discovery.md),
+[docs/competitor-review.md](docs/competitor-review.md) and
+[docs/product-intelligence.md](docs/product-intelligence.md).
 
 ## Layout
 
@@ -21,11 +25,12 @@ backend/            FastAPI + Pydantic service
     core/           settings (environment-driven)
     schemas/        Pydantic models and shared status enums
     services/       catalogue/competitor loading, domain + URL normalisation, text matching,
-                    review_store (SQLite review decisions)
+                    review_store (SQLite review decisions), prices (price-text parsing)
       search/       provider interface + Exa, Tavily, Brave adapters
       llm/          LLM interface + OpenRouter client (strict structured output)
     agents/
       discovery/    LLM 1 competitor discovery agent, rules, prompts, CLI
+      intelligence/ LLM 2 product intelligence agent, evidence checks, prompts, CLI
     benchmark/      search-provider benchmark (CLI)
     main.py         app factory; loads and validates the catalogue at startup
   tests/            pytest suite (no network; HTTP is mocked)
@@ -34,6 +39,7 @@ data/catalogue/     Stompbox 100-product workbook (source of products AND compet
 data/benchmark_runs/  raw benchmark output (git-ignored)
 data/discovery_runs/  discovery CLI output with evidence (git-ignored)
 data/review/        competitor review decisions, SQLite (git-ignored)
+data/intelligence_runs/  product intelligence CLI output (git-ignored)
 docs/               evaluation reports and benchmark summaries
 ```
 
@@ -76,6 +82,9 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `DISCOVERY_USE_LLM` | `true` | `false` forces `LLM_DISABLED` discovery even when the LLM is configured |
 | `DISCOVERY_AUTO_APPROVE_MIN_CONFIDENCE` / `_MIN_RELEVANCE` | `0.85` / `0.75` | Auto-approval thresholds (uncalibrated starting values) |
 | `REVIEW_DB_PATH` | `data/review/competitor_review.sqlite3` | Persistent competitor review decisions |
+| `LLM2_MODEL` | unset | LLM 2 (extraction) model id on OpenRouter; independent of `LLM1_MODEL`. With the key, enables `LLM_ENABLED` product intelligence |
+| `INTELLIGENCE_USE_LLM` | `true` | `false` forces `LLM_DISABLED` product intelligence |
+| `INTELLIGENCE_MAX_PAGES_PER_DOMAIN` / `_PER_PRODUCT` | `2` / `20` | Page retrieval and extraction caps |
 | `MARKETPLACE_DOMAIN_LABELS` | `["amazon","ebay","reverb","etsy","gumtree"]` | Never auto-approved; can only be approved as `marketplace` |
 
 Provider and discovery tuning options are listed in `.env.example`. Never commit keys.
@@ -102,6 +111,14 @@ python -m app.agents.discovery.cli SB-001 SB-044   # summary + full result in da
 
 See [docs/competitor-discovery.md](docs/competitor-discovery.md) for the flow and approval rules.
 
+### Product intelligence (Phase 5)
+
+```bash
+python -m app.agents.intelligence.cli SB-001 --domains andertons.co.uk gear4music.com
+```
+
+See [docs/product-intelligence.md](docs/product-intelligence.md).
+
 ### API
 
 | Method | Path | Description |
@@ -119,6 +136,8 @@ See [docs/competitor-discovery.md](docs/competitor-discovery.md) for the flow an
 | POST | `/api/review/candidates/{domain}/approve`, `.../reject` | Record a decision (201; 409 if one exists) |
 | PUT | `/api/review/decisions/{domain}` | Explicitly change a decision (versioned) |
 | GET | `/api/review/decisions?decision=` | Current decisions |
+| GET | `/api/intelligence/config` | Product intelligence mode, LLM 2 model, search targets and skipped targets. No secrets |
+| POST | `/api/intelligence/runs` | Body `{"product_ids": [...] (1–5), "domains": [...]?}`. Searches approved domains, retrieves pages, extracts evidence-checked product fields. Not stored. No match decisions (Phase 6) |
 
 Prices are serialised as decimal strings with two decimal places (`"189.99"`) to
 avoid float rounding.

@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     llm1_model: str | None = None
     llm1_temperature: float = Field(default=0.0, ge=0, le=2)
     llm1_max_completion_tokens: int = Field(default=6000, gt=0)
+    # LLM 2: product intelligence (extraction). Configured independently of LLM 1;
+    # no default model (a user decision).
+    llm2_model: str | None = None
+    llm2_temperature: float = Field(default=0.0, ge=0, le=2)
+    llm2_max_completion_tokens: int = Field(default=3000, gt=0)
 
     # --- Competitor discovery (Phase 3) ---
     # Use LLM 1 when OPENROUTER_API_KEY and LLM1_MODEL are set. False forces
@@ -95,6 +100,24 @@ class Settings(BaseSettings):
 
     # --- Competitor review (Phase 4). Persistent decisions; git-ignored SQLite file. ---
     review_db_path: Path = DEFAULT_REVIEW_DB_PATH
+
+    # --- Product intelligence (Phase 5) ---
+    # Use LLM 2 when OPENROUTER_API_KEY and LLM2_MODEL are set. False forces
+    # LLM_DISABLED mode (search + page retrieval only, nothing extracted).
+    intelligence_use_llm: bool = True
+    # 1 = one combined query per domain (brand + model + name); 2 adds an exact "brand model" query.
+    intelligence_queries_per_domain: int = Field(default=1, ge=1, le=2)
+    intelligence_results_per_query: int = Field(default=5, ge=1, le=10)
+    intelligence_max_pages_per_domain: int = Field(default=2, ge=1, le=5)
+    intelligence_max_pages_per_product: int = Field(default=20, ge=1, le=60)
+    # Characters of retrieved page text sent to LLM 2 (quotes are verified against this text).
+    intelligence_page_chars: int = Field(default=12_000, ge=1_000, le=30_000)
+    intelligence_search_concurrency: int = Field(default=4, ge=1, le=10)
+    intelligence_llm_concurrency: int = Field(default=3, ge=1, le=10)
+    intelligence_retrieval_batch_size: int = Field(default=10, ge=1, le=25)
+    # Approved domains of these types are not searched for offers: a directory
+    # lists other sellers, so its prices are not its own.
+    intelligence_excluded_company_types: tuple[str, ...] = ("directory",)
 
 
 @lru_cache
