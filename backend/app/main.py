@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api import catalogue as catalogue_api
 from app.api import discovery as discovery_api
 from app.api import intelligence as intelligence_api
+from app.api import matching as matching_api
 from app.api import review as review_api
 from app.core.config import Settings, get_settings
 from app.services.catalogue import load_catalogue
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(discovery_api.router)
     app.include_router(review_api.router)
     app.include_router(intelligence_api.router)
+    app.include_router(matching_api.router)
 
     @app.get("/api/health", tags=["health"])
     def health() -> dict:

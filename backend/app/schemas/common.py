@@ -7,10 +7,10 @@ from enum import StrEnum
 
 
 class MatchStatus(StrEnum):
-    EXACT = "EXACT"
-    SIMILAR = "SIMILAR"
-    REVIEW = "REVIEW"
-    NOT_MATCHED = "NOT_MATCHED"
+    EXACT_MATCH = "EXACT_MATCH"  # same product identity and required variants
+    SIMILAR_MATCH = "SIMILAR_MATCH"  # related alternative, not the same product/offer
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"  # possible match with unresolved identity/variant evidence
+    NO_MATCH = "NO_MATCH"  # evidence does not support a match
 
 
 class EvidenceStatus(StrEnum):

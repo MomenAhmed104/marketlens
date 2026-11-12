@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     # lists other sellers, so its prices are not its own.
     intelligence_excluded_company_types: tuple[str, ...] = ("directory",)
 
+    # --- Matching and price validation (Phase 6) ---
+    # A VALID price retrieved longer ago than this is STALE and not compared.
+    matching_price_max_age_hours: int = Field(default=24, ge=1, le=24 * 30)
+
 
 @lru_cache
 def get_settings() -> Settings:

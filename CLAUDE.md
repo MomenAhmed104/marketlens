@@ -4,9 +4,10 @@
 **Status:** Phases 1 and 2 complete and approved (commit b2a4c70). Phase 3
 (competitor discovery, LLM 1) is complete and approved (commit 05290be). Phase 4
 (competitor domain review with persistent decisions) is complete (commit
-7371a44). Phase 5 (product intelligence, LLM 2) is implemented and tested,
-uncommitted, and awaiting review; see `docs/product-intelligence.md`. Do not
-start Phase 6 until the user approves. Product intelligence runs in
+7371a44). Phase 5 (product intelligence, LLM 2) is complete (commit 9089770). Phase 6
+(deterministic matching and price validation) is implemented and tested,
+uncommitted, and awaiting review; see `docs/product-matching.md`. Do not start
+Phase 7 until the user approves. Product intelligence runs in
 `LLM_DISABLED` mode until `LLM2_MODEL` is configured. Discovery runs in `LLM_DISABLED` mode until `OPENROUTER_API_KEY`
 and `LLM1_MODEL` are configured (OpenRouter setup postponed by the user). See
 `docs/competitor-discovery.md`.\
@@ -238,10 +239,11 @@ variant checks. - Price parsing and currency validation. -
 Price-difference calculations. - Evidence status assignment. - API
 schema validation and state transitions.
 
-Match statuses: - `EXACT`: same product identity and required variant. -
-`SIMILAR`: related alternative, not the same product. - `REVIEW`:
-potential match with unresolved identity/variant ambiguity. -
-`NOT_MATCHED`: evidence does not support a match.
+Match statuses (names updated in Phase 6 to the user's brief): -
+`EXACT_MATCH`: same product identity and required variant. -
+`SIMILAR_MATCH`: related alternative, not the same product. -
+`REVIEW_REQUIRED`: potential match with unresolved identity/variant
+ambiguity. - `NO_MATCH`: evidence does not support a match.
 
 Exact-match checks must consider brand, manufacturer model/product
 identifier and critical variants such as handedness, string count,
@@ -760,3 +762,36 @@ or provide its path.
     ($0.07) and 20 of 20 pages ($0.02). Approved directory and rejected
     domains were skipped and pending ones excluded (422 when requested). See
     `docs/product-intelligence.md`.
+
+### Phase 6 progress (12 Nov 2026)
+
+-   Code: `app/services/matching/` (attributes, matcher, price, schemas,
+    CLI). API: `POST /api/matching/evaluate` (body: a Phase 5
+    `IntelligenceRunResult`). Deterministic only; no LLM and no key. Rules:
+    `docs/product-matching.md`.
+-   `MatchStatus` in `app/schemas/common.py` was renamed to the brief's names
+    (`EXACT_MATCH`, `SIMILAR_MATCH`, `REVIEW_REQUIRED`, `NO_MATCH`). It was an
+    unused Phase 1 placeholder.
+-   Identity needs the exact model identifier in at least two independent
+    evidence groups (title, URL, LLM 2 model/SKU field); title similarity
+    alone is never enough. Snippets are never used. Stompbox SKUs are
+    internal and are not compared.
+-   Critical variant conflicts (handedness, finish, strings, size, wattage,
+    configuration, bundle, generation, edition) give SIMILAR_MATCH. A
+    required variant that is unconfirmed gives REVIEW_REQUIRED. USED or
+    REFURBISHED condition is never equivalent to new.
+-   Price validation is separate from matching. An EXTRACTED price is
+    re-verified from scratch: the parse, the quote, sale and conditional
+    context, currency, and page type. Only VALID GBP prices with VERIFIED
+    (not STALE, 24 h) evidence, on EXACT matches with benchmark-eligible
+    competitors and comparable condition, are compared.
+    `difference_gbp` = competitor − Stompbox; no percentages or savings.
+-   Assumption: the catalogue `condition` is unverified, so Stompbox items
+    are treated as new retail products for comparison.
+-   Real-data check: the live no-LLM Phase 5 run (fixture
+    `tests/fixtures/phase5_no_llm_run.json`, snippets removed) gives 6 EXACT
+    (MEDIUM), 3 SIMILAR (secondhand) and 11 NO_MATCH (forum, guide and
+    category pages). There are 0 comparable prices because nothing is
+    extracted without LLM 2. Two bugs found on real data were fixed:
+    Gear4music product code "7X8" read as a cabinet, and a category page
+    rated SIMILAR without a page-type classification.

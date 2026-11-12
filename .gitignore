@@ -33,3 +33,6 @@ data/review/
 
 # Product intelligence run output (Phase 5; contains third-party page excerpts)
 data/intelligence_runs/
+
+# Matching run output (Phase 6; derived from third-party page data)
+data/matching_runs/

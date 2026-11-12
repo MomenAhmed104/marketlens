@@ -3,18 +3,19 @@
 Live AI-assisted competitor intelligence demo for Stompbox. See [CLAUDE.md](CLAUDE.md)
 for the full plan, rules and phase breakdown.
 
-**Status:** Phases 1–4 complete (catalogue, search, competitor discovery with
-LLM 1, competitor domain review). Phase 5 (product intelligence, LLM 2) is
-implemented and awaiting review. It currently runs in no-LLM mode: real Exa
-search and retrieval are tested; LLM 2 extraction activates when
-`OPENROUTER_API_KEY` and `LLM2_MODEL` are set (accuracy and cost not yet
-evaluated). Discovery and product intelligence both run
-with or without an LLM (`LLM_DISABLED` mode needs no OpenRouter key). Search and retrieval provider: **Exa** (Tavily
+**Status:** Phases 1–5 complete (catalogue, search, competitor discovery with
+LLM 1, competitor domain review, product intelligence with LLM 2). Phase 6
+(deterministic product matching and price validation) is implemented and
+awaiting review. Discovery and product intelligence run with or without an LLM
+(`LLM_DISABLED` / no-LLM mode needs no OpenRouter key); LLM 2 extraction
+activates when `OPENROUTER_API_KEY` and `LLM2_MODEL` are set (accuracy and cost
+not yet evaluated). Search and retrieval provider: **Exa** (Tavily
 optional, no automatic fallback; Brave disabled). See
 [docs/search-provider-evaluation.md](docs/search-provider-evaluation.md) and
 [docs/competitor-discovery.md](docs/competitor-discovery.md),
-[docs/competitor-review.md](docs/competitor-review.md) and
-[docs/product-intelligence.md](docs/product-intelligence.md).
+[docs/competitor-review.md](docs/competitor-review.md),
+[docs/product-intelligence.md](docs/product-intelligence.md) and
+[docs/product-matching.md](docs/product-matching.md).
 
 ## Layout
 
@@ -26,6 +27,7 @@ backend/            FastAPI + Pydantic service
     schemas/        Pydantic models and shared status enums
     services/       catalogue/competitor loading, domain + URL normalisation, text matching,
                     review_store (SQLite review decisions), prices (price-text parsing)
+      matching/     Phase 6 deterministic matching + price validation (+ CLI)
       search/       provider interface + Exa, Tavily, Brave adapters
       llm/          LLM interface + OpenRouter client (strict structured output)
     agents/
@@ -40,6 +42,7 @@ data/benchmark_runs/  raw benchmark output (git-ignored)
 data/discovery_runs/  discovery CLI output with evidence (git-ignored)
 data/review/        competitor review decisions, SQLite (git-ignored)
 data/intelligence_runs/  product intelligence CLI output (git-ignored)
+data/matching_runs/ matching CLI output (git-ignored)
 docs/               evaluation reports and benchmark summaries
 ```
 
@@ -85,6 +88,7 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `LLM2_MODEL` | unset | LLM 2 (extraction) model id on OpenRouter; independent of `LLM1_MODEL`. With the key, enables `LLM_ENABLED` product intelligence |
 | `INTELLIGENCE_USE_LLM` | `true` | `false` forces `LLM_DISABLED` product intelligence |
 | `INTELLIGENCE_MAX_PAGES_PER_DOMAIN` / `_PER_PRODUCT` | `2` / `20` | Page retrieval and extraction caps |
+| `MATCHING_PRICE_MAX_AGE_HOURS` | `24` | Older price evidence is `STALE` and never compared |
 | `MARKETPLACE_DOMAIN_LABELS` | `["amazon","ebay","reverb","etsy","gumtree"]` | Never auto-approved; can only be approved as `marketplace` |
 
 Provider and discovery tuning options are listed in `.env.example`. Never commit keys.
@@ -119,6 +123,14 @@ python -m app.agents.intelligence.cli SB-001 --domains andertons.co.uk gear4musi
 
 See [docs/product-intelligence.md](docs/product-intelligence.md).
 
+### Product matching (Phase 6)
+
+```bash
+python -m app.services.matching.cli data/intelligence_runs/<run_id>.json   # no API calls
+```
+
+See [docs/product-matching.md](docs/product-matching.md).
+
 ### API
 
 | Method | Path | Description |
@@ -137,6 +149,7 @@ See [docs/product-intelligence.md](docs/product-intelligence.md).
 | PUT | `/api/review/decisions/{domain}` | Explicitly change a decision (versioned) |
 | GET | `/api/review/decisions?decision=` | Current decisions |
 | GET | `/api/intelligence/config` | Product intelligence mode, LLM 2 model, search targets and skipped targets. No secrets |
+| POST | `/api/matching/evaluate` | Body: a Phase 5 `IntelligenceRunResult`. Returns match status, variant/condition checks, price validation and comparison eligibility per candidate. Deterministic, no key, not stored |
 | POST | `/api/intelligence/runs` | Body `{"product_ids": [...] (1–5), "domains": [...]?}`. Searches approved domains, retrieves pages, extracts evidence-checked product fields. Not stored. No match decisions (Phase 6) |
 
 Prices are serialised as decimal strings with two decimal places (`"189.99"`) to
