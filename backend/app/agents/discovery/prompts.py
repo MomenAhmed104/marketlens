@@ -41,7 +41,8 @@ For each domain return:
 evidence does not name the business. Never guess a name from the domain alone.
 - company_type: one of retailer (general music retailer), specialist_retailer (specialist shop, e.g. \
 guitars/pedals/amps, used/vintage), manufacturer (brand's own site), marketplace (third-party sellers, \
-e.g. eBay, Amazon, Reverb), other (reviews, forums, blogs, media, manuals, distributors that do not sell to \
+e.g. eBay, Amazon, Reverb), directory (price-comparison sites and shop directories that list other \
+sellers), other (reviews, forums, blogs, media, manuals, distributors that do not sell to \
 consumers, anything else).
 - relevant_categories: which of the allowed catalogue categories the evidence shows it sells. Empty if unclear.
 - uk_seller: yes only if the evidence shows it sells to UK customers (e.g. GBP prices, UK address, .uk \

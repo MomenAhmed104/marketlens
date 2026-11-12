@@ -75,16 +75,20 @@ candidates can be auto-approved.
 9. **Decision (deterministic, `rules.decide`).** The outcomes are
    `AUTO_APPROVED`, `APPROVAL_REQUIRED` or `REJECTED`; the table below gives the
    rules.
-10. **Targeted queries** are generated only for approved domains: preconfigured
-    competitors plus auto-approved ones. Each product gets its baseline
+10. **Reviewer decisions (Phase 4).** Persisted decisions override step 9:
+    a rejected domain is never searched, and an approved domain is searched
+    with its reviewed benchmark flag. See [competitor-review.md](competitor-review.md).
+11. **Targeted queries** are generated only for search targets: preconfigured
+    competitors, reviewer-approved domains (even if not rediscovered) and
+    domains auto-approved in this run. Each product gets its baseline
     query plus up to M validated LLM variants, restricted to the domain.
-    Approval-required domains get none until a user approves them (Phase 4).
+    Pending and rejected domains get none.
 
 | Outcome | Rule |
 |---|---|
 | `REJECTED` | No discovery evidence. Type `other` with relevance ≤ 0.3. LLM says it doesn't sell to the UK *and* no strong UK signal. Relevance ≤ 0.3 *and* no selected product found on the domain |
 | `AUTO_APPROVED` | **All** of: type retailer or specialist retailer; confidence ≥ 0.85; relevance ≥ 0.75; company name verified in the evidence; at least one strong UK signal; UK selling = yes; at least one page mentioning a selected product's model; at least 2 discovery evidence URLs; at least one valid cited URL; not stated to sell only used goods |
-| `APPROVAL_REQUIRED` | Everything else, including **all marketplaces and manufacturers**, conflicting evidence, and any candidate whose classification failed. The decision reasons list each unmet criterion |
+| `APPROVAL_REQUIRED` | Everything else, including **all marketplaces, directories and manufacturers**, any domain on the known-marketplace list (`MARKETPLACE_DOMAIN_LABELS`) whatever its classified type, conflicting evidence, and any candidate whose classification failed. The decision reasons list each unmet criterion |
 
 The thresholds are configurable (`DISCOVERY_*`) and are **starting values, not
 calibrated**. `DiscoveryRunResult.thresholds.calibrated` is `false` until they
@@ -104,7 +108,8 @@ have been evaluated against labelled runs.
 
 - **API:** `POST /api/discovery/runs` with `{"product_ids": [...]}` (1–10)
   returns a `DiscoveryRunResult`. It runs synchronously and is not stored
-  (temporary execution state). It returns 503 only if the search provider is
+  (temporary execution state); its candidates are added to the Phase 4
+  review queue. It returns 503 only if the search provider is
   not configured; the message names the missing variable, never its value.
 - **Mode:** `GET /api/discovery/config` returns the mode, the reason when
   disabled, the LLM 1 model when enabled, and the thresholds.

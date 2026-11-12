@@ -12,8 +12,11 @@ Flow for a set of selected products:
   6. LLM 1 classifies candidates from that evidence only.
   7. Python validates the classification against the evidence and decides:
      AUTO_APPROVED, APPROVAL_REQUIRED or REJECTED.
-  8. Targeted queries are generated for approved domains only (preconfigured
-     competitors + auto-approved). Approval-required domains wait for Phase 4.
+  8. Persisted reviewer decisions (Phase 4) override step 7: REJECTED domains
+     are never searched; APPROVED ones are searched even if not rediscovered.
+  9. Targeted queries are generated for search targets only: preconfigured
+     competitors, reviewer-approved domains and (this run only) auto-approved
+     ones. Pending and rejected domains never get targeted queries.
 
 Two modes:
 - LLM_ENABLED: steps 2 and 6 use LLM 1 (OpenRouter).
@@ -34,7 +37,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.agents.discovery import prompts
-from app.agents.discovery.rules import Thresholds, apply_classification, decide, uk_signals
+from app.agents.discovery.rules import Thresholds, apply_classification, apply_review_decision, decide, uk_signals
 from app.agents.discovery.schemas import (
     ClassificationBatch,
     ClassificationStatus,
@@ -50,12 +53,14 @@ from app.agents.discovery.schemas import (
     KnownCompetitorEvidence,
     PlannedQuery,
     QuerySource,
+    SearchTarget,
     TargetedQuery,
 )
 from app.core.config import Settings
 from app.schemas.catalogue import StompboxProduct
 from app.schemas.common import DomainApprovalStatus
 from app.schemas.competitor import CompetitorDomain
+from app.schemas.review import DomainDecisionRecord, ReviewDecision
 from app.schemas.search import SearchQuery, SearchResponse, SearchScope
 from app.services.domains import registrable_domain
 from app.services.llm import LLMClient, LLMResult
@@ -97,14 +102,21 @@ class CompetitorDiscoveryAgent:
         known_competitors: list[CompetitorDomain],
         allowed_categories: list[str],
         llm_disabled_reason: str | None = None,
+        review_decisions: list[DomainDecisionRecord] | None = None,
     ):
-        """`llm=None` runs in LLM_DISABLED mode; pass `llm_disabled_reason` to say why."""
+        """`llm=None` runs in LLM_DISABLED mode; pass `llm_disabled_reason` to say why.
+
+        `review_decisions` are persisted reviewer decisions (Phase 4). Decisions on
+        preconfigured competitors are ignored: those stay exactly as configured.
+        """
         self.search = search
         self.llm = llm
         self.mode = DiscoveryMode.LLM_ENABLED if llm else DiscoveryMode.LLM_DISABLED
         self.llm_disabled_reason = None if llm else (llm_disabled_reason or "No LLM client provided")
         self.s = settings
         self.known = known_competitors
+        known_domains = {registrable_domain(c.domain) for c in known_competitors}
+        self.review_decisions = {d.domain: d for d in review_decisions or [] if d.domain not in known_domains}
         self.allowed_categories = sorted(set(allowed_categories))
         self.thresholds = Thresholds(
             settings.discovery_auto_approve_min_confidence,
@@ -279,7 +291,7 @@ class CompetitorDiscoveryAgent:
                 self.warnings.append(f"LLM returned no classification for {missing}")
 
     def targeted_queries(
-        self, products: list[StompboxProduct], variants: dict[str, list[str]], approved: list[CompetitorDomain]
+        self, products: list[StompboxProduct], variants: dict[str, list[str]], approved: list[SearchTarget]
     ) -> list[TargetedQuery]:
         out = []
         for c in approved:
@@ -295,6 +307,21 @@ class CompetitorDiscoveryAgent:
                                           domains=(c.domain,), max_results=5),
                     ))  # fmt: skip
         return out
+
+    def search_targets(self, candidates: list[DiscoveredCompetitor]) -> list[SearchTarget]:
+        """Domains allowed into targeted searches. Pending and rejected never are."""
+        targets = [SearchTarget.from_known(c) for c in self.known]
+        seen = {t.domain for t in targets}
+        for c in candidates:
+            if c.approval_status in (DomainApprovalStatus.AUTO_APPROVED, DomainApprovalStatus.APPROVED):
+                targets.append(c.as_search_target())
+                seen.add(c.domain)
+        # Reviewer-approved domains stay searchable even when this run did not rediscover them.
+        for d in sorted(self.review_decisions.values(), key=lambda d: d.domain):
+            if d.decision is ReviewDecision.APPROVED and d.domain not in seen:
+                targets.append(SearchTarget.from_decision(d))
+                seen.add(d.domain)
+        return targets
 
     # ------------------------------------------------------------------ run
 
@@ -345,7 +372,9 @@ class CompetitorDiscoveryAgent:
 
         await self.classify(candidates, products)
         for c in candidates:
-            decide(c, self.thresholds)
+            decide(c, self.thresholds, self.s.marketplace_domain_labels)
+            if decision := self.review_decisions.get(c.domain):
+                apply_review_decision(c, decision)
 
         known_evidence = [
             KnownCompetitorEvidence(
@@ -354,10 +383,9 @@ class CompetitorDiscoveryAgent:
             )
             for d, items in sorted(known_hits.items())
         ]  # fmt: skip
-        approved = [c for c in self.known] + [c.as_competitor_domain() for c in candidates
-                                              if c.approval_status is DomainApprovalStatus.AUTO_APPROVED]  # fmt: skip
-        status_order = {DomainApprovalStatus.AUTO_APPROVED: 0, DomainApprovalStatus.APPROVAL_REQUIRED: 1,
-                        DomainApprovalStatus.REJECTED: 2}  # fmt: skip
+        targets = self.search_targets(candidates)
+        status_order = {DomainApprovalStatus.APPROVED: 0, DomainApprovalStatus.AUTO_APPROVED: 0,
+                        DomainApprovalStatus.APPROVAL_REQUIRED: 1, DomainApprovalStatus.REJECTED: 2}  # fmt: skip
         candidates.sort(key=lambda c: (status_order.get(c.approval_status, 3), -(c.confidence or 0), c.domain))
         return DiscoveryRunResult(
             run_id=f"discovery-{started.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:6]}",
@@ -366,7 +394,7 @@ class CompetitorDiscoveryAgent:
             search_provider=self.search.name, known_competitors=self.known,
             known_competitor_evidence=known_evidence, global_queries=planned, candidates=candidates,
             excluded=sorted(excluded, key=lambda x: x.domain),
-            targeted_queries=self.targeted_queries(products, variants, approved),
+            search_targets=targets, targeted_queries=self.targeted_queries(products, variants, targets),
             thresholds=DiscoveryThresholds(**self.thresholds.__dict__), usage=self.usage,
             warnings=self.warnings,
         )  # fmt: skip

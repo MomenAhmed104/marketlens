@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.agents.discovery.agent import CompetitorDiscoveryAgent
 from app.core.config import Settings
+from app.schemas.review import DomainDecisionRecord
 from app.services.catalogue import Catalogue
 from app.services.llm import LLMClient, build_llm1
 from app.services.search import get_configured_provider
@@ -19,7 +20,9 @@ def llm1_disabled_reason(settings: Settings) -> str | None:
     return f"{' and '.join(missing)} not set" if missing else None
 
 
-async def build_discovery_agent(settings: Settings, catalogue: Catalogue) -> CompetitorDiscoveryAgent:
+async def build_discovery_agent(
+    settings: Settings, catalogue: Catalogue, review_decisions: list[DomainDecisionRecord] | None = None
+) -> CompetitorDiscoveryAgent:
     """Agent wired to the configured search provider and, when configured, LLM 1.
 
     Missing LLM configuration selects LLM_DISABLED mode; it is never an error.
@@ -38,7 +41,7 @@ async def build_discovery_agent(settings: Settings, catalogue: Catalogue) -> Com
     return CompetitorDiscoveryAgent(
         search, llm, settings, catalogue.competitors,
         allowed_categories=[p.category for p in catalogue.products.values()],
-        llm_disabled_reason=reason,
+        llm_disabled_reason=reason, review_decisions=review_decisions,
     )  # fmt: skip
 
 

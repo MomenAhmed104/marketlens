@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.common import DomainApprovalStatus
 from app.schemas.competitor import CompanyType, CompetitorDomain
+from app.schemas.review import DomainDecisionRecord, ReviewDecision
 from app.schemas.search import SearchQuery
 
 # --------------------------------------------------------------------------- LLM contracts
@@ -122,17 +123,41 @@ class DiscoveredCompetitor(BaseModel):
     decision_reasons: list[str] = Field(default_factory=list)
     price_benchmark: bool = False
     discovered_at: datetime
+    # Persisted reviewer decision (Phase 4), if any. It overrides approval_status
+    # and price_benchmark above; the LLM proposal fields are left as proposed.
+    review_decision: DomainDecisionRecord | None = None
+    # Status from the deterministic rules before a reviewer decision overrode it.
+    automatic_approval_status: DomainApprovalStatus | None = None
 
-    def as_competitor_domain(self) -> CompetitorDomain:
-        from app.schemas.competitor import CompetitorSource
-
-        return CompetitorDomain(
-            name=self.company_name or self.domain, domain=self.domain, homepage_url=self.homepage_url,
-            company_type=self.company_type or CompanyType.OTHER, classification=None, priority=None,
-            price_benchmark=self.price_benchmark, approval_status=self.approval_status,
-            source=CompetitorSource.DISCOVERED, notes="; ".join(self.decision_reasons) or None,
-            relevant_categories=self.relevant_categories,
+    def as_search_target(self) -> SearchTarget:
+        d = self.review_decision
+        return SearchTarget(
+            domain=self.domain, company_name=(d.company_name if d else None) or self.company_name,
+            company_type=d.company_type if d else self.company_type,
+            approval_status=self.approval_status, price_benchmark=self.price_benchmark,
         )  # fmt: skip
+
+
+class SearchTarget(BaseModel):
+    """A domain allowed into targeted product searches for this run."""
+
+    domain: str
+    company_name: str | None
+    company_type: CompanyType | None  # None = reviewer approved it with the type kept unknown
+    approval_status: DomainApprovalStatus  # PRECONFIGURED, AUTO_APPROVED (this run only) or APPROVED
+    price_benchmark: bool
+
+    @classmethod
+    def from_known(cls, c: CompetitorDomain) -> SearchTarget:
+        return cls(domain=c.domain, company_name=c.name, company_type=c.company_type,
+                   approval_status=c.approval_status, price_benchmark=c.price_benchmark)  # fmt: skip
+
+    @classmethod
+    def from_decision(cls, d: DomainDecisionRecord) -> SearchTarget:
+        if d.decision is not ReviewDecision.APPROVED:
+            raise ValueError(f"{d.domain} is not approved")
+        return cls(domain=d.domain, company_name=d.company_name, company_type=d.company_type,
+                   approval_status=DomainApprovalStatus.APPROVED, price_benchmark=d.benchmark_eligible)  # fmt: skip
 
 
 class ExcludedDomain(BaseModel):
@@ -164,7 +189,7 @@ class PlannedQuery(BaseModel):
 class TargetedQuery(BaseModel):
     product_id: str
     domain: str
-    company_type: CompanyType
+    company_type: CompanyType | None  # None only for reviewer-approved domains of unknown type
     approval_status: DomainApprovalStatus
     # False for manufacturer references (e.g. Gibson): never a retailer price benchmark.
     price_benchmark: bool
@@ -205,6 +230,9 @@ class DiscoveryRunResult(BaseModel):
     global_queries: list[PlannedQuery]
     candidates: list[DiscoveredCompetitor]
     excluded: list[ExcludedDomain]
+    # Domains eligible for targeted searches in this run: preconfigured,
+    # reviewer-approved (persisted) and auto-approved (this run only).
+    search_targets: list[SearchTarget] = Field(default_factory=list)
     targeted_queries: list[TargetedQuery]
     thresholds: DiscoveryThresholds
     usage: DiscoveryUsage

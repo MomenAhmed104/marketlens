@@ -3,12 +3,14 @@
 Live AI-assisted competitor intelligence demo for Stompbox. See [CLAUDE.md](CLAUDE.md)
 for the full plan, rules and phase breakdown.
 
-**Status:** Phases 1, 2 and 3 (competitor discovery, LLM 1) complete. Discovery
-runs with or without an LLM (`LLM_DISABLED`
+**Status:** Phases 1, 2 and 3 (competitor discovery, LLM 1) complete. Phase 4
+(competitor domain review, persistent decisions) is implemented and awaiting
+review. Discovery runs with or without an LLM (`LLM_DISABLED`
 mode needs no OpenRouter key). Search and retrieval provider: **Exa** (Tavily
 optional, no automatic fallback; Brave disabled). See
 [docs/search-provider-evaluation.md](docs/search-provider-evaluation.md) and
-[docs/competitor-discovery.md](docs/competitor-discovery.md).
+[docs/competitor-discovery.md](docs/competitor-discovery.md) and
+[docs/competitor-review.md](docs/competitor-review.md).
 
 ## Layout
 
@@ -18,7 +20,8 @@ backend/            FastAPI + Pydantic service
     api/            HTTP routes
     core/           settings (environment-driven)
     schemas/        Pydantic models and shared status enums
-    services/       catalogue/competitor loading, domain + URL normalisation, text matching
+    services/       catalogue/competitor loading, domain + URL normalisation, text matching,
+                    review_store (SQLite review decisions)
       search/       provider interface + Exa, Tavily, Brave adapters
       llm/          LLM interface + OpenRouter client (strict structured output)
     agents/
@@ -30,6 +33,7 @@ frontend/           React + Vite + TypeScript (foundation only)
 data/catalogue/     Stompbox 100-product workbook (source of products AND competitors)
 data/benchmark_runs/  raw benchmark output (git-ignored)
 data/discovery_runs/  discovery CLI output with evidence (git-ignored)
+data/review/        competitor review decisions, SQLite (git-ignored)
 docs/               evaluation reports and benchmark summaries
 ```
 
@@ -71,6 +75,8 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `LLM1_MODEL` | unset | LLM 1 model id on OpenRouter; must support structured outputs. With the key, enables `LLM_ENABLED` discovery |
 | `DISCOVERY_USE_LLM` | `true` | `false` forces `LLM_DISABLED` discovery even when the LLM is configured |
 | `DISCOVERY_AUTO_APPROVE_MIN_CONFIDENCE` / `_MIN_RELEVANCE` | `0.85` / `0.75` | Auto-approval thresholds (uncalibrated starting values) |
+| `REVIEW_DB_PATH` | `data/review/competitor_review.sqlite3` | Persistent competitor review decisions |
+| `MARKETPLACE_DOMAIN_LABELS` | `["amazon","ebay","reverb","etsy","gumtree"]` | Never auto-approved; can only be approved as `marketplace` |
 
 Provider and discovery tuning options are listed in `.env.example`. Never commit keys.
 
@@ -107,7 +113,12 @@ See [docs/competitor-discovery.md](docs/competitor-discovery.md) for the flow an
 | GET | `/api/catalogue/categories` | Category/subcategory product counts |
 | GET | `/api/competitors` | Configured competitor domains |
 | GET | `/api/discovery/config` | Discovery mode (`LLM_ENABLED`/`LLM_DISABLED`), reason when disabled, thresholds. No secrets |
-| POST | `/api/discovery/runs` | Body `{"product_ids": [...]}` (1–10). Runs competitor discovery and returns mode, candidates, evidence, decisions and targeted queries. Not stored. 503 only if the search provider is not configured |
+| POST | `/api/discovery/runs` | Body `{"product_ids": [...]}` (1–10). Runs competitor discovery and returns mode, candidates, evidence, decisions and targeted queries. The run is not stored; its candidates enter the review queue and saved decisions are applied. 503 only if the search provider is not configured |
+| GET | `/api/review/candidates?status=` | Review queue (`PENDING`/`APPROVED`/`REJECTED`) |
+| GET | `/api/review/candidates/{domain}` | Evidence, automatic reasons and decision history |
+| POST | `/api/review/candidates/{domain}/approve`, `.../reject` | Record a decision (201; 409 if one exists) |
+| PUT | `/api/review/decisions/{domain}` | Explicitly change a decision (versioned) |
+| GET | `/api/review/decisions?decision=` | Current decisions |
 
 Prices are serialised as decimal strings with two decimal places (`"189.99"`) to
 avoid float rounding.

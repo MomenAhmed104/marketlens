@@ -12,7 +12,13 @@ class CompanyType(StrEnum):
     SPECIALIST_RETAILER = "specialist_retailer"
     MANUFACTURER = "manufacturer"
     MARKETPLACE = "marketplace"
+    # Price-comparison sites and shop directories: list other sellers, never a benchmark.
+    DIRECTORY = "directory"
     OTHER = "other"
+
+
+# Only these can ever be direct retailer price benchmarks.
+BENCHMARK_ELIGIBLE_TYPES = frozenset({CompanyType.RETAILER, CompanyType.SPECIALIST_RETAILER})
 
 
 class CompetitorPriority(StrEnum):

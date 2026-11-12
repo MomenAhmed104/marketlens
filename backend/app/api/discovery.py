@@ -1,7 +1,9 @@
 """Competitor discovery API (Phase 3).
 
-Runs synchronously and returns the result; nothing is persisted (temporary
-execution state). Approving flagged domains is Phase 4.
+Runs synchronously and returns the result. The run itself is not persisted
+(temporary execution state); its discovered candidates and their evidence are
+added to the review queue (Phase 4, see app/api/review.py), and persisted
+reviewer decisions are applied to the run.
 
 Works in two modes: LLM_ENABLED when OPENROUTER_API_KEY and LLM1_MODEL are set,
 otherwise LLM_DISABLED (baseline queries, no classification). Only a missing
@@ -58,8 +60,11 @@ def discovery_config(request: Request) -> DiscoveryConfig:
 
 
 def get_agent_factory(request: Request) -> AgentFactory:
-    """Overridable in tests. Default: the configured search provider + LLM 1."""
-    return lambda: build_discovery_agent(request.app.state.settings, request.app.state.catalogue)
+    """Overridable in tests. Default: the configured search provider + LLM 1,
+    with the persisted reviewer decisions applied."""
+    state = request.app.state
+    return lambda: build_discovery_agent(state.settings, state.catalogue,
+                                         review_decisions=state.review_store.list_decisions())  # fmt: skip
 
 
 @router.post("/runs", response_model=DiscoveryRunResult)
@@ -77,8 +82,10 @@ async def run_discovery(
     except ProviderNotConfiguredError as e:  # search provider missing (LLM absence is not an error)
         raise HTTPException(503, detail=f"Discovery is not configured: {e}") from None
     try:
-        return await agent.run(products)
+        result = await agent.run(products)
     except ProviderError as e:
         raise HTTPException(502, detail=f"Upstream provider error: {e}") from None
     finally:
         await agent.aclose()
+    request.app.state.review_store.record_run(result)
+    return result

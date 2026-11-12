@@ -10,8 +10,9 @@ from app.services.catalogue import COMPETITOR_COLUMNS, PRODUCT_COLUMNS, load_cat
 
 
 @pytest.fixture(scope="session")
-def settings() -> Settings:
-    return Settings()
+def settings(tmp_path_factory) -> Settings:
+    # Real catalogue, but never the real review database.
+    return Settings(review_db_path=tmp_path_factory.mktemp("review") / "review.sqlite3")
 
 
 @pytest.fixture(scope="session")

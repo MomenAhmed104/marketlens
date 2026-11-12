@@ -18,7 +18,8 @@ from app.agents.discovery.schemas import (
     UkSeller,
 )
 from app.schemas.common import DomainApprovalStatus
-from app.schemas.competitor import CompanyType
+from app.schemas.competitor import BENCHMARK_ELIGIBLE_TYPES, CompanyType
+from app.schemas.review import DomainDecisionRecord, ReviewDecision
 from app.services.text_match import gbp_prices
 
 RATIONALE_MAX_CHARS = 600
@@ -108,7 +109,12 @@ def apply_classification(
 # --------------------------------------------------------------------------- decision
 
 
-def decide(candidate: DiscoveredCompetitor, t: Thresholds) -> None:
+def is_known_marketplace(domain: str, marketplace_labels: tuple[str, ...]) -> bool:
+    """True for e.g. amazon.co.uk / ebay.com: the registrable name is a known marketplace."""
+    return domain.split(".", 1)[0] in marketplace_labels
+
+
+def decide(candidate: DiscoveredCompetitor, t: Thresholds, marketplace_labels: tuple[str, ...] = ()) -> None:
     """Set approval_status, decision_reasons and price_benchmark. Deterministic."""
     reasons: list[str] = []
     c = candidate
@@ -167,6 +173,8 @@ def decide(candidate: DiscoveredCompetitor, t: Thresholds) -> None:
         unmet.append("classification cited no valid evidence URL")
     if c.sells_new_musical_instruments is False:
         unmet.append("evidence suggests it does not sell new instruments")
+    if is_known_marketplace(c.domain, marketplace_labels):
+        unmet.append("domain is a known marketplace (never auto-approved as a retailer)")
 
     if unmet:
         reasons.extend(f"Needs approval: {u}" for u in unmet)
@@ -176,3 +184,28 @@ def decide(candidate: DiscoveredCompetitor, t: Thresholds) -> None:
         f"UK signals {strong_uk}, products {c.products_matched}"
     )
     return finish(DomainApprovalStatus.AUTO_APPROVED)
+
+
+# --------------------------------------------------------------------------- reviewer decisions (Phase 4)
+
+
+def apply_review_decision(candidate: DiscoveredCompetitor, decision: DomainDecisionRecord) -> None:
+    """A persisted human decision overrides the run's automatic decision.
+
+    REJECTED: never searched, never a benchmark. APPROVED: searched; a price
+    benchmark only if the reviewer marked it eligible *and* the reviewed type
+    is a retailer (the record itself already enforces this; checked again here).
+    """
+    c = candidate
+    c.review_decision = decision
+    c.automatic_approval_status = c.approval_status
+    when = decision.decided_at.strftime("%Y-%m-%d %H:%M UTC")
+    c.decision_reasons = [*c.decision_reasons,
+                          f"Reviewer decision {decision.decision.value} by {decision.reviewer} at {when} "
+                          f"(overrides automatic {c.approval_status.value})"]  # fmt: skip
+    if decision.decision is ReviewDecision.REJECTED:
+        c.approval_status = DomainApprovalStatus.REJECTED
+        c.price_benchmark = False
+    else:
+        c.approval_status = DomainApprovalStatus.APPROVED
+        c.price_benchmark = decision.benchmark_eligible and decision.company_type in BENCHMARK_ELIGIBLE_TYPES

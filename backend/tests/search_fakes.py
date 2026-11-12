@@ -1,6 +1,8 @@
 """Helpers for provider tests: a recording httpx MockTransport and fake sleep."""
 
 import json
+import tempfile
+from pathlib import Path
 
 import httpx
 
@@ -52,6 +54,8 @@ def http_client(provider: str, recorder: Recorder, sleep=None, max_retries: int 
 def make_settings(**overrides) -> Settings:
     values = {"exa_api_key": None, "tavily_api_key": None, "brave_search_api_key": None,
               "openrouter_api_key": None, "llm1_model": None,
-              "search_provider": None}  # fmt: skip
+              "search_provider": None,
+              # Never touch the real review database from tests.
+              "review_db_path": Path(tempfile.mkdtemp(prefix="review-test-")) / "review.sqlite3"}  # fmt: skip
     values.update(overrides)
     return Settings(_env_file=None, **values)

@@ -27,3 +27,6 @@ data/benchmark_runs/
 
 # Discovery run output (contains third-party snippets)
 data/discovery_runs/
+
+# Competitor review decisions (Phase 4): local SQLite state, holds third-party snippets
+data/review/

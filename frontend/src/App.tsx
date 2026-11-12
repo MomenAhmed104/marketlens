@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { fetchHealth, type Health } from './api'
+import Review from './Review'
 
-// Phase 1 foundation only: confirms the frontend can reach the backend.
+// Backend status plus the Phase 4 competitor review section.
 // The catalogue/run dashboard is built in Phase 8.
 function App() {
   const [health, setHealth] = useState<Health | null>(null)
@@ -22,6 +23,7 @@ function App() {
           {health.competitors} configured competitors.
         </p>
       )}
+      {health && <Review />}
     </main>
   )
 }

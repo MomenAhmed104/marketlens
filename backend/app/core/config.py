@@ -17,6 +17,7 @@ REPO_ROOT = BACKEND_DIR.parent
 DEFAULT_CATALOGUE_PATH = (
     REPO_ROOT / "data" / "catalogue" / "Stompbox_100_Product_Catalogue_No_Sale_Pricing.xlsx"
 )
+DEFAULT_REVIEW_DB_PATH = REPO_ROOT / "data" / "review" / "competitor_review.sqlite3"
 
 
 class Settings(BaseSettings):
@@ -88,6 +89,12 @@ class Settings(BaseSettings):
     discovery_auto_approve_min_relevance: float = Field(default=0.75, ge=0, le=1)
     discovery_auto_approve_min_evidence_urls: int = Field(default=2, ge=1)
     discovery_reject_max_relevance: float = Field(default=0.3, ge=0, le=1)
+    # Registrable names of marketplaces (amazon.co.uk, ebay.com, ...). Never
+    # auto-approved; a reviewer must classify them as 'marketplace'.
+    marketplace_domain_labels: tuple[str, ...] = ("amazon", "ebay", "reverb", "etsy", "gumtree")
+
+    # --- Competitor review (Phase 4). Persistent decisions; git-ignored SQLite file. ---
+    review_db_path: Path = DEFAULT_REVIEW_DB_PATH
 
 
 @lru_cache

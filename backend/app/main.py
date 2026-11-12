@@ -5,8 +5,10 @@ from fastapi import FastAPI
 
 from app.api import catalogue as catalogue_api
 from app.api import discovery as discovery_api
+from app.api import review as review_api
 from app.core.config import Settings, get_settings
 from app.services.catalogue import load_catalogue
+from app.services.review_store import ReviewStore
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +32,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )  # fmt: skip
         app.state.catalogue = catalogue
         app.state.settings = settings
+        app.state.review_store = ReviewStore(settings.review_db_path)
         yield
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.include_router(catalogue_api.router)
     app.include_router(discovery_api.router)
+    app.include_router(review_api.router)
 
     @app.get("/api/health", tags=["health"])
     def health() -> dict:

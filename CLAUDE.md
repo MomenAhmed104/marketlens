@@ -2,8 +2,10 @@
 
 **Purpose:** Implementation instructions for Claude Code.\
 **Status:** Phases 1 and 2 complete and approved (commit b2a4c70). Phase 3
-(competitor discovery, LLM 1) is complete and approved (12 Nov 2026). Phase 4
-(domain approval) has not started and needs separate user approval. Discovery runs in `LLM_DISABLED` mode until `OPENROUTER_API_KEY`
+(competitor discovery, LLM 1) is complete and approved (commit 05290be). Phase 4
+(competitor domain review with persistent decisions) is implemented and tested,
+uncommitted, and awaiting review; see `docs/competitor-review.md`. Do not start
+Phase 5 until the user approves. Discovery runs in `LLM_DISABLED` mode until `OPENROUTER_API_KEY`
 and `LLM1_MODEL` are configured (OpenRouter setup postponed by the user). See
 `docs/competitor-discovery.md`.\
 **Catalogue baseline:** 100 Stompbox products.\
@@ -656,3 +658,45 @@ or provide its path.
     `DISCOVERY_USE_LLM=false` switch forces the disabled mode. A
     candidate's `classification_status` records COMPLETED,
     SKIPPED_LLM_DISABLED, FAILED or MISSING.
+
+### Phase 4 progress (12 Nov 2026)
+
+-   Persistence: SQLite through the standard-library `sqlite3` module, in
+    `app/services/review_store.py`. The file is
+    `data/review/competitor_review.sqlite3` (`REVIEW_DB_PATH`, git-ignored).
+    It has three tables: the review queue (an evidence snapshot per discovered
+    domain), current decisions (the domain is the primary key) and an
+    append-only decision history. Discovery run results stay temporary. This
+    is the first persistent store; the "temporary execution state" rule still
+    applies to runs.
+-   Schemas: `app/schemas/review.py` (`DomainDecisionRecord`, `ReviewStatus`
+    PENDING/APPROVED/REJECTED). `CompanyType.DIRECTORY` was added (also in
+    the LLM 1 prompt). `BENCHMARK_ELIGIBLE_TYPES` = retailer and specialist
+    retailer.
+-   API: `app/api/review.py` under `/api/review`. Rules and the full
+    endpoint list are in `docs/competitor-review.md`.
+-   Approval and benchmark eligibility are separate. Approval needs an
+    explicit company type, where null means "reviewed, unknown". Only
+    retailer types can be benchmarks, and anything else is refused with 422,
+    never coerced. Known marketplaces (`MARKETPLACE_DOMAIN_LABELS`) can only
+    be approved as `marketplace` and are never auto-approved by
+    `rules.decide`. Preconfigured competitors cannot be reviewed (409), and
+    decisions about them are ignored.
+-   **Interpretation (needs user confirmation):** "approved, eligible domains"
+    in targeted searches means reviewer-APPROVED domains (plus the 13
+    preconfigured competitors and run-scoped auto-approvals). Benchmark
+    eligibility rides on each `TargetedQuery.price_benchmark`, as Gibson's
+    already did, so an approved marketplace is searched but never used as a
+    benchmark. Pending and rejected domains are never searched.
+-   Discovery integration: `CompetitorDiscoveryAgent(review_decisions=...)`
+    and `DiscoveryRunResult.search_targets`. The API and CLI load decisions
+    and record candidates after each run.
+-   Frontend: `frontend/src/Review.tsx`, a review section on the main page.
+    The Phase 8 dashboard is still to come.
+-   Live check (12 Nov 2026, Exa, LLM_DISABLED, scratch database): SB-001 gave
+    7 pending candidates, including `amazon.co.uk` (flagged as a known
+    marketplace) and `idealo.co.uk` (a price-comparison directory). Approving
+    Amazon as a retailer was refused with 422; approving it as a marketplace
+    succeeded. Decisions survived an app restart. The next run searched 14
+    domains: Amazon with `price_benchmark=false`, and the rejected domain
+    not at all.
