@@ -19,3 +19,24 @@ def normalize_hostname(url_or_host: str) -> str:
     if host.startswith("www."):
         host = host[4:]
     return host
+
+
+# Two-label public suffixes we expect to meet. Not a full public-suffix list:
+# unknown multi-label suffixes fall back to the last two labels.
+_TWO_LABEL_SUFFIXES = {
+    "co.uk", "org.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk", "ac.uk", "gov.uk",
+    "com.au", "net.au", "org.au", "co.nz", "co.jp", "com.br", "co.za", "com.cn",
+}  # fmt: skip
+
+
+def registrable_domain(url_or_host: str) -> str:
+    """The domain a company registers, e.g. 'blog.andertons.co.uk' -> 'andertons.co.uk'.
+
+    Used to group hostnames of the same site and to deduplicate against known
+    competitors. Raises ValueError like normalize_hostname.
+    """
+    host = normalize_hostname(url_or_host)
+    labels = host.split(".")
+    if len(labels) >= 3 and ".".join(labels[-2:]) in _TWO_LABEL_SUFFIXES:
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])

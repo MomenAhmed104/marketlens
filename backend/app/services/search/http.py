@@ -132,3 +132,7 @@ class ProviderHttpClient:
 
     def _backoff(self, attempt: int) -> float:
         return min(self.backoff_base_s * (2**attempt), self.max_backoff_s)
+
+
+# The transport is shared by search and LLM providers; this is the neutral name.
+ProviderError = SearchProviderError

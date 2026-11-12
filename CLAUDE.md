@@ -1,9 +1,11 @@
 # CLAUDE.md --- Stompbox Competitor Intelligence Live Demo
 
 **Purpose:** Implementation instructions for Claude Code.\
-**Status:** Phases 1 and 2 complete and approved. Exa is the search and
-retrieval provider. Phase 3 has not started and awaits approval. See
-`docs/search-provider-evaluation.md`.\
+**Status:** Phases 1 and 2 complete and approved (commit b2a4c70). Phase 3
+(competitor discovery, LLM 1) is complete and approved (12 Nov 2026). Phase 4
+(domain approval) has not started and needs separate user approval. Discovery runs in `LLM_DISABLED` mode until `OPENROUTER_API_KEY`
+and `LLM1_MODEL` are configured (OpenRouter setup postponed by the user). See
+`docs/competitor-discovery.md`.\
 **Catalogue baseline:** 100 Stompbox products.\
 **Plan date:** 9 November 2026.
 
@@ -615,3 +617,42 @@ or provide its path.
     and retrieval provider (`SEARCH_PROVIDER=exa`). Tavily stays
     implemented as an optional provider with **no automatic fallback**.
     Brave stays disabled.
+
+### Phase 3 progress (10 Nov 2026)
+
+-   Scope boundary: Phase 3 makes the approval *decision*
+    (AUTO_APPROVED, APPROVAL_REQUIRED or REJECTED). Phase 4 adds the
+    user approval workflow and endpoints, the dashboard exposure, and
+    enforcement in live product searches.
+-   LLM gateway: `app/services/llm/`. `LLMClient` returns validated
+    Pydantic objects. `OpenRouterClient` uses strict `json_schema`
+    output, `provider.require_parameters`, one repair retry, and
+    records usage and cost. `build_llm1` needs `OPENROUTER_API_KEY` and
+    `LLM1_MODEL`; there is deliberately no default model (a user
+    decision).
+-   Agent: `app/agents/discovery/` (agent, rules, prompts, schemas,
+    CLI). API: `POST /api/discovery/runs`. Design and rules:
+    `docs/competitor-discovery.md`.
+-   All decisions are deterministic (`rules.py`). The LLM proposes the
+    name, type, relevance, confidence and cited URLs. The name must
+    appear in the evidence text, and cited URLs must be in the
+    evidence. Marketplaces and manufacturers always need approval.
+-   Known competitors are never re-decided. Their discovery hits are
+    stored as relevance evidence only. Gibson keeps
+    `price_benchmark=false` on its targeted queries.
+-   Text-matching helpers moved to `app/services/text_match.py` (the
+    benchmark re-exports them). `registrable_domain()` is in
+    `app/services/domains.py`.
+-   A live Exa run without the LLM (SB-001, SB-044, SB-091) found 23
+    new domains. All degraded safely to APPROVAL_REQUIRED.
+-   **Decision (11 Nov 2026, user):** OpenRouter configuration is
+    postponed. Discovery supports two modes: `LLM_ENABLED` (OpenRouter
+    planning and classification) and `LLM_DISABLED` (baseline queries,
+    real Exa searches, evidence and UK signals recorded, no
+    classification). In `LLM_DISABLED` every new company is
+    `APPROVAL_REQUIRED` and nothing is invented: name, type, relevance,
+    confidence and UK selling stay null or unknown. Missing LLM config is
+    never an error; only a missing search provider is (503). The
+    `DISCOVERY_USE_LLM=false` switch forces the disabled mode. A
+    candidate's `classification_status` records COMPLETED,
+    SKIPPED_LLM_DISABLED, FAILED or MISSING.

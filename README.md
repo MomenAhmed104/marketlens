@@ -3,9 +3,12 @@
 Live AI-assisted competitor intelligence demo for Stompbox. See [CLAUDE.md](CLAUDE.md)
 for the full plan, rules and phase breakdown.
 
-**Status:** Phases 1 and 2 complete. Search and retrieval provider: **Exa**
-(Tavily optional, no automatic fallback; Brave disabled).
-See [docs/search-provider-evaluation.md](docs/search-provider-evaluation.md).
+**Status:** Phases 1, 2 and 3 (competitor discovery, LLM 1) complete. Discovery
+runs with or without an LLM (`LLM_DISABLED`
+mode needs no OpenRouter key). Search and retrieval provider: **Exa** (Tavily
+optional, no automatic fallback; Brave disabled). See
+[docs/search-provider-evaluation.md](docs/search-provider-evaluation.md) and
+[docs/competitor-discovery.md](docs/competitor-discovery.md).
 
 ## Layout
 
@@ -15,14 +18,18 @@ backend/            FastAPI + Pydantic service
     api/            HTTP routes
     core/           settings (environment-driven)
     schemas/        Pydantic models and shared status enums
-    services/       catalogue/competitor loading, domain normalisation
+    services/       catalogue/competitor loading, domain + URL normalisation, text matching
       search/       provider interface + Exa, Tavily, Brave adapters
+      llm/          LLM interface + OpenRouter client (strict structured output)
+    agents/
+      discovery/    LLM 1 competitor discovery agent, rules, prompts, CLI
     benchmark/      search-provider benchmark (CLI)
     main.py         app factory; loads and validates the catalogue at startup
   tests/            pytest suite (no network; HTTP is mocked)
 frontend/           React + Vite + TypeScript (foundation only)
 data/catalogue/     Stompbox 100-product workbook (source of products AND competitors)
 data/benchmark_runs/  raw benchmark output (git-ignored)
+data/discovery_runs/  discovery CLI output with evidence (git-ignored)
 docs/               evaluation reports and benchmark summaries
 ```
 
@@ -38,7 +45,7 @@ cd backend
 python -m venv .venv
 .venv/Scripts/activate          # Windows; use `source .venv/bin/activate` elsewhere
 pip install -r requirements-dev.txt
-cp .env.example .env            # then add search API keys
+cp .env.example .env            # add EXA_API_KEY; OPENROUTER_API_KEY + LLM1_MODEL are optional
 uvicorn app.main:app --reload   # http://127.0.0.1:8000, docs at /docs
 pytest
 ```
@@ -56,14 +63,16 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `CATALOGUE_PATH` | `data/catalogue/Stompbox_100_Product_Catalogue_No_Sale_Pricing.xlsx` | Catalogue workbook |
 | `CATALOGUE_PRODUCTS_SHEET` | `Products` | Product sheet name |
 | `CATALOGUE_COMPETITORS_SHEET` | `Competitors` | Competitor sheet name |
-
 | `SEARCH_PROVIDER` | unset (set `exa`) | Active provider. `exa` is the chosen provider; `tavily` is optional; `brave` is disabled |
 | `EXA_API_KEY`, `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY` | unset | Provider keys (held as `SecretStr`, never logged) |
 | `SEARCH_TIMEOUT_SECONDS` / `CONTENT_TIMEOUT_SECONDS` | `20` / `45` | Per-request timeouts |
 | `SEARCH_MAX_RETRIES` | `2` | Retries on 429/5xx/timeouts (honours `Retry-After`) |
+| `OPENROUTER_API_KEY` | unset | OpenRouter key (`SecretStr`) |
+| `LLM1_MODEL` | unset | LLM 1 model id on OpenRouter; must support structured outputs. With the key, enables `LLM_ENABLED` discovery |
+| `DISCOVERY_USE_LLM` | `true` | `false` forces `LLM_DISABLED` discovery even when the LLM is configured |
+| `DISCOVERY_AUTO_APPROVE_MIN_CONFIDENCE` / `_MIN_RELEVANCE` | `0.85` / `0.75` | Auto-approval thresholds (uncalibrated starting values) |
 
-Provider tuning options are listed in `.env.example`. `OPENROUTER_API_KEY` is
-not used until Phase 3. Never commit keys.
+Provider and discovery tuning options are listed in `.env.example`. Never commit keys.
 
 ### Search providers
 
@@ -79,7 +88,15 @@ python -m app.benchmark.search_benchmark             # Exa + Tavily (default)
 python -m app.benchmark.search_benchmark --rescore <run_id>   # re-score saved raw data, no API calls
 ```
 
-### API (Phase 1)
+### Competitor discovery (Phase 3)
+
+```bash
+python -m app.agents.discovery.cli SB-001 SB-044   # summary + full result in data/discovery_runs/
+```
+
+See [docs/competitor-discovery.md](docs/competitor-discovery.md) for the flow and approval rules.
+
+### API
 
 | Method | Path | Description |
 |---|---|---|
@@ -89,6 +106,8 @@ python -m app.benchmark.search_benchmark --rescore <run_id>   # re-score saved r
 | POST | `/api/catalogue/products/lookup` | Body `{"product_ids": [...]}` (1–100). Returns products in request order, de-duplicated. Any unknown ID returns 404 with `missing_ids` |
 | GET | `/api/catalogue/categories` | Category/subcategory product counts |
 | GET | `/api/competitors` | Configured competitor domains |
+| GET | `/api/discovery/config` | Discovery mode (`LLM_ENABLED`/`LLM_DISABLED`), reason when disabled, thresholds. No secrets |
+| POST | `/api/discovery/runs` | Body `{"product_ids": [...]}` (1–10). Runs competitor discovery and returns mode, candidates, evidence, decisions and targeted queries. Not stored. 503 only if the search provider is not configured |
 
 Prices are serialised as decimal strings with two decimal places (`"189.99"`) to
 avoid float rounding.

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api import catalogue as catalogue_api
+from app.api import discovery as discovery_api
 from app.core.config import Settings, get_settings
 from app.services.catalogue import load_catalogue
 
@@ -28,10 +29,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             len(catalogue.products), len(catalogue.competitors), catalogue.source_path.name,
         )  # fmt: skip
         app.state.catalogue = catalogue
+        app.state.settings = settings
         yield
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.include_router(catalogue_api.router)
+    app.include_router(discovery_api.router)
 
     @app.get("/api/health", tags=["health"])
     def health() -> dict:

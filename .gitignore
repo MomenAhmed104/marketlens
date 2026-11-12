@@ -24,3 +24,6 @@ Thumbs.db
 
 # Benchmark raw output (contains third-party page content)
 data/benchmark_runs/
+
+# Discovery run output (contains third-party snippets)
+data/discovery_runs/

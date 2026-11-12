@@ -51,6 +51,7 @@ def http_client(provider: str, recorder: Recorder, sleep=None, max_retries: int 
 
 def make_settings(**overrides) -> Settings:
     values = {"exa_api_key": None, "tavily_api_key": None, "brave_search_api_key": None,
+              "openrouter_api_key": None, "llm1_model": None,
               "search_provider": None}  # fmt: skip
     values.update(overrides)
     return Settings(_env_file=None, **values)

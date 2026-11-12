@@ -7,58 +7,19 @@ matching rules (Phase 6) or price extraction (Phase 5).
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from decimal import Decimal
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 
-_SEP = r"[\s\-_./'’‘´`]*"
-# £1,234.56 / £ 99 / GBP 99.00. Excludes values followed by "k" or "m" (e.g. "£2k").
-_GBP = re.compile(
-    r"(?:£\s?|\bGBP\s?)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?![\d.,]*\s?[kKmM]\b)"
+from app.services.text_match import (  # noqa: F401  (re-exported for the benchmark)
+    gbp_prices,
+    is_uk_host,
+    mentions_model,
+    model_pattern,
+    model_tokens,
+    url_text,
 )
-
-
-def model_tokens(model: str) -> list[str]:
-    return [t for t in re.split(r"[^0-9a-z]+", model.casefold()) if t]
-
-
-def model_pattern(model: str) -> re.Pattern[str]:
-    """Regex matching the model with flexible separators and word boundaries.
-
-    Separators are optional between every character, so "RC-5" matches "RC-5",
-    "rc5", "rc 5", "boss-rc-5-loop" and "MKII" matches "MK II", but word
-    boundaries still stop "RC-5" matching "RC-500".
-    """
-    chars = "".join(model_tokens(model))
-    if not chars:
-        raise ValueError(f"Model {model!r} has no alphanumeric tokens")
-    body = _SEP.join(re.escape(c) for c in chars)
-    return re.compile(rf"(?<![0-9a-z]){body}(?![0-9a-z])", re.IGNORECASE)
-
-
-def mentions_model(model: str, *texts: str | None) -> bool:
-    pattern = model_pattern(model)
-    return any(pattern.search(t) for t in texts if t)
-
-
-def url_text(url: str) -> str:
-    """Path of a URL as searchable text (slugs often contain the model)."""
-    return unquote(urlsplit(url).path)
-
-
-def gbp_prices(text: str | None) -> list[Decimal]:
-    """All GBP amounts in text, in order of appearance (duplicates kept)."""
-    if not text:
-        return []
-    out = []
-    for whole, pence in _GBP.findall(text):
-        out.append(Decimal(whole.replace(",", "") + "." + (pence or "00")))
-    return out
-
-
-def is_uk_host(hostname: str) -> bool:
-    return hostname.endswith(".uk")
 
 
 def percentile(values: list[float], pct: float) -> float | None:
