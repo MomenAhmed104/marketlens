@@ -3,19 +3,20 @@
 Live AI-assisted competitor intelligence demo for Stompbox. See [CLAUDE.md](CLAUDE.md)
 for the full plan, rules and phase breakdown.
 
-**Status:** Phases 1–5 complete (catalogue, search, competitor discovery with
-LLM 1, competitor domain review, product intelligence with LLM 2). Phase 6
-(deterministic product matching and price validation) is implemented and
-awaiting review. Discovery and product intelligence run with or without an LLM
-(`LLM_DISABLED` / no-LLM mode needs no OpenRouter key); LLM 2 extraction
-activates when `OPENROUTER_API_KEY` and `LLM2_MODEL` are set (accuracy and cost
-not yet evaluated). Search and retrieval provider: **Exa** (Tavily
+**Status:** Phases 1–6 complete (catalogue, search, competitor discovery with
+LLM 1, competitor domain review, product intelligence with LLM 2, deterministic
+matching and price validation). Phase 7 (end-to-end pipeline runs with progress
+events and cancellation) is implemented and awaiting review. Every stage runs
+without OpenRouter credentials (no-LLM mode); LLM 1/LLM 2 activate when
+`OPENROUTER_API_KEY` and `LLM1_MODEL`/`LLM2_MODEL` are set (accuracy and cost not
+yet evaluated). Search and retrieval provider: **Exa** (Tavily
 optional, no automatic fallback; Brave disabled). See
 [docs/search-provider-evaluation.md](docs/search-provider-evaluation.md) and
 [docs/competitor-discovery.md](docs/competitor-discovery.md),
 [docs/competitor-review.md](docs/competitor-review.md),
-[docs/product-intelligence.md](docs/product-intelligence.md) and
-[docs/product-matching.md](docs/product-matching.md).
+[docs/product-intelligence.md](docs/product-intelligence.md),
+[docs/product-matching.md](docs/product-matching.md) and
+[docs/pipeline.md](docs/pipeline.md).
 
 ## Layout
 
@@ -28,6 +29,7 @@ backend/            FastAPI + Pydantic service
     services/       catalogue/competitor loading, domain + URL normalisation, text matching,
                     review_store (SQLite review decisions), prices (price-text parsing)
       matching/     Phase 6 deterministic matching + price validation (+ CLI)
+    orchestration/  Phase 7 pipeline runs: stages, in-memory run store, events
       search/       provider interface + Exa, Tavily, Brave adapters
       llm/          LLM interface + OpenRouter client (strict structured output)
     agents/
@@ -89,6 +91,10 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `INTELLIGENCE_USE_LLM` | `true` | `false` forces `LLM_DISABLED` product intelligence |
 | `INTELLIGENCE_MAX_PAGES_PER_DOMAIN` / `_PER_PRODUCT` | `2` / `20` | Page retrieval and extraction caps |
 | `MATCHING_PRICE_MAX_AGE_HOURS` | `24` | Older price evidence is `STALE` and never compared |
+| `PIPELINE_MAX_PRODUCTS_PER_RUN` / `PIPELINE_MAX_ACTIVE_RUNS` | `5` / `2` | Run limits |
+| `PIPELINE_RUN_TIMEOUT_SECONDS` / `_DISCOVERY_` / `_PRODUCT_` | `1800` / `300` / `600` | Timeouts (run, discovery stage, per product) |
+| `PIPELINE_RUN_TTL_MINUTES` / `PIPELINE_MAX_RUNS_RETAINED` | `120` / `50` | In-memory retention of finished runs |
+| `PIPELINE_SEARCH_AUTO_APPROVED` | `true` | Search domains LLM 1 auto-approved in the same run (never persisted) |
 | `MARKETPLACE_DOMAIN_LABELS` | `["amazon","ebay","reverb","etsy","gumtree"]` | Never auto-approved; can only be approved as `marketplace` |
 
 Provider and discovery tuning options are listed in `.env.example`. Never commit keys.
@@ -149,6 +155,11 @@ See [docs/product-matching.md](docs/product-matching.md).
 | PUT | `/api/review/decisions/{domain}` | Explicitly change a decision (versioned) |
 | GET | `/api/review/decisions?decision=` | Current decisions |
 | GET | `/api/intelligence/config` | Product intelligence mode, LLM 2 model, search targets and skipped targets. No secrets |
+| POST | `/api/runs` | Start a pipeline run: body `{"product_ids": [...] (1–5), "run_discovery": true, "domains": [...]?}`; 202 |
+| GET | `/api/runs`, `/api/runs/{id}` | Run list / state: status, stages, progress, summary (in memory, temporary) |
+| GET | `/api/runs/{id}/result` | Consolidated results (filled progressively) |
+| GET | `/api/runs/{id}/events?after=` / `/stream` | Progress events as JSON / Server-Sent Events (resumable via `Last-Event-ID`) |
+| POST | `/api/runs/{id}/cancel` | Cancel an active run (202; 409 if finished) |
 | POST | `/api/matching/evaluate` | Body: a Phase 5 `IntelligenceRunResult`. Returns match status, variant/condition checks, price validation and comparison eligibility per candidate. Deterministic, no key, not stored |
 | POST | `/api/intelligence/runs` | Body `{"product_ids": [...] (1–5), "domains": [...]?}`. Searches approved domains, retrieves pages, extracts evidence-checked product fields. Not stored. No match decisions (Phase 6) |
 

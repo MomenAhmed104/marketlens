@@ -5,9 +5,10 @@
 (competitor discovery, LLM 1) is complete and approved (commit 05290be). Phase 4
 (competitor domain review with persistent decisions) is complete (commit
 7371a44). Phase 5 (product intelligence, LLM 2) is complete (commit 9089770). Phase 6
-(deterministic matching and price validation) is implemented and tested,
-uncommitted, and awaiting review; see `docs/product-matching.md`. Do not start
-Phase 7 until the user approves. Product intelligence runs in
+(deterministic matching and price validation) is complete (commit 2118cec).
+Phase 7 (pipeline orchestration) is implemented and tested, uncommitted, and
+awaiting review; see `docs/pipeline.md`. Do not start Phase 8 until the user
+approves. Product intelligence runs in
 `LLM_DISABLED` mode until `LLM2_MODEL` is configured. Discovery runs in `LLM_DISABLED` mode until `OPENROUTER_API_KEY`
 and `LLM1_MODEL` are configured (OpenRouter setup postponed by the user). See
 `docs/competitor-discovery.md`.\
@@ -795,3 +796,30 @@ or provide its path.
     extracted without LLM 2. Two bugs found on real data were fixed:
     Gear4music product code "7X8" read as a cabinet, and a category page
     rated SIMILAR without a page-type classification.
+
+### Phase 7 progress (12 Nov 2026)
+
+-   Code: `app/orchestration/` (schemas, store, pipeline) and `app/api/runs.py`
+    (`/api/runs`, including `/stream` SSE and `/cancel`). Stages: validate,
+    discovery, review_queue, targets, product_search, extraction, matching.
+    Design: `docs/pipeline.md`.
+-   Reuse only: the Phase 3, 4, 5 and 6 agents and services are called as
+    they are. The one refactor is `matching.evaluate_product` (per-product
+    matching, used by `evaluate_run`), so matches stream product by product.
+-   Run state is temporary: `InMemoryRunStore` behind the `RunStore`
+    interface, pruned by TTL and count, and cleared on restart. A run's only
+    durable effect is Phase 4's: new candidates are added to the review
+    queue as pending.
+-   Searched: the 13 configured, reviewer-approved, and (LLM_ENABLED only)
+    this run's auto-approved domains (`PIPELINE_SEARCH_AUTO_APPROVED`).
+    Pending, rejected and directory domains are never searched.
+-   Statuses: run PENDING/RUNNING/COMPLETED/PARTIALLY_COMPLETED/FAILED/
+    CANCELLED. Stage COMPLETED/PARTIAL/SKIPPED/FAILED/CANCELLED. Failures are
+    isolated per stage, domain and product, with timeouts at run, discovery
+    and product level. Retries stay at the transport level.
+-   Cancellation cancels the run's asyncio task; partial results are kept
+    and clients are closed.
+-   Live check (Exa, no LLM, scratch review database): SB-060 on 4 domains,
+    52 SSE events, COMPLETED with extraction skipped, about $0.10. Results: 2
+    EXACT, 1 SIMILAR, 5 NO_MATCH; 7 new pending domains queued and not
+    searched.

@@ -8,8 +8,11 @@ from app.api import discovery as discovery_api
 from app.api import intelligence as intelligence_api
 from app.api import matching as matching_api
 from app.api import review as review_api
+from app.api import runs as runs_api
 from app.core.config import Settings, get_settings
 from app.services.catalogue import load_catalogue
+from app.orchestration.pipeline import PipelineDeps, RunManager
+from app.orchestration.store import InMemoryRunStore
 from app.services.review_store import ReviewStore
 
 logger = logging.getLogger(__name__)
@@ -35,7 +38,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.catalogue = catalogue
         app.state.settings = settings
         app.state.review_store = ReviewStore(settings.review_db_path)
+        # Phase 7: temporary, in-memory run state (cleared on restart).
+        app.state.run_manager = RunManager(
+            InMemoryRunStore(settings.pipeline_max_runs_retained, settings.pipeline_run_ttl_minutes),
+            PipelineDeps.default(settings, catalogue, app.state.review_store),
+        )
         yield
+        await app.state.run_manager.shutdown()  # cancel active runs on shutdown
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.include_router(catalogue_api.router)
@@ -43,6 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(review_api.router)
     app.include_router(intelligence_api.router)
     app.include_router(matching_api.router)
+    app.include_router(runs_api.router)
 
     @app.get("/api/health", tags=["health"])
     def health() -> dict:

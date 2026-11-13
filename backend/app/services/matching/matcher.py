@@ -26,6 +26,7 @@ from app.agents.intelligence.schemas import (
     ExtractionStatus,
     IntelligenceRunResult,
     PageType,
+    ProductIntelligence,
 )
 from app.schemas.catalogue import StompboxProduct
 from app.schemas.common import EvidenceStatus, MatchStatus
@@ -413,6 +414,21 @@ _ORDER = {MatchStatus.EXACT_MATCH: 0, MatchStatus.REVIEW_REQUIRED: 1, MatchStatu
           MatchStatus.NO_MATCH: 3}  # fmt: skip
 
 
+def evaluate_product(
+    pr: ProductIntelligence, p: StompboxProduct, max_age_hours: int, now: datetime
+) -> ProductMatchSummary:
+    """Match every candidate of one product's Phase 5 result (used per product by the pipeline)."""
+    prof = A.profile(p)
+    matches = [match_candidate(p, c, now, max_age_hours, prof) for c in pr.candidates]
+    matches.sort(key=lambda m: (_ORDER[m.match_status], not m.comparison.eligible, m.competitor.domain))
+    return ProductMatchSummary(
+        product_id=p.product_id, product_name=p.product_name, brand=p.brand,
+        manufacturer_model=p.manufacturer_model, stompbox_price=p.displayed_price,
+        counts={s: sum(m.match_status is s for m in matches) for s in MatchStatus},
+        comparable_prices=sum(m.comparison.eligible for m in matches), candidates=matches,
+    )  # fmt: skip
+
+
 def evaluate_run(
     run: IntelligenceRunResult, products: dict[str, StompboxProduct], max_age_hours: int,
     now: datetime | None = None,
@@ -423,17 +439,6 @@ def evaluate_run(
     if run.mode.value == "LLM_DISABLED":
         warnings.append("Source run had no LLM extraction: identity rests on page titles and URLs, every price is "
                         "NOT_EXTRACTED, and no candidate qualifies for price comparison")  # fmt: skip
-    out = []
-    for pr in run.products:
-        p = products[pr.product.product_id]
-        prof = A.profile(p)
-        matches = [match_candidate(p, c, now, max_age_hours, prof) for c in pr.candidates]
-        matches.sort(key=lambda m: (_ORDER[m.match_status], not m.comparison.eligible, m.competitor.domain))
-        out.append(ProductMatchSummary(
-            product_id=p.product_id, product_name=p.product_name, brand=p.brand,
-            manufacturer_model=p.manufacturer_model, stompbox_price=p.displayed_price,
-            counts={s: sum(m.match_status is s for m in matches) for s in MatchStatus},
-            comparable_prices=sum(m.comparison.eligible for m in matches), candidates=matches,
-        ))  # fmt: skip
+    out = [evaluate_product(pr, products[pr.product.product_id], max_age_hours, now) for pr in run.products]
     return MatchingRunResult(source_run_id=run.run_id, source_mode=run.mode, evaluated_at=now,
                              price_max_age_hours=max_age_hours, products=out, warnings=warnings)  # fmt: skip

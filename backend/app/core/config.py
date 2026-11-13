@@ -123,6 +123,19 @@ class Settings(BaseSettings):
     # A VALID price retrieved longer ago than this is STALE and not compared.
     matching_price_max_age_hours: int = Field(default=24, ge=1, le=24 * 30)
 
+    # --- Pipeline orchestration (Phase 7). Run state is in memory only. ---
+    pipeline_max_products_per_run: int = Field(default=5, ge=1, le=10)
+    pipeline_max_active_runs: int = Field(default=2, ge=1, le=10)
+    pipeline_max_runs_retained: int = Field(default=50, ge=1, le=500)  # finished runs kept for retrieval
+    pipeline_run_ttl_minutes: int = Field(default=120, ge=1)  # finished runs older than this are dropped
+    pipeline_run_timeout_seconds: float = Field(default=1800, gt=0)
+    pipeline_discovery_timeout_seconds: float = Field(default=300, gt=0)
+    pipeline_product_timeout_seconds: float = Field(default=600, gt=0)  # search + retrieval + extraction, per product
+    # Search domains LLM 1 auto-approved in this run (LLM_ENABLED only; run-scoped, never persisted).
+    pipeline_search_auto_approved: bool = True
+    pipeline_max_events_per_run: int = Field(default=5000, ge=100)
+    pipeline_sse_heartbeat_seconds: float = Field(default=15, gt=0)
+
 
 @lru_cache
 def get_settings() -> Settings:
