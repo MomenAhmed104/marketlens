@@ -19,6 +19,7 @@ from app.schemas.common import DomainApprovalStatus
 from app.schemas.competitor import CompanyType, CompetitorDomain
 from app.schemas.review import DomainDecisionRecord, ReviewDecision
 from app.schemas.search import SearchQuery
+from app.schemas.uk_eligibility import UkGateDecision
 
 # --------------------------------------------------------------------------- LLM contracts
 
@@ -41,6 +42,14 @@ class UkSeller(StrEnum):
     UNKNOWN = "unknown"
 
 
+class CompetitorClass(StrEnum):
+    """Competitor classification. Separate from approval and price-benchmark eligibility."""
+
+    DIRECT_COMPETITOR = "DIRECT_COMPETITOR"  # UK retailer with meaningful catalogue product overlap
+    RELATED_RETAILER = "RELATED_RETAILER"  # retailer of adjacent music products, or a marketplace
+    NEEDS_REVIEW = "NEEDS_REVIEW"  # manufacturer, directory, other, or insufficient/uncertain evidence
+
+
 class CompanyClassification(BaseModel):
     domain: str
     # Exactly as written in the evidence; null if the evidence does not name it.
@@ -51,9 +60,12 @@ class CompanyClassification(BaseModel):
     sells_new_musical_instruments: bool
     relevance: float = Field(ge=0, le=1)
     confidence: float = Field(ge=0, le=1)
-    rationale: str  # trimmed by code
+    rationale: str  # trimmed by code; also explains competitor_class
     # Must be copied from the evidence provided; anything else is discarded.
     evidence_urls: list[str]
+    # LLM 1's proposal; code safeguards (rules.classify_competitor) decide the final class.
+    # The strict output schema makes the field required; the default only serves old fixtures.
+    competitor_class: CompetitorClass = CompetitorClass.NEEDS_REVIEW
 
 
 class ClassificationBatch(BaseModel):
@@ -116,6 +128,14 @@ class DiscoveredCompetitor(BaseModel):
     confidence: float | None = None
     rationale: str | None = None
     cited_evidence_urls: list[str] = Field(default_factory=list)
+    # Competitor classification (separate from approval and benchmark eligibility).
+    # proposed_*: LLM 1's answer, unchanged. competitor_class: final value after the
+    # code safeguards; None only on records stored before classification existed.
+    proposed_competitor_class: CompetitorClass | None = None
+    competitor_class: CompetitorClass | None = None
+    competitor_class_reasons: list[str] = Field(default_factory=list)
+    classified_at: datetime | None = None  # when LLM 1's classification was applied
+    classification_model: str | None = None  # model that produced it (as reported by OpenRouter)
     # Deterministic checks and decision
     name_verified: bool = False
     validation_notes: list[str] = Field(default_factory=list)
@@ -145,7 +165,10 @@ class SearchTarget(BaseModel):
     company_name: str | None
     company_type: CompanyType | None  # None = reviewer approved it with the type kept unknown
     approval_status: DomainApprovalStatus  # PRECONFIGURED, AUTO_APPROVED (this run only) or APPROVED
+    # The configured or reviewed benchmark flag, never widened. Comparisons also need `uk_gate`.
     price_benchmark: bool
+    # Effective UK gate result, attached by `apply_uk_gate`. None = not checked: never searched or compared.
+    uk_gate: UkGateDecision | None = None
 
     @classmethod
     def from_known(cls, c: CompetitorDomain) -> SearchTarget:

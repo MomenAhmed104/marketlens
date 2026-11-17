@@ -36,3 +36,6 @@ data/intelligence_runs/
 
 # Matching run output (Phase 6; derived from third-party page data)
 data/matching_runs/
+
+# Classification backfill dry-run reports (derived from stored evidence)
+data/backfill_reports/

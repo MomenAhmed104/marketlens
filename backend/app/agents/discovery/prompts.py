@@ -53,6 +53,11 @@ store); no only if the evidence shows it does not; otherwise unknown.
 Thin or ambiguous evidence must get low confidence.
 - rationale: one or two sentences citing what in the evidence supports the classification.
 - evidence_urls: the evidence URLs (copied exactly) that support the classification.
+- competitor_class: one of
+  - DIRECT_COMPETITOR: a UK retailer (retailer or specialist_retailer) with meaningful overlap with the products searched or the allowed catalogue categories, shown by the evidence (e.g. it lists one of these products, or clearly sells these categories), and evidence that it sells to UK customers.
+  - RELATED_RETAILER: a retailer selling adjacent music products (related, but not meaningful overlap with these products or categories), or a marketplace.
+  - NEEDS_REVIEW: a manufacturer, directory or other business type; or the evidence is insufficient; or UK selling is uncertain.
+  A marketplace or manufacturer is never DIRECT_COMPETITOR. Base this only on the evidence. When unsure, use NEEDS_REVIEW. The rationale must explain the competitor_class.
 
 Missing evidence is not evidence: if something is not shown, say unknown/null and lower the confidence. \
 Return one entry per domain given, using the domain string exactly as given."""

@@ -2,8 +2,8 @@
 
     python -m app.agents.intelligence.cli SB-001 --domains andertons.co.uk gear4music.com
 
-Searches the approved search targets (preconfigured + reviewer-approved), or
-the --domains subset, prints a summary and writes the full result to
+Searches the approved search targets (preconfigured + reviewer-approved, then
+the UK gate), or the --domains subset, prints a summary and writes the full result to
 data/intelligence_runs/<run_id>.json (git-ignored: third-party content).
 """
 
@@ -58,17 +58,21 @@ async def main_async(product_ids: list[str], domains: list[str] | None) -> int:
     if missing:
         print(f"Unknown product IDs: {missing}", file=sys.stderr)
         return 2
-    targets, skipped = eligible_search_targets(catalogue.competitors,
-                                               ReviewStore(settings.review_db_path).list_decisions(), settings)  # fmt: skip
+    store = ReviewStore(settings.review_db_path)
+    uk_state = store.uk_gate_state()
+    targets, skipped = eligible_search_targets(catalogue.competitors, store.list_decisions(), uk_state, settings)
     if domains:
         wanted = {registrable_domain(d) for d in domains}
         not_allowed = sorted(wanted - {t.domain for t in targets})
         if not_allowed:
-            print(f"Not approved search targets: {not_allowed}", file=sys.stderr)
+            print(f"Not approved search targets (approval or UK gate): {not_allowed}", file=sys.stderr)
+            for k in skipped:
+                if k.domain in not_allowed:
+                    print(f"  {k.domain}: {k.reason}", file=sys.stderr)
             return 2
         targets = [t for t in targets if t.domain in wanted]
     try:
-        agent = await build_intelligence_agent(settings, targets, skipped)
+        agent = await build_intelligence_agent(settings, targets, skipped, uk_state)
     except ProviderError as e:
         print(f"Not configured: {e}", file=sys.stderr)
         return 3

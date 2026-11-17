@@ -51,6 +51,7 @@ from app.services.matching.schemas import (
     ProductMatchSummary,
 )
 from app.services.text_match import url_text
+from app.services.uk_gate import benchmark_block_reason
 
 MAX_REF_CHARS = 200
 # An UNVERIFIED result on these blocks EXACT_MATCH (the Stompbox product defines
@@ -377,6 +378,10 @@ def compare(p: StompboxProduct, c: CompetitorProduct, status: MatchStatus, cond:
     if not c.competitor.price_benchmark:
         t = c.competitor.company_type.value if c.competitor.company_type else "unknown type"
         why.append(f"{c.competitor.domain} is not a retailer price benchmark ({t})")
+    # UK gate: benchmarking needs UK_ELIGIBLE or an explicit benchmark exception, for this very domain.
+    gate = c.competitor.uk_gate if c.competitor.uk_gate and c.competitor.uk_gate.domain == c.competitor.domain else None
+    if uk_why := benchmark_block_reason(gate, c.competitor.domain):
+        why.append(uk_why)
     if not cond.comparable_to_new:
         why.append(f"Condition {cond.condition.value} is not comparable to new")
     if p.displayed_price is None or p.currency != "GBP":

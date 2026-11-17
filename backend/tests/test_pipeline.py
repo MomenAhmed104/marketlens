@@ -32,6 +32,7 @@ from tests.pipeline_fakes import NO_LLM1, NO_LLM2, SlowIntelligenceAgent, harnes
 from tests.search_fakes import Recorder, ok
 from tests.test_discovery_agent import CLASSIFICATIONS, PLAN
 from tests.test_intelligence_agent import AND, EXTRACTIONS, HITS, PAGES
+from tests.uk_fakes import CONFIGURED_13
 
 NOW = datetime(2026, 11, 13, tzinfo=UTC)
 IDS = ["SB-001", "SB-028"]
@@ -104,8 +105,9 @@ def test_events_are_ordered_and_complete(catalogue, tmp_path):
 
 
 def test_full_llm_pipeline_with_comparable_price(catalogue, tmp_path):
+    # Beckett's is explicitly assessed UK_ELIGIBLE here; without that the UK gate blocks it (see test_uk_gate_paths).
     h = harness(catalogue, tmp_path, llm1=lambda: FakeLLM(PLAN, CLASSIFICATIONS),
-                llm2=lambda: FakeExtractLLM(EXTRACTIONS))  # fmt: skip
+                llm2=lambda: FakeExtractLLM(EXTRACTIONS), uk_eligible=[*CONFIGURED_13, "beckettsmusic.co.uk"])  # fmt: skip
     run, result, events = asyncio.run(h.run(product_ids=["SB-001"]))
     # LLM 1 auto-approved Beckett's for this run only: searched, but not persisted as a decision.
     targets = {t.domain: t for t in result.search_targets}
@@ -135,7 +137,7 @@ def test_approved_pending_rejected_and_directory_domains(catalogue, tmp_path):
         dec("beckettsmusic.co.uk", ctype=T.SPECIALIST_RETAILER, bench=True),
         dec("ebay.co.uk", ReviewDecision.REJECTED, T.MARKETPLACE),
         dec("idealo.co.uk", ctype=T.DIRECTORY),
-    ])  # fmt: skip
+    ], uk_eligible=[*CONFIGURED_13, "beckettsmusic.co.uk"])  # fmt: skip
     _, result, _ = asyncio.run(h.run(product_ids=["SB-001"]))
     searched = searched_domains(h)
     assert "beckettsmusic.co.uk" in searched  # reviewer-approved
@@ -162,7 +164,7 @@ def test_discovery_can_be_skipped_and_domains_narrowed(catalogue, tmp_path):
 
 
 def test_discovery_failure_does_not_stop_product_search(catalogue, tmp_path):
-    async def broken(decisions):
+    async def broken(decisions, uk):
         raise ProviderUnavailableError("exa", "simulated outage")
 
     h = harness(catalogue, tmp_path, discovery_factory=broken)
@@ -184,7 +186,7 @@ def test_discovery_timeout(catalogue, tmp_path):
 
     hanging = Hanging()
 
-    async def factory(decisions):
+    async def factory(decisions, uk):
         return hanging
 
     h = harness(catalogue, tmp_path, discovery_factory=factory, pipeline_discovery_timeout_seconds=0.05)
@@ -233,7 +235,7 @@ def test_product_timeout(catalogue, tmp_path):
 
 
 def test_intelligence_cannot_start(catalogue, tmp_path):
-    async def broken(targets, skipped):
+    async def broken(targets, skipped, uk):
         raise ProviderUnavailableError("exa", "down")
 
     h = harness(catalogue, tmp_path, intelligence_factory=broken)
@@ -261,7 +263,7 @@ def test_transient_provider_errors_are_retried_by_the_transport(catalogue, tmp_p
                    "statuses": [{"id": AND, "status": "success", "source": "cached"}]}  # fmt: skip
     rec = Recorder(ok({"error": "busy"}, status=503), ok(search_ok), ok(contents_ok))
 
-    async def factory(targets, skipped):
+    async def factory(targets, skipped, uk):
         import httpx
 
         s = h.settings
@@ -420,3 +422,29 @@ def test_stale_evidence_is_never_compared(catalogue, tmp_path):
     andertons = next(m for m in result.products[0].matching.candidates if m.product_url == AND)
     assert andertons.match_status is MatchStatus.EXACT_MATCH and andertons.price.evidence_status.value == "STALE"
     assert not andertons.comparison.eligible
+
+
+# --------------------------------------------------------------------------- live classification in events
+
+
+@pytest.mark.parametrize("with_llm", [True, False])
+def test_competitor_discovered_events_carry_the_backend_class(catalogue, tmp_path, with_llm):
+    kw = {"llm1": lambda: FakeLLM(PLAN, CLASSIFICATIONS)} if with_llm else {}
+    h = harness(catalogue, tmp_path, **kw)
+    _, result, events = asyncio.run(h.run(product_ids=["SB-001"]))
+    payloads = {e.payload["domain"]: e.payload for e in events if e.type == "competitor_discovered"}
+    cands = {c.domain: c for c in result.discovery.candidates}
+    assert payloads and set(payloads) == set(cands)
+    for domain, p in payloads.items():  # exactly the final and proposed class stored on the candidate
+        c = cands[domain]
+        assert p["competitor_class"] == c.competitor_class.value
+        assert p["proposed_competitor_class"] == (c.proposed_competitor_class and c.proposed_competitor_class.value)
+    # A known marketplace is Related Retailer in either mode; nothing is proposed without LLM 1.
+    assert payloads["ebay.co.uk"]["competitor_class"] == "RELATED_RETAILER"
+    if with_llm:
+        # The shared fake classifications predate the field, so LLM 1's proposal is the schema default.
+        assert payloads["beckettsmusic.co.uk"]["proposed_competitor_class"] == "NEEDS_REVIEW"
+        assert payloads["ebay.co.uk"]["proposed_competitor_class"] is not None
+    else:
+        assert all(p["proposed_competitor_class"] is None for p in payloads.values())
+        assert payloads["beckettsmusic.co.uk"]["competitor_class"] == "NEEDS_REVIEW"

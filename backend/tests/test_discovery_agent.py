@@ -21,6 +21,7 @@ from app.schemas.search import SearchScope
 from app.services.search.base import RawHit
 from tests.discovery_fakes import FakeLLM, FakeSearch, llm_failure
 from tests.search_fakes import make_settings
+from tests.uk_fakes import all_eligible
 
 GLOBAL_HITS = {
     "SB-001": [
@@ -77,7 +78,8 @@ def make_agent(catalogue, plan=PLAN, classifications=CLASSIFICATIONS, fail_texts
     llm = FakeLLM(plan, classifications)
     s = make_settings(**settings)
     agent = CompetitorDiscoveryAgent(search, llm, s, catalogue.competitors,
-                                     allowed_categories=[p.category for p in catalogue.products.values()])  # fmt: skip
+                                     allowed_categories=[p.category for p in catalogue.products.values()],
+                                     uk_state=all_eligible())  # fmt: skip (explicit UK seeding)
     return agent, search, llm
 
 
@@ -212,3 +214,18 @@ def test_requires_products(catalogue):
     agent, _, _ = make_agent(catalogue)
     with pytest.raises(ValueError):
         asyncio.run(agent.run([]))
+
+
+def test_failed_llm_calls_still_count_spent_tokens_and_cost(catalogue):
+    from decimal import Decimal
+
+    from app.services.llm import LLMOutputError, LLMUsage
+
+    def truncated():
+        return LLMOutputError("openrouter", "Output budget used up before any answer",
+                              usage=LLMUsage(3000, 12000, Decimal("0.006"), 12000), request_ids=["gen-t"])  # fmt: skip
+
+    result, _, _ = run_agent(catalogue, ids=("SB-001",), plan=truncated(), classifications=truncated())
+    assert any("Planning LLM call failed" in w for w in result.warnings)
+    assert result.usage.llm_calls >= 2 and result.usage.llm_completion_tokens >= 24000
+    assert result.usage.llm_cost_usd >= Decimal("0.012")

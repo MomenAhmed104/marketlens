@@ -1,6 +1,11 @@
 // Phase 4: competitor domain review. Discovered domains are reviewed here;
 // decisions persist on the backend. Not the Phase 8 run dashboard.
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import Avatar from './components/Avatar'
+import StatusPill from './components/StatusPill'
+import CompetitorClassPill from './components/CompetitorClassPill'
+import { effectiveCompanyType, resolveCompetitorClass } from './competitorClass'
+import { useReviewer } from './reviewer'
 import {
   approveCandidate,
   BENCHMARK_ELIGIBLE_TYPES,
@@ -22,17 +27,25 @@ import {
 type Filter = ReviewStatus | 'ALL'
 const FILTERS: Filter[] = ['PENDING', 'APPROVED', 'REJECTED', 'ALL']
 const UNKNOWN = '__unknown__'
-const REVIEWER_KEY = 'stompbox.reviewer'
 
 const typeLabel = (t: CompanyType | null) => (t ? t.replace('_', ' ') : 'Unknown type')
-const pct = (v: number | null) => (v === null ? 'not assessed' : v.toFixed(2))
 const when = (iso: string) => new Date(iso).toLocaleString()
+const day = (iso: string) => new Date(iso).toLocaleDateString()
 
-export default function Review() {
+interface ReviewProps {
+  /** When set, the list is fixed to this status and the page supplies heading and tabs (Domain Review page). */
+  status?: ReviewStatus
+  /** Called after any decision or discovery run, so the app can refresh counts. */
+  onChanged?: () => void
+}
+
+export default function Review({ status, onChanged }: ReviewProps = {}) {
   const [candidates, setCandidates] = useState<CandidateSummary[] | null>(null)
-  const [filter, setFilter] = useState<Filter>('PENDING')
+  const [ownFilter, setFilter] = useState<Filter>('PENDING')
+  const filter: Filter = status ?? ownFilter
+  const embedded = status !== undefined
   const [error, setError] = useState<string | null>(null)
-  const [reviewer, setReviewer] = useState(() => localStorage.getItem(REVIEWER_KEY) ?? '')
+  const [reviewer, setReviewer] = useReviewer()
 
   const reload = useCallback(() => {
     fetchCandidates().then(
@@ -45,27 +58,35 @@ export default function Review() {
   }, [])
 
   useEffect(reload, [reload])
-  useEffect(() => localStorage.setItem(REVIEWER_KEY, reviewer), [reviewer])
+  const changed = () => {
+    reload()
+    onChanged?.()
+  }
 
   const counts = (f: Filter) =>
     candidates?.filter((c) => f === 'ALL' || c.review_status === f).length ?? 0
   const shown = candidates?.filter((c) => filter === 'ALL' || c.review_status === filter) ?? []
 
   return (
-    <section aria-labelledby="review-heading">
-      <h2 id="review-heading">Competitor domain review</h2>
-      <p className="muted">
-        Discovered companies need a reviewer decision before they can be used in targeted
-        product searches. The 13 configured competitors are not listed here and stay unchanged.
-      </p>
+    <section aria-labelledby={embedded ? undefined : 'review-heading'} aria-label={embedded ? 'Review queue' : undefined}>
+      {!embedded && (
+        <>
+          <h2 id="review-heading">Competitor domain review</h2>
+          <p className="muted">
+            Discovered companies need a reviewer decision before they can be used in targeted
+            product searches. The 13 configured competitors are not listed here and stay unchanged.
+          </p>
+        </>
+      )}
 
-      <DiscoveryRunner onDone={reload} />
+      {(!embedded || status === 'PENDING') && <DiscoveryRunner onDone={changed} />}
 
       <label className="field inline">
         Reviewer name{' '}
         <input value={reviewer} onChange={(e) => setReviewer(e.target.value)} placeholder="Your name" />
       </label>
 
+      {!embedded && (
       <div className="tabs" role="tablist" aria-label="Filter by review status">
         {FILTERS.map((f) => (
           <button
@@ -79,6 +100,7 @@ export default function Review() {
           </button>
         ))}
       </div>
+      )}
 
       {error && <p role="alert" className="error">{error}</p>}
       {!candidates && !error && <p>Loading review queue…</p>}
@@ -89,9 +111,14 @@ export default function Review() {
             : 'Nothing in this list.'}
         </p>
       )}
-      <ul className="cards">
+      <ul className="domain-cards">
         {shown.map((c) => (
-          <CandidateCard key={c.domain} candidate={c} reviewer={reviewer} onChanged={reload} />
+          <CandidateCard
+            key={c.domain}
+            candidate={c}
+            reviewer={reviewer}
+            onChanged={changed}
+          />
         ))}
       </ul>
     </section>
@@ -119,12 +146,12 @@ function DiscoveryRunner({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form className="panel" onSubmit={submit}>
+    <form className="discovery-runner" onSubmit={submit} aria-label="Run discovery">
       <label className="field inline">
-        Product IDs{' '}
+        Run discovery for product IDs{' '}
         <input value={ids} onChange={(e) => setIds(e.target.value)} placeholder="SB-001, SB-044" />
       </label>{' '}
-      <button type="submit" disabled={busy}>
+      <button type="submit" className="btn" disabled={busy}>
         {busy ? 'Running discovery…' : 'Run discovery'}
       </button>
       {error && <p role="alert" className="error">{error}</p>}
@@ -146,11 +173,11 @@ function DiscoveryRunner({ onDone }: { onDone: () => void }) {
   )
 }
 
-function StatusBadge({ status }: { status: ReviewStatus }) {
-  return <span className={`badge status-${status.toLowerCase()}`}>{status}</span>
-}
-
-function CandidateCard(props: { candidate: CandidateSummary; reviewer: string; onChanged: () => void }) {
+export function CandidateCard(props: {
+  candidate: CandidateSummary
+  reviewer: string
+  onChanged: () => void
+}) {
   const { candidate: c, reviewer, onChanged } = props
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState<CandidateDetail | null>(null)
@@ -164,65 +191,62 @@ function CandidateCard(props: { candidate: CandidateSummary; reviewer: string; o
   }, [open, c.domain, c.decision?.version])
 
   const name = d?.company_name ?? (c.name_verified ? c.proposed_company_name : null)
-  const shownType = d ? d.company_type : c.proposed_company_type
+  const shownType = effectiveCompanyType(c)
+  // Backend class (source of truth); a provisional fallback only for unclassified older records.
+  const { cls, source: clsSource } = resolveCompetitorClass(c)
+  const domainLink = (className: string) => (
+    <a href={c.homepage_url} target="_blank" rel="noreferrer noopener" className={className}>{c.domain}</a>
+  )
 
   return (
-    <li className="card">
-      <div className="card-head">
-        <div>
-          <strong>{name ?? 'Company name unknown'}</strong>{' '}
-          <a href={c.homepage_url} target="_blank" rel="noreferrer noopener">{c.domain}</a>
+    <li className={`domain-card state-${c.review_status.toLowerCase()}`}>
+      <div className="domain-card-head">
+        <Avatar name={name ?? c.domain} />
+        {/* No verified company name: the domain itself is the title. */}
+        <div className="domain-id">
+          {name ? (
+            <>
+              <span className="domain-name">{name}</span>
+              {domainLink('cell-mono')}
+            </>
+          ) : (
+            domainLink('domain-name domain-title')
+          )}
         </div>
-        <StatusBadge status={c.review_status} />
+        <StatusPill value={c.review_status} kind="review" />
       </div>
 
-      <div className="badges">
-        <span className={shownType ? 'badge' : 'badge warn'}>
-          {typeLabel(shownType)}
-          {!d && shownType && ' (LLM proposal)'}
-        </span>
-        {!c.llm_classified && (
-          <span className="badge warn" title="Discovered without LLM classification; nothing was inferred.">
-            Unclassified · discovered in no-LLM mode
+      <div className="domain-flags">
+        <CompetitorClassPill cls={cls} source={clsSource} />
+        {/* No type: the classification ("Needs Review") already says so. */}
+        {shownType ? (
+          <span className="tag" title="Company type">
+            {typeLabel(shownType)}
+            {!d && ' (LLM proposal)'}
+          </span>
+        ) : (
+          c.known_marketplace && (
+            <span className="tag" title="Company type">marketplace (known marketplace domain)</span>
+          )
+        )}
+        {d && (
+          <span className="decision-meta">
+            {d.decision === 'APPROVED' ? 'Approved' : 'Rejected'} by {d.reviewer}, {day(d.decided_at)}
           </span>
         )}
-        {c.known_marketplace && <span className="badge warn">Known marketplace</span>}
-        <span className={c.search_eligible ? 'badge ok' : 'badge'}>
-          {c.search_eligible ? 'Used in targeted searches' : 'Not searched'}
-        </span>
-        <span className={c.benchmark_eligible ? 'badge ok' : 'badge'}>
-          {c.benchmark_eligible ? 'Price benchmark' : 'Not a price benchmark'}
-        </span>
       </div>
 
-      <dl className="facts">
-        <dt>Confidence</dt><dd>{pct(c.confidence)}</dd>
-        <dt>Relevance</dt><dd>{pct(c.relevance)}</dd>
-        <dt>UK signals</dt><dd>{c.uk_signals.join(', ') || 'none found'}</dd>
-        <dt>Products found</dt><dd>{c.products_matched.join(', ') || 'none'}</dd>
-        <dt>Evidence</dt><dd>{c.evidence_count} item(s), seen in {c.times_seen} run(s)</dd>
-        <dt>Automatic result</dt><dd>{c.automatic_status}</dd>
-      </dl>
-
-      {d && (
-        <p className="small">
-          {d.decision} by <strong>{d.reviewer}</strong> on {when(d.decided_at)}
-          {d.version > 1 && ` (version ${d.version})`}
-          {d.notes && <> · “{d.notes}”</>}
-        </p>
-      )}
-
-      <div className="actions">
+      <div className="domain-actions">
         {c.review_status === 'PENDING' ? (
           <>
-            <button onClick={() => setMode(mode === 'approve' ? null : 'approve')}>Approve…</button>
-            <button onClick={() => setMode(mode === 'reject' ? null : 'reject')}>Reject…</button>
+            <button className="btn primary" aria-expanded={mode === 'approve'} onClick={() => setMode(mode === 'approve' ? null : 'approve')}>Approve…</button>
+            <button className="btn" aria-expanded={mode === 'reject'} onClick={() => setMode(mode === 'reject' ? null : 'reject')}>Reject…</button>
           </>
         ) : (
-          <button onClick={() => setMode(mode === 'update' ? null : 'update')}>Change decision…</button>
+          <button className="btn" aria-expanded={mode === 'update'} onClick={() => setMode(mode === 'update' ? null : 'update')}>Change decision…</button>
         )}
-        <button className="link" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? 'Hide evidence and history' : 'Show evidence and history'}
+        <button className="btn-link push-right" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? 'Hide evidence' : `Show evidence (${c.evidence_count})`}
         </button>
       </div>
 
@@ -296,7 +320,7 @@ function DecisionForm(props: {
   }
 
   return (
-    <form className="panel decision" onSubmit={submit}>
+    <form className="decision" onSubmit={submit} aria-label="Decision">
       {mode === 'update' && (
         <fieldset className="inline">
           <legend>Decision</legend>
@@ -344,55 +368,34 @@ function DecisionForm(props: {
       </label>
       {!reviewer.trim() && <p className="small warn-text">Enter your reviewer name above first.</p>}
       {error && <p role="alert" className="error">{error}</p>}
-      <button type="submit" disabled={!ready || busy}>
+      <button type="submit" className="btn primary" disabled={!ready || busy}>
         {busy ? 'Saving…' : mode === 'update' ? 'Save change' : approving ? 'Approve' : 'Reject'}
       </button>{' '}
-      <button type="button" className="link" onClick={onCancel}>Cancel</button>
+      <button type="button" className="btn-link" onClick={onCancel}>Cancel</button>
     </form>
   )
 }
 
+// Evidence only: product pages first (they show the product on sale), then profile pages.
 function Details({ detail }: { detail: CandidateDetail }) {
+  const evidence = [...detail.evidence].sort(
+    (a, b) => Number(b.kind === 'discovery_result') - Number(a.kind === 'discovery_result'),
+  )
   return (
     <div className="details">
-      {detail.rationale && (
-        <p className="small"><strong>LLM rationale:</strong> {detail.rationale}</p>
-      )}
-      <h4>Why it needs review (automatic rules)</h4>
-      <ul className="small">
-        {detail.automatic_reasons.map((r) => <li key={r}>{r}</li>)}
-        {detail.validation_notes.map((r) => <li key={r}>{r}</li>)}
-      </ul>
-
-      <h4>Evidence ({detail.evidence.length})</h4>
-      <ul className="evidence">
-        {detail.evidence.map((e) => (
-          <li key={`${e.kind}|${e.product_id}|${e.url}`}>
-            <a href={e.url} target="_blank" rel="noreferrer noopener">{e.title || e.url}</a>
-            <div className="small muted">
-              {e.kind === 'domain_profile' ? 'Profile search' : `Discovery for ${e.product_id}`}
-              {e.mentions_product_model && ' · model on page'} · query “{e.query_text}” ·{' '}
-              {e.provider} · retrieved {when(e.retrieved_at)}
-            </div>
+      {evidence.length === 0 && <p className="small muted">No evidence stored.</p>}
+      <ul className="evidence" aria-label="Evidence">
+        {evidence.map((e) => (
+          <li key={`${e.kind}|${e.product_id}|${e.url}`} className="evidence-item">
+            <a href={e.url} target="_blank" rel="noreferrer noopener" className="evidence-title">{e.title || e.url}</a>
             {e.snippet && <blockquote>{e.snippet}</blockquote>}
+            <div className="evidence-meta">
+              {e.kind === 'domain_profile' ? 'Company profile' : `Product page for ${e.product_id}`} · retrieved{' '}
+              {when(e.retrieved_at)}
+            </div>
           </li>
         ))}
       </ul>
-
-      <h4>Decision history</h4>
-      {detail.history.length === 0 ? (
-        <p className="small muted">No decisions yet.</p>
-      ) : (
-        <ol className="small">
-          {detail.history.map((h) => (
-            <li key={h.version}>
-              v{h.version}: <strong>{h.decision}</strong> by {h.reviewer} on {when(h.decided_at)} · type{' '}
-              {typeLabel(h.company_type)} · {h.benchmark_eligible ? 'benchmark' : 'not a benchmark'}
-              {h.notes && <> · “{h.notes}”</>}
-            </li>
-          ))}
-        </ol>
-      )}
     </div>
   )
 }

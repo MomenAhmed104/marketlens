@@ -5,8 +5,9 @@ for the full plan, rules and phase breakdown.
 
 **Status:** Phases 1–6 complete (catalogue, search, competitor discovery with
 LLM 1, competitor domain review, product intelligence with LLM 2, deterministic
-matching and price validation). Phase 7 (end-to-end pipeline runs with progress
-events and cancellation) is implemented and awaiting review. Every stage runs
+matching and price validation) and Phase 7 (end-to-end pipeline runs with progress
+events and cancellation). Phase 8 (live dashboard) is implemented and awaiting
+review; see [docs/dashboard.md](docs/dashboard.md). Every stage runs
 without OpenRouter credentials (no-LLM mode); LLM 1/LLM 2 activate when
 `OPENROUTER_API_KEY` and `LLM1_MODEL`/`LLM2_MODEL` are set (accuracy and cost not
 yet evaluated). Search and retrieval provider: **Exa** (Tavily
@@ -38,7 +39,7 @@ backend/            FastAPI + Pydantic service
     benchmark/      search-provider benchmark (CLI)
     main.py         app factory; loads and validates the catalogue at startup
   tests/            pytest suite (no network; HTTP is mocked)
-frontend/           React + Vite + TypeScript (foundation only)
+frontend/           React + Vite + TypeScript live dashboard (Phase 8) and domain review
 data/catalogue/     Stompbox 100-product workbook (source of products AND competitors)
 data/benchmark_runs/  raw benchmark output (git-ignored)
 data/discovery_runs/  discovery CLI output with evidence (git-ignored)
@@ -83,11 +84,14 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `SEARCH_TIMEOUT_SECONDS` / `CONTENT_TIMEOUT_SECONDS` | `20` / `45` | Per-request timeouts |
 | `SEARCH_MAX_RETRIES` | `2` | Retries on 429/5xx/timeouts (honours `Retry-After`) |
 | `OPENROUTER_API_KEY` | unset | OpenRouter key (`SecretStr`) |
-| `LLM1_MODEL` | unset | LLM 1 model id on OpenRouter; must support structured outputs. With the key, enables `LLM_ENABLED` discovery |
+| `LLM1_MODEL` | unset | LLM 1 model id on OpenRouter; must support structured outputs. With the key, enables `LLM_ENABLED` discovery. Chosen: `openai/gpt-6-luna` |
+| `LLM1_TEMPERATURE` / `LLM2_TEMPERATURE` | unset | Sent only when set (an explicit `0` is sent). Leave unset for models that reject it, such as reasoning models |
+| `LLM1_REASONING_EFFORT` / `LLM2_REASONING_EFFORT` | unset | `none`, `minimal`, `low`, `medium`, `high` or `xhigh`; sent as OpenRouter `reasoning.effort` (reasoning text excluded). Configured: `low` |
+| `LLM1_MAX_COMPLETION_TOKENS` / `LLM2_MAX_COMPLETION_TOKENS` | `6000` / `3000` | Output budget, including reasoning tokens. Configured: `12000` / `8000` |
 | `DISCOVERY_USE_LLM` | `true` | `false` forces `LLM_DISABLED` discovery even when the LLM is configured |
 | `DISCOVERY_AUTO_APPROVE_MIN_CONFIDENCE` / `_MIN_RELEVANCE` | `0.85` / `0.75` | Auto-approval thresholds (uncalibrated starting values) |
 | `REVIEW_DB_PATH` | `data/review/competitor_review.sqlite3` | Persistent competitor review decisions |
-| `LLM2_MODEL` | unset | LLM 2 (extraction) model id on OpenRouter; independent of `LLM1_MODEL`. With the key, enables `LLM_ENABLED` product intelligence |
+| `LLM2_MODEL` | unset | LLM 2 (extraction) model id on OpenRouter; independent of `LLM1_MODEL`. With the key, enables `LLM_ENABLED` product intelligence. Chosen: `openai/gpt-6-luna` |
 | `INTELLIGENCE_USE_LLM` | `true` | `false` forces `LLM_DISABLED` product intelligence |
 | `INTELLIGENCE_MAX_PAGES_PER_DOMAIN` / `_PER_PRODUCT` | `2` / `20` | Page retrieval and extraction caps |
 | `MATCHING_PRICE_MAX_AGE_HOURS` | `24` | Older price evidence is `STALE` and never compared |
@@ -95,6 +99,7 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `PIPELINE_RUN_TIMEOUT_SECONDS` / `_DISCOVERY_` / `_PRODUCT_` | `1800` / `300` / `600` | Timeouts (run, discovery stage, per product) |
 | `PIPELINE_RUN_TTL_MINUTES` / `PIPELINE_MAX_RUNS_RETAINED` | `120` / `50` | In-memory retention of finished runs |
 | `PIPELINE_SEARCH_AUTO_APPROVED` | `true` | Search domains LLM 1 auto-approved in the same run (never persisted) |
+| `DISCOVERY_EXCLUDED_COMPETITOR_DOMAINS` | `["pmtonline.co.uk"]` | Competitors removed by the user (PMT): excluded from discovery and never written to the review queue |
 | `MARKETPLACE_DOMAIN_LABELS` | `["amazon","ebay","reverb","etsy","gumtree"]` | Never auto-approved; can only be approved as `marketplace` |
 
 Provider and discovery tuning options are listed in `.env.example`. Never commit keys.
@@ -174,9 +179,25 @@ npm install
 npm run dev      # http://localhost:5173, proxies /api to the backend on :8000
 npm run build
 npm run lint
+npm test         # Vitest + Testing Library (jsdom); no backend needed
 ```
 
-Currently it only shows backend connectivity. The dashboard is Phase 8.
+Four pages, in a sidebar:
+
+- **Overview:** KPIs, match status, competitor coverage, eligible price
+  comparisons and products without an exact match, for the selected run.
+- **Product Intelligence:** the product reference and a competitor comparison
+  table with expandable source, identity and price evidence. Differences are
+  shown only when the backend marks the comparison eligible.
+- **Live Runs:** select up to 5 products, start a run, and follow the 7 pipeline
+  stages, per-product progress and the event timeline over SSE. Cancel needs
+  confirmation.
+- **Domain Review:** pending, approved and rejected domains (the Phase 4
+  workflow), the configured competitors, and excluded or skipped domains.
+  Approvals apply to the next run.
+
+See [docs/dashboard.md](docs/dashboard.md). Start the backend first. The dev
+server proxies `/api` to `127.0.0.1:8000`.
 
 ## Data notes
 

@@ -37,7 +37,14 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.agents.discovery import prompts
-from app.agents.discovery.rules import Thresholds, apply_classification, apply_review_decision, decide, uk_signals
+from app.agents.discovery.rules import (
+    Thresholds,
+    apply_classification,
+    apply_review_decision,
+    classify_competitor,
+    decide,
+    uk_signals,
+)
 from app.agents.discovery.schemas import (
     ClassificationBatch,
     ClassificationStatus,
@@ -63,10 +70,11 @@ from app.schemas.competitor import CompetitorDomain
 from app.schemas.review import DomainDecisionRecord, ReviewDecision
 from app.schemas.search import SearchQuery, SearchResponse, SearchScope
 from app.services.domains import registrable_domain
-from app.services.llm import LLMClient, LLMResult
+from app.services.llm import LLMClient, LLMOutputError, LLMResult, LLMUsage
 from app.services.search import SearchProvider
 from app.services.search.http import ProviderError
 from app.services.text_match import mentions_model, url_text
+from app.services.uk_gate import UkGateState, gate_decision
 
 MAX_QUERY_CHARS = 200
 PROFILE_QUERY = "music shop about us contact delivery returns"
@@ -103,11 +111,18 @@ class CompetitorDiscoveryAgent:
         allowed_categories: list[str],
         llm_disabled_reason: str | None = None,
         review_decisions: list[DomainDecisionRecord] | None = None,
+        uk_state: UkGateState | None = None,
     ):
         """`llm=None` runs in LLM_DISABLED mode; pass `llm_disabled_reason` to say why.
 
         `review_decisions` are persisted reviewer decisions (Phase 4). Decisions on
         preconfigured competitors are ignored: those stay exactly as configured.
+
+        `uk_state` gates the reported `search_targets` and `targeted_queries` (never
+        run here) so they match what product searches may use; the default (empty)
+        blocks every domain. Discovery's own evidence-gathering searches (global
+        queries and per-candidate profile searches) are not product searches and are
+        not gated: they are how UK evidence is collected for review.
         """
         self.search = search
         self.llm = llm
@@ -115,6 +130,7 @@ class CompetitorDiscoveryAgent:
         self.llm_disabled_reason = None if llm else (llm_disabled_reason or "No LLM client provided")
         self.s = settings
         self.known = known_competitors
+        self.uk_state = uk_state if uk_state is not None else UkGateState.empty()
         known_domains = {registrable_domain(c.domain) for c in known_competitors}
         self.review_decisions = {d.domain: d for d in review_decisions or [] if d.domain not in known_domains}
         self.allowed_categories = sorted(set(allowed_categories))
@@ -136,12 +152,20 @@ class CompetitorDiscoveryAgent:
     # ------------------------------------------------------------------ helpers
 
     def _record_llm(self, result: LLMResult) -> None:
-        self.usage.llm_calls += len(result.request_ids)
         self.usage.llm_model = result.model
-        self.usage.llm_prompt_tokens += result.usage.prompt_tokens
-        self.usage.llm_completion_tokens += result.usage.completion_tokens
-        if result.usage.cost_usd is not None:
-            self.usage.llm_cost_usd = (self.usage.llm_cost_usd or Decimal(0)) + result.usage.cost_usd
+        self._record_llm_usage(result.usage, len(result.request_ids))
+
+    def _record_llm_usage(self, usage: LLMUsage, calls: int) -> None:
+        self.usage.llm_calls += calls
+        self.usage.llm_prompt_tokens += usage.prompt_tokens
+        self.usage.llm_completion_tokens += usage.completion_tokens
+        if usage.cost_usd is not None:
+            self.usage.llm_cost_usd = (self.usage.llm_cost_usd or Decimal(0)) + usage.cost_usd
+
+    def _record_llm_failure(self, e: ProviderError) -> None:
+        """A failed call (e.g. truncated output) may still have consumed tokens: count them."""
+        if isinstance(e, LLMOutputError) and e.usage is not None:
+            self._record_llm_usage(e.usage, len(e.request_ids))
 
     async def _search(self, query: SearchQuery) -> SearchResponse | None:
         async with self._sem:
@@ -191,6 +215,7 @@ class CompetitorDiscoveryAgent:
                 for item in result.value.products:
                     llm_plan[item.product_id] = (item.global_queries, item.targeted_query_variants)
             except ProviderError as e:
+                self._record_llm_failure(e)
                 self.warnings.append(f"Planning LLM call failed; using baseline queries only: {e}")
 
         unknown = set(llm_plan) - {p.product_id for p in products}
@@ -232,6 +257,7 @@ class CompetitorDiscoveryAgent:
         own = {registrable_domain(d) for d in self.s.own_domains}
         known = {registrable_domain(c.domain): c for c in self.known}
         blocked = {registrable_domain(d) for d in self.s.discovery_excluded_domains}
+        removed = {registrable_domain(d) for d in self.s.discovery_excluded_competitor_domains}
         by_domain: dict[str, list[EvidenceItem]] = defaultdict(list)
         for e in evidence:
             by_domain[registrable_domain(e.hostname)].append(e)
@@ -239,6 +265,8 @@ class CompetitorDiscoveryAgent:
         for domain, items in by_domain.items():
             if domain in own:
                 excluded.append(self._excluded(domain, "Own site (Stompbox)", items))
+            elif domain in removed:
+                excluded.append(self._excluded(domain, "Excluded competitor (removed by user decision)", items))
             elif domain in known:
                 known_hits[domain] = items
             elif domain in blocked:
@@ -275,6 +303,7 @@ class CompetitorDiscoveryAgent:
                     output_model=ClassificationBatch, schema_name="company_classification",
                 )  # fmt: skip
             except ProviderError as e:
+                self._record_llm_failure(e)
                 self.warnings.append(f"Classification failed for {[c.domain for c in batch]}: {e}")
                 for c in batch:
                     c.classification_status = ClassificationStatus.FAILED
@@ -287,6 +316,8 @@ class CompetitorDiscoveryAgent:
                     self.warnings.append(f"LLM classified a domain it was not given: {cls.domain!r}; ignored")
                     continue
                 apply_classification(target, cls, set(self.allowed_categories))
+                target.classified_at = _now()
+                target.classification_model = result.model
             for missing in by_domain:
                 self.warnings.append(f"LLM returned no classification for {missing}")
 
@@ -309,7 +340,8 @@ class CompetitorDiscoveryAgent:
         return out
 
     def search_targets(self, candidates: list[DiscoveredCompetitor]) -> list[SearchTarget]:
-        """Domains allowed into targeted searches. Pending and rejected never are."""
+        """Domains allowed into targeted searches. Pending and rejected never are, and
+        neither is any domain the UK gate blocks."""
         targets = [SearchTarget.from_known(c) for c in self.known]
         seen = {t.domain for t in targets}
         for c in candidates:
@@ -321,7 +353,12 @@ class CompetitorDiscoveryAgent:
             if d.decision is ReviewDecision.APPROVED and d.domain not in seen:
                 targets.append(SearchTarget.from_decision(d))
                 seen.add(d.domain)
-        return targets
+        allowed = []
+        for t in targets:
+            g = gate_decision(t.domain, self.uk_state)
+            if g.search_allowed:
+                allowed.append(t.model_copy(update={"uk_gate": g}))
+        return allowed
 
     # ------------------------------------------------------------------ run
 
@@ -373,6 +410,7 @@ class CompetitorDiscoveryAgent:
         await self.classify(candidates, products)
         for c in candidates:
             decide(c, self.thresholds, self.s.marketplace_domain_labels)
+            classify_competitor(c, self.s.marketplace_domain_labels)  # independent of approval
             if decision := self.review_decisions.get(c.domain):
                 apply_review_decision(c, decision)
 

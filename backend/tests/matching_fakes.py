@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.agents.discovery.schemas import SearchTarget
+from app.services.uk_gate import UkGateState, gate_decision
+from tests.uk_fakes import uk_record
 from app.agents.intelligence.schemas import (
     CompetitorProduct,
     ExtractedField,
@@ -25,9 +27,12 @@ NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
 
 
 def target(domain="andertons.co.uk", ctype=CompanyType.RETAILER, benchmark=True,
-           status=DomainApprovalStatus.PRECONFIGURED) -> SearchTarget:  # fmt: skip
+           status=DomainApprovalStatus.PRECONFIGURED, uk_eligible=True) -> SearchTarget:  # fmt: skip
+    """A gated target. `uk_eligible=True` attaches an explicit UK_ELIGIBLE gate decision (test seeding);
+    False attaches the strict default (unassessed: INSUFFICIENT_EVIDENCE, blocked)."""
+    state = UkGateState.of([uk_record(domain)]) if uk_eligible else UkGateState.empty()
     return SearchTarget(domain=domain, company_name=None, company_type=ctype, approval_status=status,
-                        price_benchmark=benchmark)  # fmt: skip
+                        price_benchmark=benchmark, uk_gate=gate_decision(domain, state))  # fmt: skip
 
 
 def candidate(

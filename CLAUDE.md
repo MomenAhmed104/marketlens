@@ -6,11 +6,12 @@
 (competitor domain review with persistent decisions) is complete (commit
 7371a44). Phase 5 (product intelligence, LLM 2) is complete (commit 9089770). Phase 6
 (deterministic matching and price validation) is complete (commit 2118cec).
-Phase 7 (pipeline orchestration) is implemented and tested, uncommitted, and
-awaiting review; see `docs/pipeline.md`. Do not start Phase 8 until the user
-approves. Product intelligence runs in
-`LLM_DISABLED` mode until `LLM2_MODEL` is configured. Discovery runs in `LLM_DISABLED` mode until `OPENROUTER_API_KEY`
-and `LLM1_MODEL` are configured (OpenRouter setup postponed by the user). See
+Phase 7 (pipeline orchestration) is complete (commit e295c17). Phase 8 (live
+dashboard) is implemented and tested, uncommitted, and awaiting review; see
+`docs/dashboard.md`. Do not start Phase 9 until the user approves. Product
+intelligence and discovery run in `LLM_DISABLED` mode until
+`OPENROUTER_API_KEY` is added: both models are configured as
+`openai/gpt-6-luna` (14 Nov 2026; see "OpenRouter configuration" below). See
 `docs/competitor-discovery.md`.\
 **Catalogue baseline:** 100 Stompbox products.\
 **Plan date:** 9 November 2026.
@@ -698,7 +699,7 @@ or provide its path.
     and `DiscoveryRunResult.search_targets`. The API and CLI load decisions
     and record candidates after each run.
 -   Frontend: `frontend/src/Review.tsx`, a review section on the main page.
-    The Phase 8 dashboard is still to come.
+    It is the dashboard's "Domain review" tab since Phase 8.
 -   Live check (12 Nov 2026, Exa, LLM_DISABLED, scratch database): SB-001 gave
     7 pending candidates, including `amazon.co.uk` (flagged as a known
     marketplace) and `idealo.co.uk` (a price-comparison directory). Approving
@@ -823,3 +824,140 @@ or provide its path.
     52 SSE events, COMPLETED with extraction skipped, about $0.10. Results: 2
     EXACT, 1 SIMILAR, 5 NO_MATCH; 7 new pending domains queued and not
     searched.
+
+### Phase 8 progress (13 Nov 2026)
+
+-   Code (after the 13 Nov redesign): `frontend/src/app/` (shell, sidebar,
+    top bar, run selector, hash router, and `RunProvider` holding the single
+    `useRunStream`), `pages/` (Overview, ProductIntelligence, LiveRuns,
+    DomainReview), `dashboard/` (CataloguePicker, RunControls,
+    PipelineStepper, EventTimeline, RunPanels, ComparisonTable, EvidencePanel,
+    RunDomains), and `components/` (StatusPill, KpiCard, EmptyState).
+    Also `status.ts` (status → tone, icon, label), `selectors.ts` (Overview
+    counts), `runStream.ts`, `format.ts` and `reviewer.ts`. `Review.tsx`
+    (Phase 4) is reused with optional `status` and `onChanged` props. Design:
+    `docs/dashboard.md`. No backend behaviour changed.
+-   **Redesign (13 Nov 2026, user-approved plan):** a dark navy sidebar, a
+    light workspace and four pages (Overview, Product Intelligence, Live Runs,
+    Domain Review). User decisions: the Overview summarises **one selected
+    run** (the active one, else the most recent in memory), and there are **no
+    charts** (KPI cards, tables and insights instead). No new dependencies:
+    hash routing, inline SVG icons and CSS tokens in `index.css`, with
+    contrast checked at ≥ 4.5:1.
+-   **Design v2 (13 Nov 2026, user-approved after a screenshot review):**
+    navy hero bands, a cobalt accent (cyan on navy only), grouped sidebar
+    navigation with a System card, a run switcher (keyboard listbox) and a
+    connection badge shown only when it adds information.
+    -   Overview: hero with the key finding (`keyFinding`), a match distribution
+        bar (counts only), varied stat tiles, price cards or a price explainer
+        (`priceGate`), and a folded coverage table.
+    -   Product Intelligence: product header, comparison groups with status
+        rails, and evidence in a focus-trapped drawer with tabs.
+    -   Live Runs: vertical pipeline timeline plus a compact track, an outcome
+        banner, an event feed grouped by stage, and a sticky selection tray.
+    -   Domain Review: restyled domain cards with approval and benchmark
+        eligibility shown separately, and configured-competitor tiles.
+    -   The full labelled sidebar is kept down to 1024 px. No new dependencies.
+        The three match colours pass the dataviz palette validator. Details:
+        `docs/dashboard.md`.
+-   **Decision (13 Nov 2026, user):** the pipeline does not pause for
+    approval. Domains discovered in a run stay pending and unsearched in that
+    run. Approving one on the dashboard makes it eligible for the next run,
+    and a finished run offers "Re-run these products".
+-   SSE: a listener per named event type. Duplicates are ignored and gaps are
+    filled from `/events?after=`. The client closes the stream on the terminal
+    event, which prevents the EventSource reconnect loop. It falls back to
+    polling after repeated errors, and a 404 means the run expired. The run
+    ID is kept in `?run=`.
+-   Prices: the UI formats backend decimal strings and does no arithmetic. A
+    difference is shown only when `comparison.eligible`, labelled
+    "competitor − Stompbox"; there are no percentages, savings or discounts.
+-   Selection is limited to 5 (`MAX_PRODUCTS_PER_RUN` mirrors the backend
+    setting, and the backend still enforces it).
+-   Tests: `npm test` (Vitest, jsdom, Testing Library; new dev dependencies,
+    approved by the user). It runs through `frontend/scripts/vitest.mjs` because
+    a lower-case Windows drive letter makes Vitest load twice. Fixture:
+    `backend/tests/make_dashboard_fixture.py` writes
+    `frontend/src/test/fixtures/llm-run.json` from the mocked Phase 7
+    pipeline.
+-   Live check (Exa, no LLM, scratch review database, separate ports): SSE
+    worked through the Vite proxy (27 events), the stream closed after
+    `run_completed`, and `Last-Event-ID` resume worked. The UI has not been
+    checked visually in a browser (before or after the redesign).
+
+### OpenRouter configuration (14 Nov 2026)
+
+-   **Decision (user):** both LLM 1 and LLM 2 use `openai/gpt-6-luna`, with
+    `LLM1/LLM2_REASONING_EFFORT=low`, `LLM1_MAX_COMPLETION_TOKENS=12000` and
+    `LLM2_MAX_COMPLETION_TOKENS=8000` in `backend/.env`. The user adds
+    `OPENROUTER_API_KEY` themselves. Until then both agents stay `LLM_DISABLED`.
+-   OpenRouter's model list (checked 14 Nov 2026) shows the model supports
+    `structured_outputs`, `response_format`, `reasoning` and
+    `max_completion_tokens`, but **not `temperature`**. Because the client
+    sends `provider.require_parameters`, an unsupported parameter means no
+    endpoint is found. `LLM1/LLM2_TEMPERATURE` are therefore optional (default
+    unset, not sent; an explicit value including 0 is sent).
+    `LLM1/LLM2_REASONING_EFFORT` are sent as `reasoning: {effort, exclude: true}`.
+-   Blank or whitespace-only `LLM1/LLM2_MODEL`, temperature and effort values
+    in `.env` count as unset (a settings validator).
+-   Truncation (`finish_reason=length`, including a reasoning model that spends
+    the whole budget with no answer) is never parsed or repaired.
+    `LLMOutputError` carries the usage and request IDs of failed calls, and
+    both agents add those tokens and that cost to their run usage.
+-   No real OpenRouter call has been made yet. Accuracy, latency and cost per
+    run are unmeasured.
+
+### Explicit competitor classification, stage 1 (15 Nov 2026, backend only)
+
+-   LLM 1 proposes `competitor_class` (DIRECT_COMPETITOR, RELATED_RETAILER,
+    NEEDS_REVIEW) in its existing classification call. `rules.classify_competitor`
+    applies downgrade-only safeguards with recorded reasons. Proposal and final
+    class are stored separately with the timestamp and model. Rules:
+    `docs/competitor-discovery.md`. Classification is independent of approval and
+    benchmark eligibility, and Direct does not use the 0.75 threshold.
+-   **Decisions (user):** known marketplace domains are always Related Retailer,
+    overriding any LLM 1 proposal (the one upgrade the rules make);
+    manufacturers, directories and other types are Needs Review.
+-   PMT is excluded through `DISCOVERY_EXCLUDED_COMPETITOR_DOMAINS` in discovery
+    and in `ReviewStore.record_run`.
+-   Backfill executed (16 Nov 2026, user-approved; stage 3 below): all 48 stored
+    domains now have a backend class.
+-   Backfill, stage 1 (16 Nov 2026): a dry-run-only command,
+    `python -m app.agents.discovery.backfill`, reads the review database
+    read-only (`mode=ro`) and reports proposed and final classes per domain. It
+    reuses the LLM 1 prompt and `classify_competitor`. It is tested only on copied
+    temporary databases with a fake LLM. See `docs/competitor-discovery.md`.
+-   Backfill, stage 3 (16 Nov 2026, user-approved): `--write` updates only the
+    five classification fields of CLASSIFIED records. It works in one transaction,
+    after a verified timestamped backup, with conflict detection and a post-write
+    check. It ran on the real database: 48 of 48 written, 31 Direct, 4 Related and
+    13 Needs Review, at $0.0142. Decisions, history, evidence and row metadata were
+    verified unchanged.
+-   Merge fix (16 Nov 2026): if a domain is rediscovered and its LLM
+    classification is skipped, failed or missing, `merge_candidate` keeps the
+    stored LLM-backed class (including backfilled ones), with all five class fields
+    together. A new successful LLM classification replaces it. Relevance and
+    confidence are never used. See `docs/competitor-discovery.md` and
+    `tests/test_review_merge.py`.
+-   Frontend integration, stage 2 (16 Nov 2026): the dashboard shows the backend
+    `competitor_class`. The frontend relevance threshold is removed. A temporary
+    fallback for unclassified older records gives Related Retailer for known or
+    reviewer-typed marketplaces and Needs Review otherwise, and never Direct. The
+    `competitor_discovered` SSE event now carries `competitor_class` and
+    `proposed_competitor_class`. Rules: `docs/dashboard.md`.
+
+### Domain Review simplification (14 Nov 2026, user request)
+
+-   Domain cards show only: company name, domain, company type, competitor
+    classification (Direct Competitor / Related Retailer / Needs Review), review
+    status, Approve/Reject (or Change decision), and evidence links and snippets
+    on demand. Relevance, confidence, rationale, eligibility, facts and history
+    are hidden in the UI but still stored and returned by the API.
+-   The classification shown is the backend's `competitor_class` (since 16 Nov
+    2026; it was previously derived in the frontend).
+    `frontend/src/competitorClass.ts` maps it and holds the temporary fallback.
+    Rules are in `docs/dashboard.md`. Missing or unclear data gives "Needs Review".
+-   **Decision (15 Nov 2026, user):** "Related Retailer" deliberately includes
+    marketplaces. Known marketplace domains (`MARKETPLACE_DOMAIN_LABELS`) are
+    always Related, never Direct, even if LLM 1 proposed "retailer". Unnamed
+    domains are titled by the domain, and a missing company type is not shown.

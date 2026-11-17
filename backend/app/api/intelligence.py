@@ -6,7 +6,9 @@ evidence-checked product fields. Runs synchronously; the result is returned,
 not stored (temporary execution state).
 
 Search targets = the 13 preconfigured competitors + reviewer-APPROVED domains
-(Phase 4). Pending and rejected domains are never searched.
+(Phase 4), then the UK gate: only UK_ELIGIBLE domains, or INSUFFICIENT_EVIDENCE
+domains with an explicit user-approved search exception. Pending, rejected and
+UK-blocked domains are never searched; blocked ones are listed as skipped.
 
 Modes: LLM_ENABLED when OPENROUTER_API_KEY and LLM2_MODEL are set, otherwise
 LLM_DISABLED (search + retrieval only). Only a missing search provider makes
@@ -32,12 +34,13 @@ from app.agents.intelligence import (
 from app.agents.intelligence.schemas import IntelligenceMode, IntelligenceRunResult, SkippedTarget
 from app.services.domains import registrable_domain
 from app.services.search.http import ProviderNotConfiguredError
+from app.services.uk_gate import UkGateState
 
 router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
 
 MAX_PRODUCTS_PER_RUN = 5
 
-AgentFactory = Callable[[list[SearchTarget], list[SkippedTarget]], Awaitable[ProductIntelligenceAgent]]
+AgentFactory = Callable[[list[SearchTarget], list[SkippedTarget], UkGateState], Awaitable[ProductIntelligenceAgent]]
 
 
 class IntelligenceRunRequest(BaseModel):
@@ -59,9 +62,10 @@ class IntelligenceConfig(BaseModel):
     max_products_per_run: int = MAX_PRODUCTS_PER_RUN
 
 
-def _targets(request: Request) -> tuple[list[SearchTarget], list[SkippedTarget]]:
+def _targets(request: Request, uk_state: UkGateState) -> tuple[list[SearchTarget], list[SkippedTarget]]:
     state = request.app.state
-    return eligible_search_targets(state.catalogue.competitors, state.review_store.list_decisions(), state.settings)
+    return eligible_search_targets(state.catalogue.competitors, state.review_store.list_decisions(), uk_state,
+                                   state.settings)  # fmt: skip
 
 
 @router.get("/config", response_model=IntelligenceConfig)
@@ -69,7 +73,7 @@ def intelligence_config(request: Request) -> IntelligenceConfig:
     """Mode and the domains a run would search. Never includes key values."""
     s = request.app.state.settings
     reason = llm2_disabled_reason(s)
-    targets, skipped = _targets(request)
+    targets, skipped = _targets(request, request.app.state.review_store.uk_gate_state())
     return IntelligenceConfig(
         mode=IntelligenceMode.LLM_DISABLED if reason else IntelligenceMode.LLM_ENABLED,
         llm_disabled_reason=reason, llm2_model=None if reason else s.llm2_model,
@@ -82,7 +86,7 @@ def intelligence_config(request: Request) -> IntelligenceConfig:
 
 def get_agent_factory(request: Request) -> AgentFactory:
     """Overridable in tests. Default: the configured search provider + LLM 2."""
-    return lambda targets, skipped: build_intelligence_agent(request.app.state.settings, targets, skipped)
+    return lambda targets, skipped, uk: build_intelligence_agent(request.app.state.settings, targets, skipped, uk)
 
 
 @router.post("/runs", response_model=IntelligenceRunResult)
@@ -94,7 +98,8 @@ async def run_intelligence(
     products, missing = request.app.state.catalogue.lookup(body.product_ids)
     if missing:
         raise HTTPException(404, detail={"message": "Unknown product IDs", "missing_ids": missing})
-    targets, skipped = _targets(request)
+    uk_state = request.app.state.review_store.uk_gate_state()
+    targets, skipped = _targets(request, uk_state)
     if body.domains is not None:
         try:
             wanted = {registrable_domain(d) for d in body.domains}
@@ -104,12 +109,14 @@ async def run_intelligence(
         not_allowed = sorted(wanted - eligible)
         if not_allowed:
             raise HTTPException(422, detail={
-                "message": "Only approved search targets can be searched (preconfigured or reviewer-approved)",
+                "message": "Only approved search targets can be searched (preconfigured or reviewer-approved, "
+                           "and allowed by the UK gate)",
                 "not_allowed": not_allowed,
+                "uk_blocked": {k.domain: k.reason for k in skipped if k.uk_gate is not None and k.domain in not_allowed},
             })  # fmt: skip
         targets = [t for t in targets if t.domain in wanted]
     try:
-        agent = await factory(targets, skipped)
+        agent = await factory(targets, skipped, uk_state)
     except ProviderNotConfiguredError as e:  # search provider missing (LLM absence is not an error)
         raise HTTPException(503, detail=f"Product intelligence is not configured: {e}") from None
     try:

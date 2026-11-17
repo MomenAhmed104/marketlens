@@ -64,7 +64,8 @@ def get_agent_factory(request: Request) -> AgentFactory:
     with the persisted reviewer decisions applied."""
     state = request.app.state
     return lambda: build_discovery_agent(state.settings, state.catalogue,
-                                         review_decisions=state.review_store.list_decisions())  # fmt: skip
+                                         review_decisions=state.review_store.list_decisions(),
+                                         uk_state=state.review_store.uk_gate_state())  # fmt: skip
 
 
 @router.post("/runs", response_model=DiscoveryRunResult)

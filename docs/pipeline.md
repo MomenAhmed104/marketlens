@@ -157,4 +157,4 @@ BopDJ (reviewer-approved) and Gibson, followed over SSE:
 - **No pipeline-level retries:** retries happen only at the transport level.
 - **Not yet run with real LLMs:** the LLM-enabled path is tested with mocked
   LLM 1 and LLM 2 only.
-- **No frontend yet:** run controls and live views are Phase 8.
+- **Frontend:** run controls and live views are in Phase 8 (`docs/dashboard.md`).

@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.discovery.schemas import SearchTarget
 from app.schemas.search import RetrievalStatus
+from app.schemas.uk_eligibility import UkGateDecision
 
 # --------------------------------------------------------------------------- LLM contract
 
@@ -206,6 +207,7 @@ class SkippedTarget(BaseModel):
     domain: str
     company_type: str | None
     reason: str
+    uk_gate: UkGateDecision | None = None  # set when the UK gate is the reason
 
 
 class IntelligenceUsage(BaseModel):

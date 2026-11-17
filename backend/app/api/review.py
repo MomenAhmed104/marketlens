@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.agents.discovery.rules import is_known_marketplace
 from app.agents.discovery.schemas import (
     ClassificationStatus,
+    CompetitorClass,
     DiscoveryMode,
     EvidenceItem,
     UkSeller,
@@ -107,6 +108,10 @@ class CandidateSummary(BaseModel):
     uk_signals: list[str]
     products_matched: list[str]
     known_marketplace: bool
+    # Competitor classification (additive; separate from approval and benchmark eligibility).
+    # None on records stored before classification existed.
+    competitor_class: CompetitorClass | None = None
+    proposed_competitor_class: CompetitorClass | None = None
     evidence_count: int
     first_seen_at: datetime
     last_seen_at: datetime
@@ -121,6 +126,9 @@ class CandidateDetail(CandidateSummary):
     rationale: str | None
     automatic_reasons: list[str]
     validation_notes: list[str]
+    competitor_class_reasons: list[str] = []
+    classified_at: datetime | None = None
+    classification_model: str | None = None
     history: list[DomainDecisionRecord]  # oldest first
 
 
@@ -159,6 +167,7 @@ def _summary(s: StoredCandidate, d: DomainDecisionRecord | None, labels: tuple[s
         proposed_company_type=c.company_type, confidence=c.confidence, relevance=c.relevance,
         uk_seller=c.uk_seller, uk_signals=c.uk_signals, products_matched=c.products_matched,
         known_marketplace=is_known_marketplace(s.domain, labels), evidence_count=len(c.evidence),
+        competitor_class=c.competitor_class, proposed_competitor_class=c.proposed_competitor_class,
         first_seen_at=s.first_seen_at, last_seen_at=s.last_seen_at, times_seen=s.times_seen,
         last_run_id=s.last_run_id,
     )  # fmt: skip
@@ -237,6 +246,8 @@ def get_candidate(request: Request, domain: DomainParam):
         relevant_categories=c.relevant_categories, rationale=c.rationale,
         automatic_reasons=[r for r in c.decision_reasons if not r.startswith("Reviewer decision")],
         validation_notes=c.validation_notes, history=store.history(domain),
+        competitor_class_reasons=c.competitor_class_reasons, classified_at=c.classified_at,
+        classification_model=c.classification_model,
     )  # fmt: skip
 
 

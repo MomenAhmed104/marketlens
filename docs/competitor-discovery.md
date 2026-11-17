@@ -94,6 +94,93 @@ The thresholds are configurable (`DISCOVERY_*`) and are **starting values, not
 calibrated**. `DiscoveryRunResult.thresholds.calibrated` is `false` until they
 have been evaluated against labelled runs.
 
+## Competitor classification (15 Nov 2026)
+
+Separate from approval and price-benchmark eligibility: it never changes
+`approval_status`, `price_benchmark` or a reviewer decision, and they never change it.
+
+- **LLM 1** returns `competitor_class` in the existing classification call (no extra
+  call): `DIRECT_COMPETITOR` (a UK retailer with meaningful overlap with the searched
+  products or catalogue categories), `RELATED_RETAILER` (a retailer of adjacent music
+  products, or a marketplace) or `NEEDS_REVIEW` (manufacturer, directory, other, or
+  insufficient evidence or uncertain UK selling). `rationale` explains it.
+- **Marketplace override (first, 15 Nov 2026):** a known marketplace domain
+  (`MARKETPLACE_DOMAIN_LABELS`: Amazon, eBay, Reverb, Etsy, Gumtree) is always
+  `RELATED_RETAILER`, whatever LLM 1 proposed and even without an LLM classification.
+  The reason records the override and the original proposal.
+- **Code safeguards** (`rules.classify_competitor`) otherwise only downgrade, never
+  upgrade, and record a reason for every downgrade in `competitor_class_reasons`:
+  - another domain typed `marketplace` and proposed as Direct becomes Related Retailer;
+  - manufacturer, directory and other types become Needs Review;
+  - a retailer needs UK selling `yes`, otherwise Needs Review;
+  - Direct also needs a strong UK signal (uk domain, GBP price or UK postcode) and a
+    selected product found on the domain or a supported catalogue category;
+  - any class other than Needs Review needs at least one valid cited evidence URL;
+  - no completed LLM 1 classification (no-LLM mode, failed, missing) gives Needs Review.
+- Direct does not use relevance, confidence or the auto-approval thresholds.
+- **Stored** on the candidate record (JSON; no SQL migration): `proposed_competitor_class`
+  (LLM 1's answer), `competitor_class` (final), `competitor_class_reasons`,
+  `classified_at` and `classification_model`. Records stored before this change have
+  these empty. A later run without a completed LLM classification never erases
+  a completed or backfilled classification (see "Rediscovery keeps the class" below).
+- **API:** `GET /api/review/candidates` adds `competitor_class` and
+  `proposed_competitor_class`; the detail endpoint also adds the reasons, timestamp and
+  model. All additive and optional. The frontend does not use them yet.
+- The 13 configured competitors are never classified. PMT (`pmtonline.co.uk`,
+  `DISCOVERY_EXCLUDED_COMPETITOR_DOMAINS`) is excluded before classification and the
+  review store refuses to write it.
+
+### Classification backfill (dry run only, 16 Nov 2026)
+
+`python -m app.agents.discovery.backfill --db <copy.sqlite3> [--domain D ...] [--output report.json]`
+(from `backend/`) re-classifies stored review candidates from their saved evidence and
+writes a JSON report (default `data/backfill_reports/`, git-ignored). Code:
+`app/agents/discovery/backfill.py`; tests: `tests/test_classification_backfill.py`.
+
+- It uses the live discovery path: `CLASSIFY_SYSTEM`, `classify_user`,
+  `ClassificationBatch` and `apply_classification`, then `classify_competitor`. It does
+  not call `decide` or `apply_review_decision`. There is one domain per LLM call, so
+  failures stay per domain. The LLM is an injected `LLMClient` (`build_llm1` by default).
+- The database is opened with a SQLite `mode=ro` URI and never through `ReviewStore`,
+  whose constructor writes the schema version. A missing file is never created.
+- The report gives, per domain: previous classification fields, the new proposal, the
+  final class and its reasons, evidence and usable-evidence counts, review status
+  (context only), whether the class changed, and a status. Statuses are `CLASSIFIED`,
+  `SKIPPED_NO_EVIDENCE`, `SKIPPED_NO_USABLE_EVIDENCE` (no title or snippet text),
+  `SKIPPED_PRECONFIGURED`, `SKIPPED_EXCLUDED_DOMAIN`, `NOT_FOUND`,
+  `FAILED_INVALID_RECORD`, `FAILED_LLM_ERROR`, `FAILED_LLM_MISSING` and `FAILED_ERROR`.
+  Skipped and failed domains get no proposal or final class (null means "leave
+  unchanged"). A failure is never turned into Needs Review.
+- **`--write` (16 Nov 2026)** must be given explicitly. It opens the file read-write
+  without creating it (`mode=rw`) and takes the write lock (`BEGIN IMMEDIATE`). It then
+  makes a timestamped backup with the SQLite backup API in `<db folder>/backups/`
+  (`--backup-dir`; never overwritten) and verifies it: integrity check, schema
+  version, and table contents identical to the database. Only then does it update the
+  five fields in `CLASS_FIELDS` (`proposed_competitor_class`, `competitor_class`,
+  `competitor_class_reasons`, `classified_at`, `classification_model`), and only for
+  `CLASSIFIED` domains, all in one transaction.
+- A row that changed after it was read is a `CONFLICT` and is not overwritten. Any
+  update that would change another field rolls the whole transaction back (exit 4).
+  After the commit the database is re-checked against the backup (exit 5 if a
+  problem is found).
+- Stop the dev server first: `uvicorn --reload` reopens `ReviewStore` on every
+  reload, which rewrites two SQLite header bytes (change counter).
+- **Executed (16 Nov 2026, user-approved):** all 48 stored domains were classified
+  and written. 48 `openai/gpt-6-luna` calls, 75,034 + 9,564 tokens, $0.0142. Result:
+  31 Direct Competitor, 4 Related Retailer, 13 Needs Review. The backup is
+  `data/review/backups/competitor_review.pre-classification-backfill-20261115T223330Z.sqlite3`.
+  The report is `data/backfill_reports/backfill-20261115T223330Z-dfd7b9.json`.
+- **Rediscovery keeps the class (merge fix, 16 Nov 2026):** when a later discovery
+  run's LLM classification for a domain is skipped, failed or missing,
+  `merge_candidate` keeps the stored class. That includes the backfilled records,
+  whose `classification_status` still says `SKIPPED_LLM_DISABLED`. A stored class
+  counts when it is LLM-backed (`has_llm_competitor_class`: a final class, an LLM 1
+  proposal and `classified_at`). The five `CLASS_FIELDS` are always kept together. A
+  new successful (`COMPLETED`) LLM classification replaces them. Relevance and
+  confidence are never used to infer or keep a class. A class that came only from
+  the no-LLM rules (no proposal) is replaced by the newer run, as before. Tests:
+  `tests/test_review_merge.py`.
+
 ## Failure behaviour
 
 - **Planning fails:** only the baseline queries run, with a warning.
@@ -103,6 +190,16 @@ have been evaluated against labelled runs.
   the other queries continue.
 - **The LLM returns invalid JSON:** one repair attempt, then the failure
   handling above. Truncated output and provider errors raise `LLMOutputError`.
+- **Truncated output** (`finish_reason=length`, e.g. a reasoning model that
+  spends the whole `LLM1_MAX_COMPLETION_TOKENS` budget on reasoning): never
+  parsed and never repaired (a retry would hit the same budget). The error
+  names the token counts and the setting to raise. The tokens and cost the
+  failed call spent are still counted in `usage`.
+- **Model parameters:** `temperature` and `reasoning.effort` are sent only
+  when `LLM1_TEMPERATURE` / `LLM1_REASONING_EFFORT` are set, because
+  `provider.require_parameters` makes OpenRouter refuse a request with a
+  parameter the model does not support. `openai/gpt-6-luna` (chosen 14 Nov
+  2026) does not support temperature.
 
 ## Interfaces
 

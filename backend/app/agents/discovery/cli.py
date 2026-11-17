@@ -63,13 +63,14 @@ def summarise(result) -> str:
 async def main_async(product_ids: list[str], record: bool = True) -> int:
     settings = Settings()
     catalogue = load_catalogue(settings.catalogue_path)
-    store = ReviewStore(settings.review_db_path)
+    store = ReviewStore(settings.review_db_path, settings.discovery_excluded_competitor_domains)
     products, missing = catalogue.lookup(product_ids)
     if missing:
         print(f"Unknown product IDs: {missing}", file=sys.stderr)
         return 2
     try:
-        agent = await build_discovery_agent(settings, catalogue, review_decisions=store.list_decisions())
+        agent = await build_discovery_agent(settings, catalogue, review_decisions=store.list_decisions(),
+                                            uk_state=store.uk_gate_state())
     except ProviderError as e:
         print(f"Not configured: {e}", file=sys.stderr)
         return 3

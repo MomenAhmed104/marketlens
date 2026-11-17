@@ -13,6 +13,7 @@ from app.main import create_app
 from tests.discovery_fakes import FakeSearch
 from tests.search_fakes import make_settings
 from tests.test_discovery_agent import GLOBAL_HITS, PROFILE_HITS
+from tests.uk_fakes import all_eligible
 
 RUN = "/api/discovery/runs"
 REVIEW = "/api/review"
@@ -28,13 +29,13 @@ def searches(monkeypatch):
     """Replace the real provider; keep the default factory so decision wiring is exercised."""
     created = []
 
-    async def fake_build(settings, catalogue, review_decisions=None):
+    async def fake_build(settings, catalogue, review_decisions=None, *, uk_state):
         search = FakeSearch(GLOBAL_HITS, PROFILE_HITS)
         created.append(search)
         return CompetitorDiscoveryAgent(search, None, settings, catalogue.competitors,
                                         [p.category for p in catalogue.products.values()],
                                         llm_disabled_reason="OPENROUTER_API_KEY and LLM1_MODEL not set",
-                                        review_decisions=review_decisions)  # fmt: skip
+                                        review_decisions=review_decisions, uk_state=all_eligible())  # fmt: skip
 
     monkeypatch.setattr(discovery_api, "build_discovery_agent", fake_build)
     return created

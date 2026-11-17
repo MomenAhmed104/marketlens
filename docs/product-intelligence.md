@@ -27,6 +27,13 @@ No record in this phase claims a match.
 supports structured outputs on OpenRouter) in `backend/.env`. No code change
 is needed. `GET /api/intelligence/config` then reports `LLM_ENABLED`.
 
+**Configured model (14 Nov 2026):** `LLM2_MODEL=openai/gpt-6-luna`,
+`LLM2_REASONING_EFFORT=low`, `LLM2_MAX_COMPLETION_TOKENS=8000`, and
+`LLM2_TEMPERATURE` unset. It is a reasoning model that does not accept
+`temperature`; temperature and reasoning effort are sent only when set. The
+key is still to be added by the user, so the mode stays `LLM_DISABLED` until
+then.
+
 **Live no-LLM run** (API, Exa, scratch copy of the review database):
 
 - Setup: products SB-001 and SB-060 on 5 domains (Andertons, Gear4music,
@@ -159,6 +166,7 @@ most 20 LLM 2 calls per product. Narrow the run with `domains` to cut cost.
 | Retrieval call fails | That batch's pages become `SKIPPED_NOT_RETRIEVED` with the error |
 | Page failed, blocked or empty | `SKIPPED_NOT_RETRIEVED`. Not sent to LLM 2 |
 | Invalid JSON or schema from LLM 2 | One repair attempt (OpenRouter client), then `FAILED` for that page only. Nothing is filled in |
+| Truncated LLM 2 output (`finish_reason=length`, e.g. reasoning used the whole `LLM2_MAX_COMPLETION_TOKENS`) | `FAILED` for that page with the token counts. Never parsed and never repaired. The tokens and cost spent are still added to `usage`. Other pages continue |
 | LLM provider error | `FAILED` for that page, with a UI-safe message (keys never included) |
 | LLM account error (HTTP 401/403 auth, 402 no credits) | `FAILED` for that page. Remaining pages are **not sent** (`FAILED`, "Not attempted"), with one warning |
 | Blank `LLM2_MODEL` or key in `.env` | Treated as unset: `LLM_DISABLED` |

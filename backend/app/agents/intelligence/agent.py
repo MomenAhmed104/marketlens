@@ -53,10 +53,11 @@ from app.agents.intelligence.schemas import (
 from app.core.config import Settings
 from app.schemas.catalogue import StompboxProduct
 from app.schemas.search import RetrievalStatus, RetrievedPage, SearchQuery, SearchResponse, SearchScope
-from app.services.llm import LLMClient
+from app.services.llm import LLMClient, LLMOutputError, LLMUsage
 from app.services.search import SearchProvider
 from app.services.search.http import ProviderAuthError, ProviderError
 from app.services.text_match import mentions_model, url_text
+from app.services.uk_gate import UkGateState, blocked_reason, gate_decision
 
 MAX_ERROR_CHARS = 300
 # 401/403 auth, 402 insufficient credits: every further call would fail the same way.
@@ -80,21 +81,42 @@ class ProductIntelligenceAgent:
         targets: list[SearchTarget],
         skipped_targets: list[SkippedTarget] | None = None,
         llm_disabled_reason: str | None = None,
+        uk_state: UkGateState | None = None,
     ):
         """`targets` must already be filtered to approved, searchable domains
-        (see `eligible_search_targets`). `llm=None` runs in LLM_DISABLED mode."""
+        (see `eligible_search_targets`). `llm=None` runs in LLM_DISABLED mode.
+
+        Defence in depth for the UK gate: with `uk_state`, every target's gate decision
+        is recomputed here; without it, the target's attached `uk_gate` is used. Any
+        target the gate does not allow (or that was never checked) is dropped, with a
+        warning, and listed as skipped. It is never searched."""
         self.search = search
         self.llm = llm
         self.mode = IntelligenceMode.LLM_ENABLED if llm else IntelligenceMode.LLM_DISABLED
         self.llm_disabled_reason = None if llm else (llm_disabled_reason or "No LLM client provided")
         self.s = settings
-        self.targets = targets
-        self.skipped_targets = skipped_targets or []
-        self.usage = IntelligenceUsage(llm_model=llm.model if llm else None)
         self.warnings: list[str] = []
+        self.skipped_targets = list(skipped_targets or [])
+        self.targets = self._uk_checked(targets, uk_state)
+        self.usage = IntelligenceUsage(llm_model=llm.model if llm else None)
         self._search_sem = asyncio.Semaphore(settings.intelligence_search_concurrency)
         self._llm_sem = asyncio.Semaphore(settings.intelligence_llm_concurrency)
         self._llm_stopped: str | None = None
+
+    def _uk_checked(self, targets: list[SearchTarget], uk_state: UkGateState | None) -> list[SearchTarget]:
+        kept: list[SearchTarget] = []
+        already_skipped = {s.domain for s in self.skipped_targets}
+        for t in targets:
+            d = gate_decision(t.domain, uk_state) if uk_state is not None else t.uk_gate
+            if d is not None and d.search_allowed and d.domain == t.domain:
+                kept.append(t.model_copy(update={"uk_gate": d}))
+                continue
+            reason = blocked_reason(d) if d else "UK gate: not checked; not searched"
+            self.warnings.append(f"{t.domain} dropped before searching: {reason}")
+            if t.domain not in already_skipped:
+                self.skipped_targets.append(SkippedTarget(domain=t.domain, uk_gate=d, reason=reason,
+                                                          company_type=t.company_type and t.company_type.value))  # fmt: skip
+        return kept
 
     async def aclose(self) -> None:
         await self.search.aclose()
@@ -209,6 +231,12 @@ class ProductIntelligenceAgent:
 
     # ------------------------------------------------------------------ extraction
 
+    def _record_llm_usage(self, usage: LLMUsage) -> None:
+        self.usage.llm_prompt_tokens += usage.prompt_tokens
+        self.usage.llm_completion_tokens += usage.completion_tokens
+        if usage.cost_usd is not None:
+            self.usage.llm_cost_usd = (self.usage.llm_cost_usd or Decimal(0)) + usage.cost_usd
+
     async def _extract(self, cand: CompetitorProduct, product: StompboxProduct, page: RetrievedPage) -> None:
         text = (page.content or "")[: self.s.intelligence_page_chars]
         async with self._llm_sem:
@@ -227,6 +255,8 @@ class ProductIntelligenceAgent:
                 )  # fmt: skip
             except ProviderError as e:
                 self.usage.llm_failures += 1
+                if isinstance(e, LLMOutputError) and e.usage is not None:  # e.g. truncated: tokens were spent
+                    self._record_llm_usage(e.usage)
                 cand.extraction_status = ExtractionStatus.FAILED
                 cand.extraction_error = _err(e)
                 if isinstance(e, ProviderAuthError) or e.status_code in ACCOUNT_ERROR_STATUS:
@@ -234,10 +264,7 @@ class ProductIntelligenceAgent:
                     self.warnings.append(f"{self._llm_stopped}; remaining pages were not sent")
                 return
         self.usage.llm_model = result.model
-        self.usage.llm_prompt_tokens += result.usage.prompt_tokens
-        self.usage.llm_completion_tokens += result.usage.completion_tokens
-        if result.usage.cost_usd is not None:
-            self.usage.llm_cost_usd = (self.usage.llm_cost_usd or Decimal(0)) + result.usage.cost_usd
+        self._record_llm_usage(result.usage)
         ext = result.value
         checked = check_extraction(ext, text, page.title)
         v = checked.values

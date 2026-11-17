@@ -19,22 +19,34 @@ class LLMNotConfiguredError(ProviderNotConfiguredError):
     pass
 
 
-class LLMOutputError(ProviderError):
-    """The model's output could not be turned into the requested schema."""
-
-
 @dataclass
 class LLMUsage:
     prompt_tokens: int = 0
-    completion_tokens: int = 0
+    completion_tokens: int = 0  # includes reasoning tokens
     # OpenRouter reports cost in credits (USD-denominated). None if not reported.
     cost_usd: Decimal | None = None
+    reasoning_tokens: int = 0  # part of completion_tokens; 0 if not reported
 
     def add(self, other: "LLMUsage") -> None:
         self.prompt_tokens += other.prompt_tokens
         self.completion_tokens += other.completion_tokens
+        self.reasoning_tokens += other.reasoning_tokens
         if other.cost_usd is not None:
             self.cost_usd = (self.cost_usd or Decimal(0)) + other.cost_usd
+
+
+class LLMOutputError(ProviderError):
+    """The model's output could not be turned into the requested schema.
+
+    `usage` holds what the failed call(s) consumed, so callers can still
+    account for the cost (e.g. a reply truncated after spending its budget).
+    """
+
+    def __init__(self, provider: str, message: str, status_code: int | None = None, *,
+                 usage: LLMUsage | None = None, request_ids: list[str] | None = None):  # fmt: skip
+        super().__init__(provider, message, status_code)
+        self.usage = usage
+        self.request_ids = request_ids or []
 
 
 @dataclass

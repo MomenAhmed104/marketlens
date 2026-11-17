@@ -37,7 +37,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )  # fmt: skip
         app.state.catalogue = catalogue
         app.state.settings = settings
-        app.state.review_store = ReviewStore(settings.review_db_path)
+        app.state.review_store = ReviewStore(settings.review_db_path, settings.discovery_excluded_competitor_domains)
         # Phase 7: temporary, in-memory run state (cleared on restart).
         app.state.run_manager = RunManager(
             InMemoryRunStore(settings.pipeline_max_runs_retained, settings.pipeline_run_ttl_minutes),

@@ -9,8 +9,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# OpenRouter's unified `reasoning.effort` values. Unset = the model's default.
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh"]
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = BACKEND_DIR.parent
@@ -62,13 +65,17 @@ class Settings(BaseSettings):
     llm_max_retries: int = 2
     # LLM 1: competitor discovery. No default model: the choice is the user's.
     llm1_model: str | None = None
-    llm1_temperature: float = Field(default=0.0, ge=0, le=2)
-    llm1_max_completion_tokens: int = Field(default=6000, gt=0)
+    # Unset = not sent (some models, e.g. reasoning models, reject `temperature`
+    # and OpenRouter then finds no endpoint). An explicit value, including 0, is sent.
+    llm1_temperature: float | None = Field(default=None, ge=0, le=2)
+    llm1_max_completion_tokens: int = Field(default=6000, gt=0)  # includes reasoning tokens
+    llm1_reasoning_effort: ReasoningEffort | None = None  # unset = not sent
     # LLM 2: product intelligence (extraction). Configured independently of LLM 1;
     # no default model (a user decision).
     llm2_model: str | None = None
-    llm2_temperature: float = Field(default=0.0, ge=0, le=2)
-    llm2_max_completion_tokens: int = Field(default=3000, gt=0)
+    llm2_temperature: float | None = Field(default=None, ge=0, le=2)
+    llm2_max_completion_tokens: int = Field(default=3000, gt=0)  # includes reasoning tokens
+    llm2_reasoning_effort: ReasoningEffort | None = None
 
     # --- Competitor discovery (Phase 3) ---
     # Use LLM 1 when OPENROUTER_API_KEY and LLM1_MODEL are set. False forces
@@ -94,6 +101,9 @@ class Settings(BaseSettings):
     discovery_auto_approve_min_relevance: float = Field(default=0.75, ge=0, le=1)
     discovery_auto_approve_min_evidence_urls: int = Field(default=2, ge=1)
     discovery_reject_max_relevance: float = Field(default=0.3, ge=0, le=1)
+    # Competitors removed by the user (e.g. PMT): excluded before classification and
+    # never written to the review queue. Registrable domains.
+    discovery_excluded_competitor_domains: tuple[str, ...] = ("pmtonline.co.uk",)
     # Registrable names of marketplaces (amazon.co.uk, ebay.com, ...). Never
     # auto-approved; a reviewer must classify them as 'marketplace'.
     marketplace_domain_labels: tuple[str, ...] = ("amazon", "ebay", "reverb", "etsy", "gumtree")
@@ -135,6 +145,18 @@ class Settings(BaseSettings):
     pipeline_search_auto_approved: bool = True
     pipeline_max_events_per_run: int = Field(default=5000, ge=100)
     pipeline_sse_heartbeat_seconds: float = Field(default=15, gt=0)
+
+    @field_validator(
+        "llm1_model", "llm2_model", "llm1_temperature", "llm2_temperature",
+        "llm1_reasoning_effort", "llm2_reasoning_effort", mode="before",
+    )  # fmt: skip
+    @classmethod
+    def _blank_is_unset(cls, v: object) -> object:
+        """`LLM1_MODEL=` or `LLM1_MODEL=   ` in .env means unset, not an empty model id."""
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
+        return v
 
 
 @lru_cache

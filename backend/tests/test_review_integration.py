@@ -12,6 +12,7 @@ from app.schemas.review import DomainDecisionRecord, ReviewDecision
 from tests.discovery_fakes import FakeLLM, FakeSearch
 from tests.search_fakes import make_settings
 from tests.test_discovery_agent import CLASSIFICATIONS, GLOBAL_HITS, PLAN, PROFILE_HITS, c
+from tests.uk_fakes import all_eligible
 
 NOW = datetime(2026, 11, 12, tzinfo=UTC)
 
@@ -25,7 +26,7 @@ def run(catalogue, decisions, llm=None, ids=("SB-001", "SB-028"), **settings):
     agent = CompetitorDiscoveryAgent(
         FakeSearch(GLOBAL_HITS, PROFILE_HITS), llm, make_settings(**settings), catalogue.competitors,
         [p.category for p in catalogue.products.values()], llm_disabled_reason=None if llm else "test",
-        review_decisions=decisions,
+        review_decisions=decisions, uk_state=all_eligible(),  # explicit UK seeding
     )  # fmt: skip
     return asyncio.run(agent.run([catalogue.products[i] for i in ids]))
 

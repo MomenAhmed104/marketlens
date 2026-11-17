@@ -34,7 +34,12 @@ from typing import Any
 
 from app.agents.discovery import CompetitorDiscoveryAgent, build_discovery_agent
 from app.agents.discovery.schemas import SearchTarget
-from app.agents.intelligence import ProductIntelligenceAgent, build_intelligence_agent, eligible_search_targets
+from app.agents.intelligence import (
+    ProductIntelligenceAgent,
+    apply_uk_gate,
+    build_intelligence_agent,
+    eligible_search_targets,
+)
 from app.agents.intelligence.schemas import ExtractionStatus, ProductIntelligence, SkippedTarget
 from app.core.config import Settings
 from app.orchestration.schemas import (
@@ -59,13 +64,15 @@ from app.services.catalogue import Catalogue
 from app.services.domains import registrable_domain
 from app.services.matching import evaluate_product
 from app.services.review_store import ReviewStore
+from app.services.uk_gate import UkGateState
 from app.services.search import configured_providers
 
 log = logging.getLogger(__name__)
 MAX_ERROR_CHARS = 300
 
-DiscoveryFactory = Callable[[list[DomainDecisionRecord]], Awaitable[CompetitorDiscoveryAgent]]
-IntelligenceFactory = Callable[[list[SearchTarget], list[SkippedTarget]], Awaitable[ProductIntelligenceAgent]]
+DiscoveryFactory = Callable[[list[DomainDecisionRecord], UkGateState], Awaitable[CompetitorDiscoveryAgent]]
+IntelligenceFactory = Callable[[list[SearchTarget], list[SkippedTarget], UkGateState],
+                               Awaitable[ProductIntelligenceAgent]]
 
 
 def _now() -> datetime:
@@ -98,8 +105,9 @@ class PipelineDeps:
     def default(cls, settings: Settings, catalogue: Catalogue, review_store: ReviewStore) -> PipelineDeps:
         return cls(
             settings, catalogue, review_store,
-            discovery_factory=lambda decisions: build_discovery_agent(settings, catalogue, review_decisions=decisions),
-            intelligence_factory=lambda targets, skipped: build_intelligence_agent(settings, targets, skipped),
+            discovery_factory=lambda decisions, uk: build_discovery_agent(settings, catalogue, review_decisions=decisions,
+                                                                          uk_state=uk),
+            intelligence_factory=lambda targets, skipped, uk: build_intelligence_agent(settings, targets, skipped, uk),
         )  # fmt: skip
 
 
@@ -112,6 +120,14 @@ class PipelineRun:
         self.run, self.result, self.products, self.store, self.d = run, result, products, store, deps
         self.s = deps.settings
         self._stages = {st.name: st for st in run.stages}
+        self._uk_state: UkGateState | None = None
+
+    @property
+    def uk_state(self) -> UkGateState:
+        """One UK gate snapshot per run, so every stage applies the same decisions."""
+        if self._uk_state is None:
+            self._uk_state = self.d.review_store.uk_gate_state()
+        return self._uk_state
 
     # ------------------------------------------------------------------ helpers
 
@@ -164,7 +180,7 @@ class PipelineRun:
         self.start_stage(StageName.DISCOVERY, total=len(self.products), message="Discovering UK competitors")
         agent = None
         try:
-            agent = await self.d.discovery_factory(self.d.review_store.list_decisions())
+            agent = await self.d.discovery_factory(self.d.review_store.list_decisions(), self.uk_state)
             disc = await asyncio.wait_for(agent.run(self.products), self.s.pipeline_discovery_timeout_seconds)
         except TimeoutError:
             self._discovery_failed(f"Discovery timed out after {self.s.pipeline_discovery_timeout_seconds:.0f} s")
@@ -184,6 +200,9 @@ class PipelineRun:
             payload = dict(domain=c.domain, approval_status=c.approval_status.value,
                            classification_status=c.classification_status.value,
                            company_type=c.company_type and c.company_type.value,
+                           # Final class after the code safeguards, and LLM 1's raw proposal (null if none).
+                           competitor_class=c.competitor_class and c.competitor_class.value,
+                           proposed_competitor_class=c.proposed_competitor_class and c.proposed_competitor_class.value,
                            reviewed=c.review_decision is not None)  # fmt: skip
             self.emit("competitor_discovered", f"Discovered {c.domain} ({c.approval_status.value})",
                       stage=StageName.DISCOVERY, **payload)  # fmt: skip
@@ -229,28 +248,32 @@ class PipelineRun:
     def _targets(self) -> list[SearchTarget]:
         self.start_stage(StageName.TARGETS)
         targets, skipped = eligible_search_targets(self.d.catalogue.competitors, self.d.review_store.list_decisions(),
-                                                   self.s)  # fmt: skip
-        known = {t.domain for t in targets}
+                                                   self.uk_state, self.s)  # fmt: skip
+        known = {t.domain for t in targets} | {k.domain for k in skipped}
         auto = 0
         disc = self.result.discovery
         if disc and self.s.pipeline_search_auto_approved:
             excluded = set(self.s.intelligence_excluded_company_types)
-            for c in disc.candidates:
-                # Run-scoped LLM 1 auto-approval; a reviewer decision (applied by discovery) always wins.
-                if (c.approval_status is DomainApprovalStatus.AUTO_APPROVED and c.domain not in known
-                        and not (c.company_type and c.company_type.value in excluded)):  # fmt: skip
-                    targets.append(c.as_search_target())
-                    known.add(c.domain)
-                    auto += 1
+            # Run-scoped LLM 1 auto-approval; a reviewer decision (applied by discovery) always wins.
+            auto_targets = [c.as_search_target() for c in disc.candidates
+                            if c.approval_status is DomainApprovalStatus.AUTO_APPROVED and c.domain not in known
+                            and not (c.company_type and c.company_type.value in excluded)]  # fmt: skip
+            # Auto-approval never bypasses the UK gate: an unassessed domain is INSUFFICIENT_EVIDENCE.
+            allowed, blocked = apply_uk_gate(auto_targets, self.uk_state)
+            targets += allowed
+            skipped += blocked
+            auto = len(allowed)
         if self.run.request.domains:
             wanted = {registrable_domain(d) for d in self.run.request.domains}
             targets = [t for t in targets if t.domain in wanted]
         self.result.search_targets, self.result.skipped_targets = targets, skipped
         configured = sum(t.approval_status is DomainApprovalStatus.PRECONFIGURED for t in targets)
         approved = sum(t.approval_status is DomainApprovalStatus.APPROVED for t in targets)
+        uk_blocked = sum(k.uk_gate is not None for k in skipped)
         self.emit("known_domains_loaded", f"{len(targets)} domain(s) to search", stage=StageName.TARGETS,
-                  configured=configured, approved=approved, auto_approved=auto,
+                  configured=configured, approved=approved, auto_approved=auto, uk_blocked=uk_blocked,
                   domains=[t.domain for t in targets],
+                  uk_exceptions=[t.domain for t in targets if t.uk_gate and t.uk_gate.search_basis == "EXCEPTION"],
                   skipped=[{"domain": s.domain, "reason": s.reason} for s in skipped],
                   pending_not_searched=self.result.new_pending_domains)  # fmt: skip
         st = self.stage(StageName.TARGETS)
@@ -259,14 +282,14 @@ class PipelineRun:
             self.warn("No eligible search targets: nothing will be searched")
         self.end_stage(StageName.TARGETS, StageStatus.COMPLETED,
                        f"{configured} configured, {approved} reviewer-approved, {auto} auto-approved this run; "
-                       f"{len(skipped)} skipped")  # fmt: skip
+                       f"{len(skipped)} skipped ({uk_blocked} by the UK gate)")  # fmt: skip
         return targets
 
     async def _products(self, targets: list[SearchTarget]) -> None:
         n = len(self.products)
         self.start_stage(StageName.PRODUCT_SEARCH, total=n, message=f"Searching {len(targets)} domain(s)")
         try:
-            agent = await self.d.intelligence_factory(targets, self.result.skipped_targets)
+            agent = await self.d.intelligence_factory(targets, self.result.skipped_targets, self.uk_state)
         except Exception as e:
             msg = f"Product search could not start: {_err(e)}"
             self.stage(StageName.PRODUCT_SEARCH).errors.append(msg)
@@ -513,11 +536,15 @@ class RunManager:
                 wanted = {registrable_domain(d) for d in req.domains}
             except ValueError:
                 raise RunRequestError(422, "Invalid domain in 'domains'") from None
-            targets, _ = eligible_search_targets(self.d.catalogue.competitors, self.d.review_store.list_decisions(), s)
+            targets, skipped = eligible_search_targets(self.d.catalogue.competitors,
+                                                       self.d.review_store.list_decisions(),
+                                                       self.d.review_store.uk_gate_state(), s)  # fmt: skip
             not_allowed = sorted(wanted - {t.domain for t in targets})
             if not_allowed:
-                raise RunRequestError(422, {"message": "Only configured or reviewer-approved domains can be searched",
-                                            "not_allowed": not_allowed})  # fmt: skip
+                uk = {k.domain: k.reason for k in skipped if k.uk_gate is not None and k.domain in not_allowed}
+                raise RunRequestError(422, {"message": "Only configured or reviewer-approved domains that pass the "
+                                                       "UK gate can be searched",
+                                            "not_allowed": not_allowed, "uk_blocked": uk})  # fmt: skip
         active = sum(r.status not in TERMINAL for r in self.store.list_runs())
         if active >= s.pipeline_max_active_runs:
             raise RunRequestError(429, f"{active} run(s) already active (limit {s.pipeline_max_active_runs})")

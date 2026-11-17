@@ -18,6 +18,7 @@ from app.schemas.search import RetrievalStatus
 from app.services.llm import OpenRouterClient
 from app.services.search.base import RawHit
 from app.services.search.http import ProviderUnavailableError
+from tests.uk_fakes import all_eligible
 from tests.intelligence_fakes import FakeExtractLLM, FakeIntelSearch, FakePage, extraction
 from tests.discovery_fakes import llm_failure
 from tests.search_fakes import FAKE_KEY, Recorder, http_client, make_settings, ok
@@ -68,6 +69,10 @@ EXTRACTIONS = {
 }  # fmt: skip
 
 
+# Explicit test seeding: every configured competitor and test domain assessed UK_ELIGIBLE.
+ALL_UK = all_eligible(["beckettsmusic.co.uk", "ebay.co.uk", "shop.co.uk", "guitarworld.com", "idealo.co.uk"])
+
+
 def dec(domain, decision=ReviewDecision.APPROVED, ctype=T.RETAILER, bench=False):
     return DomainDecisionRecord(domain=domain, decision=decision, company_type=ctype, benchmark_eligible=bench,
                                 reviewer="Alex", decided_at=NOW)  # fmt: skip
@@ -84,7 +89,7 @@ DECISIONS = [
 
 def make(catalogue, llm="fake", decisions=DECISIONS, search=None, **settings):
     s = make_settings(**settings)
-    targets, skipped = eligible_search_targets(catalogue.competitors, decisions, s)
+    targets, skipped = eligible_search_targets(catalogue.competitors, decisions, ALL_UK, s)
     search = search or FakeIntelSearch(HITS, PAGES)
     llm = FakeExtractLLM(EXTRACTIONS) if llm == "fake" else llm
     return ProductIntelligenceAgent(search, llm, s, targets, skipped,
@@ -111,7 +116,7 @@ def cands(result):
 
 
 def test_only_preconfigured_and_reviewer_approved_domains_are_targets(catalogue):
-    targets, skipped = eligible_search_targets(catalogue.competitors, DECISIONS, make_settings())
+    targets, skipped = eligible_search_targets(catalogue.competitors, DECISIONS, ALL_UK, make_settings())
     by = {t.domain: t for t in targets}
     assert len(by) == 15  # 13 preconfigured + beckett + ebay
     assert by["beckettsmusic.co.uk"].approval_status is S.APPROVED and by["beckettsmusic.co.uk"].price_benchmark
@@ -124,12 +129,13 @@ def test_only_preconfigured_and_reviewer_approved_domains_are_targets(catalogue)
 
 
 def test_pending_domains_are_never_targets(catalogue):
-    targets, _ = eligible_search_targets(catalogue.competitors, [], make_settings())
+    targets, _ = eligible_search_targets(catalogue.competitors, [], ALL_UK, make_settings())
     assert {t.domain for t in targets} == {c.domain for c in catalogue.competitors}
 
 
 def test_approved_unknown_type_is_searched_but_never_a_benchmark(catalogue):
-    targets, _ = eligible_search_targets(catalogue.competitors, [dec("shop.co.uk", ctype=None)], make_settings())
+    targets, _ = eligible_search_targets(catalogue.competitors, [dec("shop.co.uk", ctype=None)], ALL_UK,
+                                         make_settings())  # fmt: skip
     t = next(t for t in targets if t.domain == "shop.co.uk")
     assert t.company_type is None and t.price_benchmark is False
 
@@ -317,3 +323,25 @@ def test_locale_storefront_urls_are_fetched_from_the_uk_store(catalogue):
     assert search.retrieved == [[uk]] and c.product_url == uk and c.page.requested_url == uk
     assert c.search.url == us  # the provider's original URL is kept as evidence
     assert c.page.status is RetrievalStatus.OK
+
+
+def test_reasoning_budget_exhausted_fails_page_cleanly_and_counts_cost(catalogue):
+    """Real OpenRouterClient over mocked HTTP: a reasoning model that spends its whole
+    output budget returns no answer. The page is FAILED (nothing invented), no repair
+    call is made, the spent tokens and cost are still counted, and LLM 2 is not stopped."""
+    truncated = {"id": "gen-t", "model": "openai/gpt-6-luna",
+                 "usage": {"prompt_tokens": 3000, "completion_tokens": 8000, "cost": 0.0043,
+                           "completion_tokens_details": {"reasoning_tokens": 8000}},
+                 "choices": [{"finish_reason": "length", "message": {"content": None}}]}  # fmt: skip
+    rec = Recorder(*([ok(truncated)] * 10))
+    llm = OpenRouterClient(http_client("openrouter", rec), FAKE_KEY, "openai/gpt-6-luna",
+                           max_completion_tokens=8000, reasoning_effort="low")  # fmt: skip
+    hits = {"andertons.co.uk": [RawHit(AND, "Boss RC-5 Loop Station")]}
+    result = run(make(catalogue, llm=llm, decisions=[], search=FakeIntelSearch(hits, PAGES)), catalogue)
+    a = cands(result)[AND]
+    assert a.extraction_status is X.FAILED and "budget used up before any answer" in a.extraction_error
+    assert a.price is None and a.product_title is None
+    assert len(rec.requests) == 1
+    assert result.usage.llm_failures == 1 and result.usage.llm_cost_usd == Decimal("0.0043")
+    assert result.usage.llm_completion_tokens == 8000
+    assert not any("stopped" in w for w in result.warnings)

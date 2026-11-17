@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from app.agents.discovery.schemas import (
     ClassificationStatus,
     CompanyClassification,
+    CompetitorClass,
     DiscoveredCompetitor,
     EvidenceItem,
     EvidenceKind,
@@ -103,6 +104,7 @@ def apply_classification(
     candidate.confidence = cls.confidence
     candidate.rationale = cls.rationale.strip()[:RATIONALE_MAX_CHARS]
     candidate.cited_evidence_urls = cited
+    candidate.proposed_competitor_class = cls.competitor_class
     candidate.classification_status = ClassificationStatus.COMPLETED
 
 
@@ -184,6 +186,75 @@ def decide(candidate: DiscoveredCompetitor, t: Thresholds, marketplace_labels: t
         f"UK signals {strong_uk}, products {c.products_matched}"
     )
     return finish(DomainApprovalStatus.AUTO_APPROVED)
+
+
+# --------------------------------------------------------------------------- competitor classification
+
+# Types that are never a Direct Competitor and, being neither retailer nor marketplace,
+# are Needs Review by definition.
+_NEEDS_REVIEW_TYPES = {CompanyType.MANUFACTURER, CompanyType.DIRECTORY, CompanyType.OTHER}
+
+
+def classify_competitor(candidate: DiscoveredCompetitor, marketplace_labels: tuple[str, ...] = ()) -> None:
+    """Set the final competitor_class: LLM 1's proposal, subject to code safeguards.
+
+    Deterministic and separate from `decide`: it never reads or changes approval,
+    review decisions or price-benchmark eligibility. One override comes first: a
+    known marketplace domain (`marketplace_labels`) is always Related Retailer,
+    whatever LLM 1 proposed or whether it classified at all. Otherwise code only
+    ever downgrades a proposal (to Related Retailer or Needs Review), never upgrades
+    it, and records a reason for every downgrade.
+    """
+    c = candidate
+    N, R, D = CompetitorClass.NEEDS_REVIEW, CompetitorClass.RELATED_RETAILER, CompetitorClass.DIRECT_COMPETITOR
+    reasons: list[str] = []
+
+    def finish(final: CompetitorClass) -> None:
+        c.competitor_class = final
+        c.competitor_class_reasons = reasons
+
+    proposed = c.proposed_competitor_class
+    if is_known_marketplace(c.domain, marketplace_labels):
+        was = proposed.value if proposed else f"no proposal ({c.classification_status.value})"
+        reasons.append(f"Known marketplace domain ({c.domain}): always RELATED_RETAILER, "
+                       f"overriding the LLM 1 proposal ({was})")  # fmt: skip
+        return finish(R)
+    if c.classification_status is not ClassificationStatus.COMPLETED or c.company_type is None or proposed is None:
+        reasons.append(f"No completed LLM 1 classification ({c.classification_status.value}): Needs Review")
+        return finish(N)
+    final = proposed
+    reasons.append(f"LLM 1 proposed {proposed.value} (type {c.company_type.value})")
+
+    def downgrade(to: CompetitorClass, why: str) -> None:
+        nonlocal final
+        if final is not to:
+            reasons.append(f"Downgraded {final.value} -> {to.value}: {why}")
+            final = to
+
+    marketplace = c.company_type is CompanyType.MARKETPLACE or is_known_marketplace(c.domain, marketplace_labels)
+    if marketplace:
+        if final is D:
+            downgrade(R, "a marketplace can never be a Direct Competitor")
+    elif c.company_type in _NEEDS_REVIEW_TYPES:
+        downgrade(N, f"type {c.company_type.value} cannot be a Direct Competitor or Related Retailer")
+    elif final is not N:  # retailer or specialist retailer
+        if c.uk_seller is not UkSeller.YES:
+            downgrade(N, f"UK selling is '{c.uk_seller.value}', not confirmed")
+        elif final is D:
+            missing = []
+            if not set(c.uk_signals) & STRONG_UK_SIGNALS:
+                missing.append("no strong UK signal (uk domain, GBP price or UK postcode)")
+            if not c.products_matched and not c.relevant_categories:
+                missing.append("no selected product found on the domain and no supported catalogue category")
+            if missing:
+                downgrade(N, "; ".join(missing))
+
+    # Any non-review class needs at least one cited URL that is in the evidence.
+    if final is not N and not c.cited_evidence_urls:
+        downgrade(N, "no valid cited evidence URL")
+    if final is proposed:
+        reasons.append(f"Accepted: {final.value}")
+    return finish(final)
 
 
 # --------------------------------------------------------------------------- reviewer decisions (Phase 4)
