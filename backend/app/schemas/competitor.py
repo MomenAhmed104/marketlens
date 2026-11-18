@@ -17,8 +17,13 @@ class CompanyType(StrEnum):
     OTHER = "other"
 
 
-# Only these can ever be direct retailer price benchmarks.
-BENCHMARK_ELIGIBLE_TYPES = frozenset({CompanyType.RETAILER, CompanyType.SPECIALIST_RETAILER})
+# Only these types can ever be price benchmarks (still only with an explicit benchmark flag and
+# UK gate clearance). Manufacturers are included by business decision (18 Nov 2026): a
+# manufacturer's own displayed price joins the main benchmark alongside retailers. A
+# reference-only site such as Gibson stays out through its own price_benchmark=false.
+# Marketplaces, directories and other types never qualify.
+BENCHMARK_ELIGIBLE_TYPES = frozenset({CompanyType.RETAILER, CompanyType.SPECIALIST_RETAILER,
+                                      CompanyType.MANUFACTURER})  # fmt: skip
 
 
 class CompetitorPriority(StrEnum):

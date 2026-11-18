@@ -167,6 +167,14 @@ historical figures are computed. Otherwise `reasons` lists every failed conditio
   writes to `data/matching_runs/` (git-ignored). Run files from before the
   Phase 5 status rename (`SKIPPED_LLM_DISABLED`) are rejected with a clear
   message.
+  - Like the API, it never trusts the file for who a competitor is: every
+    candidate's competitor (benchmark flag, approval, type, UK gate decision) is
+    rebuilt from the catalogue and the review database (`REVIEW_DB_PATH` or
+    `--review-db`), opened read-only (`app/services/matching/trusted.py`).
+  - If that database is missing, unreadable, at an unsupported version or holds
+    invalid records, matching still runs but fails closed: nothing passes the UK
+    gate, so no price is compared, and a warning says why. `--out-dir` changes
+    the output directory.
 - **Combined run:** running Phase 5 and Phase 6 in one step is Phase 7
   (orchestration).
 

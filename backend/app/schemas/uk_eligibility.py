@@ -26,6 +26,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.services.domains import canonical_domain
+
 
 class UkEligibilityStatus(StrEnum):
     UK_ELIGIBLE = "UK_ELIGIBLE"
@@ -62,6 +64,19 @@ def _clean(v):
     return (" ".join(v.split()) or None) if isinstance(v, str) else v
 
 
+class _DomainKeyed(BaseModel):
+    """`domain` is always the canonical registrable domain (`canonical_domain`): the same key
+    for records, exceptions and proposals, in the database and in the gate. Ambiguous or
+    invalid values are rejected, never stored under a key the gate would not look up."""
+
+    domain: str
+
+    @field_validator("domain")
+    @classmethod
+    def _canonical(cls, v: str) -> str:
+        return canonical_domain(v)
+
+
 class UkEvidence(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -91,12 +106,12 @@ class UkEvidence(BaseModel):
         return self
 
 
-class UkEligibilityRecord(BaseModel):
+class UkEligibilityRecord(_DomainKeyed):
     """One version of a reviewer's UK eligibility decision on a domain."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    domain: str  # registrable domain, configured or discovered
+    domain: str  # canonical registrable domain, configured or discovered
     status: UkEligibilityStatus
     confidence: UkConfidence
     reasoning: str = Field(min_length=1, max_length=4000)
@@ -127,14 +142,16 @@ class UkEligibilityRecord(BaseModel):
 EXPLICIT_USER_APPROVAL = "EXPLICIT_USER_APPROVAL"
 
 
-class UkGateException(BaseModel):
+class UkGateException(_DomainKeyed):
     """One version of an explicit, user-approved exception to the UK gate.
 
-    It applies only while the domain's evidence status is INSUFFICIENT_EVIDENCE
-    (never to NOT_UK_ELIGIBLE) and never changes that status. Search and
+    It can only be granted while the domain's evidence status is INSUFFICIENT_EVIDENCE
+    (the store refuses it otherwise) and never changes that status. Search and
     benchmarking are controlled separately; benchmarking also still needs the
     domain's own benchmark flag (so a reference-only manufacturer stays blocked).
-    Revoke by saving a version with both scopes false.
+    Revoke by saving a version with both scopes false. When the domain's evidence
+    status changes, the store revokes an active exception automatically
+    (`revoked_by_status_change`), so an old exception never comes back on its own.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -148,6 +165,8 @@ class UkGateException(BaseModel):
     decided_at: datetime
     notes: str | None = Field(default=None, max_length=4000)
     version: int = Field(default=1, ge=1)
+    # True only on the revocation the store writes when the domain's UK evidence status changed.
+    revoked_by_status_change: bool = False
 
     @field_validator("reason", "reviewer", "notes", mode="before")
     @classmethod
@@ -158,6 +177,8 @@ class UkGateException(BaseModel):
     def _scopes(self) -> UkGateException:
         if self.allow_benchmark and not self.allow_search:
             raise ValueError("a benchmark exception needs a search exception: unsearched domains have no prices")
+        if self.revoked_by_status_change and self.active:
+            raise ValueError("an automatic revocation must allow neither search nor benchmarking")
         return self
 
     @property
@@ -170,7 +191,7 @@ class UkProposalSource(StrEnum):
     LLM1 = "LLM1"
 
 
-class UkEligibilityProposal(BaseModel):
+class UkEligibilityProposal(_DomainKeyed):
     """A suggested status from an audit. Never used by the gate; a reviewer must decide."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")

@@ -108,13 +108,14 @@ def test_uk_records_and_exceptions_are_versioned_with_append_only_history(tmp_pa
         store.put_uk_eligibility(uk_record("new.co.uk"), expected_version=3)
     store.put_uk_eligibility(uk_record("new.co.uk"), expected_version=0)
 
-    store.put_uk_exception(uk_exception("x.co.uk", search=True, benchmark=True))
-    store.put_uk_exception(uk_exception("x.co.uk", search=False, benchmark=False, reason="revoked"))
-    hist = store.uk_exception_history("x.co.uk")
+    # Exceptions only for INSUFFICIENT_EVIDENCE domains (here: unassessed).
+    store.put_uk_exception(uk_exception("y.co.uk", search=True, benchmark=True))
+    store.put_uk_exception(uk_exception("y.co.uk", search=False, benchmark=False, reason="revoked"))
+    hist = store.uk_exception_history("y.co.uk")
     assert [(h.version, h.allow_search, h.reason) for h in hist] == [(1, True, "explicit test approval"),
                                                                       (2, False, "revoked")]  # fmt: skip
     state = store.uk_gate_state()
-    assert set(state.eligibility) == {"x.co.uk", "new.co.uk"} and state.exceptions["x.co.uk"].version == 2
+    assert set(state.eligibility) == {"x.co.uk", "new.co.uk"} and state.exceptions["y.co.uk"].version == 2
 
 
 def test_proposals_never_change_the_gate(tmp_path):
@@ -131,8 +132,9 @@ def test_uk_writes_leave_candidates_decisions_and_history_untouched(tmp_path):
     store.record_run(run([candidate("a.co.uk")]))
     store.create_decision(decision("a.co.uk", benchmark_eligible=True))
     before = rows(store.path)
-    store.put_uk_eligibility(uk_record("a.co.uk"))
+    store.put_uk_eligibility(uk_record("a.co.uk", S.INSUFFICIENT_EVIDENCE))
     store.put_uk_exception(uk_exception("a.co.uk"))
+    store.put_uk_eligibility(uk_record("a.co.uk"))  # status change: the exception is revoked too
     assert rows(store.path) == before
 
 

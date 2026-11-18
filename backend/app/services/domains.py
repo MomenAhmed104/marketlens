@@ -1,5 +1,6 @@
 """Deterministic domain normalisation."""
 
+import re
 from urllib.parse import urlsplit
 
 
@@ -40,3 +41,29 @@ def registrable_domain(url_or_host: str) -> str:
     if len(labels) >= 3 and ".".join(labels[-2:]) in _TWO_LABEL_SUFFIXES:
         return ".".join(labels[-3:])
     return ".".join(labels[-2:])
+
+
+_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def canonical_domain(value: str) -> str:
+    """The one stored key for a domain-level record (e.g. UK eligibility): its registrable domain.
+
+    Strict, unlike `registrable_domain`: only case, surrounding whitespace, a trailing
+    dot and a leading 'www.' are normalised ('WWW.Bax-Shop.co.uk' -> 'bax-shop.co.uk').
+    Anything ambiguous raises ValueError instead of being guessed at: a URL, path,
+    port or credentials, another subdomain ('shop.example.co.uk'), or invalid labels.
+    """
+    if not isinstance(value, str):
+        raise ValueError("domain must be a string")
+    host = value.strip().lower().rstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    labels = host.split(".")
+    if len(labels) < 2 or not all(_LABEL.match(label) for label in labels):
+        raise ValueError(f"Not a bare domain name: {value!r} (no scheme, path, port or invalid characters)")
+    if host in _TWO_LABEL_SUFFIXES:
+        raise ValueError(f"{value!r} is a public suffix, not a domain")
+    if registrable_domain(host) != host:
+        raise ValueError(f"{value!r} is a subdomain; give the registrable domain {registrable_domain(host)!r}")
+    return host

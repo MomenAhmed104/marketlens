@@ -122,8 +122,8 @@ def test_retailer_approval_with_benchmark(client):
     assert c["proposed_company_name"] is None  # the discovery proposal is not rewritten
 
 
-@pytest.mark.parametrize("ctype", ["marketplace", "manufacturer", "directory", "other"])
-def test_non_retailers_cannot_be_benchmarks(client, ctype):
+@pytest.mark.parametrize("ctype", ["marketplace", "directory", "other"])
+def test_non_benchmark_types_cannot_be_benchmarks(client, ctype):
     r = approve(client, "guitarworld.com", company_type=ctype, benchmark_eligible=True)
     assert r.status_code == 422 and "not a direct retailer" in r.json()["detail"]
 

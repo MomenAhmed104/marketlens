@@ -33,11 +33,12 @@ class ReviewDecision(StrEnum):
 
 
 def benchmark_type_error(company_type: CompanyType | None) -> str | None:
-    """Why this type can't be a direct retailer benchmark; None if it can."""
+    """Why this type can't be a price benchmark; None if it can (BENCHMARK_ELIGIBLE_TYPES)."""
     if company_type is None:
-        return "company type is unknown; set a reviewed retailer type to enable benchmarking"
+        return "company type is unknown; set a reviewed retailer or manufacturer type to enable benchmarking"
     if company_type not in BENCHMARK_ELIGIBLE_TYPES:
-        return f"company type '{company_type.value}' is not a direct retailer and can never be a price benchmark"
+        return (f"company type '{company_type.value}' is not a direct retailer or manufacturer and can never "
+                "be a price benchmark")  # fmt: skip
     return None
 
 

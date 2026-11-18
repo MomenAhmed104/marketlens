@@ -191,7 +191,7 @@ def test_gibson_is_never_a_benchmark_even_with_a_benchmark_exception(catalogue):
         "uk_gate": gate_decision("gibson.com", uk_state(exceptions=[uk_exception("gibson.com", True, True)]))})
     m = match_candidate(catalogue.products["SB-001"], priced("https://www.gibson.com/boss-rc-5", g),
                         __import__("tests.matching_fakes", fromlist=["NOW"]).NOW, 24)  # fmt: skip
-    assert not m.comparison.eligible and any("not a retailer price benchmark" in r for r in m.comparison.reasons)
+    assert not m.comparison.eligible and any("not marked as a price benchmark" in r for r in m.comparison.reasons)
 
 
 # --------------------------------------------------------------------------- discovery's reported targets

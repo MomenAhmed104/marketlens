@@ -25,8 +25,9 @@ export const COMPANY_TYPES: CompanyType[] = [
   'other',
 ]
 
-// Mirrors BENCHMARK_ELIGIBLE_TYPES on the backend (which enforces it).
-export const BENCHMARK_ELIGIBLE_TYPES: CompanyType[] = ['retailer', 'specialist_retailer']
+// Mirrors BENCHMARK_ELIGIBLE_TYPES on the backend (which enforces it). Manufacturers joined the
+// main price benchmark on 18 Nov 2026 (user decision); a benchmark still needs the explicit flag.
+export const BENCHMARK_ELIGIBLE_TYPES: CompanyType[] = ['retailer', 'specialist_retailer', 'manufacturer']
 
 export type ReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 export type ReviewDecision = 'APPROVED' | 'REJECTED'

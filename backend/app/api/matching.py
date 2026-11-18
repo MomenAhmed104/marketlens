@@ -16,52 +16,21 @@ whose page URL is on another domain, can never be a price benchmark.
 
 from __future__ import annotations
 
-from urllib.parse import urlsplit
-
 from fastapi import APIRouter, HTTPException, Request
 
-from app.agents.discovery.schemas import SearchTarget
-from app.agents.intelligence import eligible_search_targets
 from app.agents.intelligence.schemas import IntelligenceRunResult
-from app.services.domains import registrable_domain
 from app.services.matching import evaluate_run
 from app.services.matching.schemas import MatchingRunResult
-from app.services.uk_gate import gate_decision
+from app.services.matching.trusted import REPLACED_WARNING, trusted_competitors
 
 router = APIRouter(prefix="/api/matching", tags=["matching"])
-
-
-def _domain(value: str) -> str | None:
-    try:
-        return registrable_domain(value)
-    except ValueError:
-        return None
 
 
 def server_side_competitors(body: IntelligenceRunResult, request: Request) -> tuple[IntelligenceRunResult, int]:
     """The payload with every candidate's competitor replaced from server state. Returns (run, replaced)."""
     state = request.app.state
-    uk = state.review_store.uk_gate_state()
-    targets, _ = eligible_search_targets(state.catalogue.competitors, state.review_store.list_decisions(), uk,
-                                         state.settings)  # fmt: skip
-    by_domain = {t.domain: t for t in targets}
-    replaced = 0
-    products = []
-    for pr in body.products:
-        candidates = []
-        for c in pr.candidates:
-            claimed = _domain(c.competitor.domain)
-            page = _domain(urlsplit(c.product_url).hostname or "")
-            server = by_domain.get(claimed) if claimed and claimed == page else None
-            if server is None:  # not a searchable target now, or the page is elsewhere: never a benchmark
-                server = SearchTarget(domain=claimed or c.competitor.domain, company_name=None, company_type=None,
-                                      approval_status=c.competitor.approval_status, price_benchmark=False,
-                                      uk_gate=gate_decision(claimed, uk) if claimed else None)  # fmt: skip
-            if server != c.competitor:
-                replaced += 1
-            candidates.append(c.model_copy(update={"competitor": server}))
-        products.append(pr.model_copy(update={"candidates": candidates}))
-    return body.model_copy(update={"products": products}), replaced
+    return trusted_competitors(body, state.catalogue.competitors, state.review_store.list_decisions(),
+                               state.review_store.uk_gate_state(), state.settings)  # fmt: skip
 
 
 @router.post("/evaluate", response_model=MatchingRunResult)
@@ -73,6 +42,5 @@ def evaluate(body: IntelligenceRunResult, request: Request) -> MatchingRunResult
     run, replaced = server_side_competitors(body, request)
     result = evaluate_run(run, catalogue.products, request.app.state.settings.matching_price_max_age_hours)
     if replaced:
-        result.warnings.append(f"{replaced} candidate competitor record(s) differed from server state and were "
-                               "replaced: benchmark eligibility and UK eligibility are always recomputed server-side")
+        result.warnings.append(REPLACED_WARNING.format(n=replaced))
     return result

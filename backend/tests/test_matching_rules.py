@@ -253,7 +253,7 @@ def test_marketplace_exact_match_is_never_a_benchmark(run):
     m = run("SB-001", candidate("https://www.ebay.co.uk/itm/boss-rc-5-loop-station", "Boss RC-5 Loop Station",
                                 llm=True, model="RC-5", brand="Boss", price="150.00", competitor=ebay))
     assert m.match_status is M.EXACT_MATCH and m.price.status is PriceStatus.VALID
-    assert not m.comparison.eligible and any("not a retailer price benchmark" in r for r in m.comparison.reasons)
+    assert not m.comparison.eligible and any("not marked as a price benchmark" in r for r in m.comparison.reasons)
 
 
 def test_stale_price_is_not_compared(run):

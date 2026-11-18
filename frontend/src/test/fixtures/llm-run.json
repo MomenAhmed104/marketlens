@@ -2792,7 +2792,7 @@
         "reasons": [
          "Match status is REVIEW_REQUIRED, not EXACT_MATCH",
          "Price status is NOT_EXTRACTED",
-         "gibson.com is not a retailer price benchmark (manufacturer)"
+         "gibson.com is not marked as a price benchmark (manufacturer)"
         ],
         "stompbox_price": "189.99",
         "stompbox_currency": "GBP",

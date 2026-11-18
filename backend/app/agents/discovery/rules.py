@@ -126,7 +126,9 @@ def decide(candidate: DiscoveredCompetitor, t: Thresholds, marketplace_labels: t
     def finish(status: DomainApprovalStatus) -> None:
         c.approval_status = status
         c.decision_reasons = reasons
-        # Only retailers can be price benchmarks; manufacturers/marketplaces/other never.
+        # Only auto-approved retailers get a run-scoped benchmark flag here. Manufacturers are
+        # benchmark types too (BENCHMARK_ELIGIBLE_TYPES) but are never auto-approved, so they
+        # only become benchmarks through a reviewer decision or the catalogue workbook.
         c.price_benchmark = status is DomainApprovalStatus.AUTO_APPROVED and c.company_type in (
             CompanyType.RETAILER, CompanyType.SPECIALIST_RETAILER)  # fmt: skip
 
@@ -265,7 +267,8 @@ def apply_review_decision(candidate: DiscoveredCompetitor, decision: DomainDecis
 
     REJECTED: never searched, never a benchmark. APPROVED: searched; a price
     benchmark only if the reviewer marked it eligible *and* the reviewed type
-    is a retailer (the record itself already enforces this; checked again here).
+    is in BENCHMARK_ELIGIBLE_TYPES (retailer, specialist retailer or manufacturer;
+    the record itself already enforces this; checked again here).
     """
     c = candidate
     c.review_decision = decision

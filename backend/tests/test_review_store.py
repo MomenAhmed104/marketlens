@@ -124,8 +124,8 @@ def test_run_scoped_review_state_is_not_persisted_in_the_candidate(db):
     assert store.get_candidate("example.co.uk").candidate.review_decision is None
 
 
-@pytest.mark.parametrize("ctype", [None, T.MARKETPLACE, T.MANUFACTURER, T.DIRECTORY, T.OTHER])
-def test_only_retailers_can_be_benchmark_eligible(ctype):
+@pytest.mark.parametrize("ctype", [None, T.MARKETPLACE, T.DIRECTORY, T.OTHER])
+def test_only_benchmark_types_can_be_benchmark_eligible(ctype):
     with pytest.raises(ValidationError, match="benchmark_eligible not allowed"):
         decision(company_type=ctype, benchmark_eligible=True)
     assert decision(company_type=ctype).benchmark_eligible is False
@@ -136,6 +136,6 @@ def test_rejected_cannot_be_benchmark_eligible():
         decision(decision=ReviewDecision.REJECTED, benchmark_eligible=True)
 
 
-@pytest.mark.parametrize("ctype", [T.RETAILER, T.SPECIALIST_RETAILER])
-def test_retailers_can_be_benchmark_eligible(ctype):
+@pytest.mark.parametrize("ctype", [T.RETAILER, T.SPECIALIST_RETAILER, T.MANUFACTURER])
+def test_retailers_and_manufacturers_can_be_benchmark_eligible(ctype):
     assert decision(company_type=ctype, benchmark_eligible=True).benchmark_eligible

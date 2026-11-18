@@ -7,8 +7,12 @@
 7371a44). Phase 5 (product intelligence, LLM 2) is complete (commit 9089770). Phase 6
 (deterministic matching and price validation) is complete (commit 2118cec).
 Phase 7 (pipeline orchestration) is complete (commit e295c17). Phase 8 (live
-dashboard) is implemented and tested, uncommitted, and awaiting review; see
-`docs/dashboard.md`. Do not start Phase 9 until the user approves. Product
+dashboard) and the classification work are in the WIP checkpoint `970c7be` on
+branch `wip/uk-gate-2026-11-17`, awaiting review; see `docs/dashboard.md`. The
+UK eligibility gate and its review API are implemented (uncommitted); the real
+review database is still schema version 1, so every domain is blocked until the
+migration is applied and assessments are recorded. See "UK eligibility gate"
+below and `docs/uk-eligibility.md`. Do not start Phase 9 until the user approves. Product
 intelligence and discovery run in `LLM_DISABLED` mode until
 `OPENROUTER_API_KEY` is added: both models are configured as
 `openai/gpt-6-luna` (14 Nov 2026; see "OpenRouter configuration" below). See
@@ -677,14 +681,20 @@ or provide its path.
     applies to runs.
 -   Schemas: `app/schemas/review.py` (`DomainDecisionRecord`, `ReviewStatus`
     PENDING/APPROVED/REJECTED). `CompanyType.DIRECTORY` was added (also in
-    the LLM 1 prompt). `BENCHMARK_ELIGIBLE_TYPES` = retailer and specialist
-    retailer.
+    the LLM 1 prompt). `BENCHMARK_ELIGIBLE_TYPES` = retailer, specialist
+    retailer and (since 18 Nov 2026) manufacturer.
 -   API: `app/api/review.py` under `/api/review`. Rules and the full
     endpoint list are in `docs/competitor-review.md`.
 -   Approval and benchmark eligibility are separate. Approval needs an
     explicit company type, where null means "reviewed, unknown". Only
-    retailer types can be benchmarks, and anything else is refused with 422,
-    never coerced. Known marketplaces (`MARKETPLACE_DOMAIN_LABELS`) can only
+    retailer and manufacturer types can be benchmarks, and anything else is
+    refused with 422, never coerced. **Decision (18 Nov 2026, user):**
+    manufacturers join the main price benchmark alongside retailers. A
+    manufacturer still needs its own benchmark flag (Gibson stays
+    `price_benchmark=false`; Yamaha Music London keeps `manufacturer` and
+    `true`) and UK gate clearance. The frontend mirror of the type list
+    (`frontend/src/api.ts`) matches, and a non-benchmark competitor's reason
+    now reads "… is not marked as a price benchmark (type)". Known marketplaces (`MARKETPLACE_DOMAIN_LABELS`) can only
     be approved as `marketplace` and are never auto-approved by
     `rules.decide`. Preconfigured competitors cannot be reviewed (409), and
     decisions about them are ignored.
@@ -961,3 +971,51 @@ or provide its path.
     marketplaces. Known marketplace domains (`MARKETPLACE_DOMAIN_LABELS`) are
     always Related, never Direct, even if LLM 1 proposed "retailer". Unnamed
     domains are titled by the domain, and a missing company type is not shown.
+
+### UK eligibility gate (17-18 Nov 2026, uncommitted)
+
+-   Full design, rules, API and migration procedure: `docs/uk-eligibility.md`.
+-   One deterministic gate (`app/services/uk_gate.py`) decides search and
+    benchmark permission per canonical domain. Statuses: `UK_ELIGIBLE` (allowed),
+    `INSUFFICIENT_EVIDENCE` (the default for every unassessed domain, configured
+    or discovered; blocked unless an exception allows it) and `NOT_UK_ELIGIBLE`
+    (always blocked; exceptions never apply). The gate is applied in discovery's
+    reported targets, the intelligence agent, API and CLI, the pipeline
+    (including auto-approved domains) and the matcher's benchmark check.
+-   Exceptions: explicit user approval, with independent `allow_search` and
+    `allow_benchmark` scopes (benchmarking needs search). They can only be granted
+    while the domain is `INSUFFICIENT_EVIDENCE` (409 otherwise). An evidence-status
+    change revokes an active exception in the same transaction
+    (`revoked_by_status_change`), so it never revives on its own. Approved, not
+    seeded: guitarguitar.co.uk and bax-shop.co.uk (search and benchmark), and
+    gibson.com (search only).
+-   Evidence: `UK_ELIGIBLE` needs a strong item (physical store, UK registered
+    company with retail operations, UK operating address or UK retail operation).
+    Weak signals never suffice. `REVIEWER_SUPPLIED` evidence needs a note.
+    `SAVED_EVIDENCE` is verified against the domain's stored discovery evidence
+    (`app/services/uk_evidence.py`).
+-   Separate concepts: UK eligibility, domain approval, competitor classification
+    and benchmark eligibility are stored and decided independently.
+-   Audit fixes: D1 (one canonical domain key everywhere, `canonical_domain`), D2
+    and D3 (exception rules above) and D4 (the matching CLI and API rebuild
+    competitors from trusted state, `app/services/matching/trusted.py`, failing
+    closed if the review database cannot be read).
+-   Review API: `app/api/uk_eligibility.py` under `/api/review/uk-eligibility`
+    (list, detail with histories, PUT assessment, PUT exception).
+    `expected_version` is required (409 on conflict). Writes are limited to
+    configured competitors and discovered domains (404 `UNKNOWN_DOMAIN`
+    otherwise). The list covers every configured and discovered domain, assessed
+    or not. **Decisions (18 Nov 2026, user):** keep the saved-evidence check;
+    keep 409 for refused exceptions; local-only demo, so there is no
+    authentication and `reviewer` is self-declared.
+-   Storage: schema version 2 adds five UK tables. The explicit migration
+    (`python -m app.services.review_migration`) is a dry run by default;
+    `--apply` takes a verified backup first. It has **not** been run on the real
+    database (version 1; backup
+    `data/review/backups/competitor_review.pre-wip-preservation-20261117T200534Z.sqlite3`).
+-   Manufacturer benchmarking: see the Phase 4 decision (18 Nov 2026).
+    Manufacturers are benchmark types; Yamaha Music London (`manufacturer`,
+    `price_benchmark=true`) is compared once UK-cleared, and Gibson
+    (`price_benchmark=false`) never is.
+-   Not done: frontend for UK review, seeding the 13 assessments and three
+    exceptions, and the migration of the real database.

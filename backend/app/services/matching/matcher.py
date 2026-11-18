@@ -377,7 +377,7 @@ def compare(p: StompboxProduct, c: CompetitorProduct, status: MatchStatus, cond:
         why.append(f"Price evidence is {price.evidence_status.value}")
     if not c.competitor.price_benchmark:
         t = c.competitor.company_type.value if c.competitor.company_type else "unknown type"
-        why.append(f"{c.competitor.domain} is not a retailer price benchmark ({t})")
+        why.append(f"{c.competitor.domain} is not marked as a price benchmark ({t})")
     # UK gate: benchmarking needs UK_ELIGIBLE or an explicit benchmark exception, for this very domain.
     gate = c.competitor.uk_gate if c.competitor.uk_gate and c.competitor.uk_gate.domain == c.competitor.domain else None
     if uk_why := benchmark_block_reason(gate, c.competitor.domain):

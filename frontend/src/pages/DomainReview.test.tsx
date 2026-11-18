@@ -270,4 +270,50 @@ describe('Domain Review page', () => {
     expect(within(row('ebay.co.uk')).getByTestId('competitor-class')).toHaveTextContent('Related Retailer')
     expect(within(row('guitarworld.com')).getByTestId('competitor-class')).toHaveTextContent('Needs Review')
   })
+
+  const approveForm = async (type: string) => {
+    const user = userEvent.setup()
+    await open()
+    const card = (await screen.findByRole('link', { name: 'newshop.example' })).closest('li')!
+    await user.click(within(card).getByRole('button', { name: 'Approve…' }))
+    await user.selectOptions(within(card).getByLabelText(/Company type/), type)
+    return { user, card, box: within(card).getByRole('checkbox', { name: /Use as a price benchmark/ }) }
+  }
+
+  it.each(['manufacturer', 'retailer', 'specialist_retailer'])(
+    'lets a %s be approved as a price benchmark',
+    async (type) => {
+      const { user, card, box } = await approveForm(type)
+      expect(box).toBeEnabled()
+      await user.click(box)
+      expect(box).toBeChecked()
+      await user.click(within(card).getByRole('button', { name: 'Approve' }))
+      await waitFor(() => expect(calls.some((c) => c.path.endsWith('/approve'))).toBe(true))
+      expect(calls.find((c) => c.path.endsWith('/approve'))!.body).toMatchObject({
+        company_type: type,
+        benchmark_eligible: true,
+      })
+    },
+  )
+
+  it.each(['marketplace', 'directory', 'other', '__unknown__'])(
+    'never offers benchmarking for type %s',
+    async (type) => {
+      const { user, card, box } = await approveForm(type)
+      expect(box).toBeDisabled()
+      expect(box).not.toBeChecked()
+      expect(card).toHaveTextContent('(retailer or manufacturer types only)')
+      await user.click(within(card).getByRole('button', { name: 'Approve' }))
+      await waitFor(() => expect(calls.some((c) => c.path.endsWith('/approve'))).toBe(true))
+      expect(calls.find((c) => c.path.endsWith('/approve'))!.body).toMatchObject({ benchmark_eligible: false })
+    },
+  )
+
+  it('drops a ticked benchmark box when the type changes to an ineligible one', async () => {
+    const { user, card, box } = await approveForm('manufacturer')
+    await user.click(box)
+    await user.selectOptions(within(card).getByLabelText(/Company type/), 'marketplace')
+    expect(box).toBeDisabled()
+    expect(box).not.toBeChecked()
+  })
 })

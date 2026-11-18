@@ -8,7 +8,8 @@ here: they stay exactly as configured in the catalogue workbook.
 Rules (deterministic):
 - Approve needs an explicit `company_type`; `null` means "reviewed, still
   unknown" and then the domain can never be a benchmark.
-- `benchmark_eligible` is only allowed for retailer / specialist_retailer.
+- `benchmark_eligible` is only allowed for retailer / specialist_retailer / manufacturer
+  (BENCHMARK_ELIGIBLE_TYPES).
 - Known marketplaces (amazon, ebay, ...) can only be approved as 'marketplace'.
 - Approve/reject on an already-decided domain is a 409: use PUT to update.
 """

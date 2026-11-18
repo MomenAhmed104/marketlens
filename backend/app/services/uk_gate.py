@@ -45,14 +45,17 @@ class UkGateState:
 
     @classmethod
     def of(cls, records: Iterable[UkEligibilityRecord] = (), exceptions: Iterable[UkGateException] = ()) -> UkGateState:
-        return cls({r.domain: r for r in records}, {e.domain: e for e in exceptions})
+        # Records and exceptions validate `domain` to the canonical registrable domain, which is
+        # exactly the key `gate_decision` looks up; re-keying here is defence in depth.
+        return cls({_key(r.domain): r for r in records}, {_key(e.domain): e for e in exceptions})
 
 
 def _key(domain: str) -> str:
+    """Lookup key for any hostname or URL: its registrable domain (the canonical stored key)."""
     try:
         return registrable_domain(domain)
     except ValueError:
-        return domain.strip().lower()
+        return domain.strip().lower()  # cannot match a stored key: stored keys are always valid domains
 
 
 def gate_decision(domain: str, state: UkGateState) -> UkGateDecision:

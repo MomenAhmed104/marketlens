@@ -46,7 +46,7 @@ A domain's review status is `PENDING` (no decision yet), `APPROVED` or
 |---|---|
 | Approving needs an explicit `company_type`. Sending `null` records "reviewed, still unknown"; the type is never filled in | `ApproveRequest` (field required) |
 | Approval (may it be searched?) and benchmark eligibility (do its prices count as a direct retailer benchmark?) are separate | `DomainDecisionRecord` |
-| `benchmark_eligible=true` only for `retailer` or `specialist_retailer`. Unknown, marketplace, manufacturer, directory and other types are refused (422, never silently changed) | `DomainDecisionRecord` validator and API |
+| `benchmark_eligible=true` only for `retailer`, `specialist_retailer` or `manufacturer` (manufacturers since 18 Nov 2026, user decision). Unknown, marketplace, directory and other types are refused (422, never silently changed) | `DomainDecisionRecord` validator and API |
 | A rejected domain is never benchmark-eligible | Same |
 | Known marketplaces (`amazon`, `ebay`, `reverb`, `etsy`, `gumtree` in any TLD; `MARKETPLACE_DOMAIN_LABELS`) can only be approved as `marketplace`, and are never auto-approved, even if LLM 1 calls them a retailer | API and `rules.decide` |
 | The 13 preconfigured competitors cannot be approved or rejected here (409). Decisions stored for them are ignored by discovery. Gibson stays a manufacturer reference | API and agent |
@@ -99,7 +99,7 @@ The **Competitor domain review** section on the main page:
 - Shows an **Unclassified · discovered in no-LLM mode** badge where it applies, plus a known-marketplace badge.
 - Shows search and benchmark eligibility, confidence and relevance (or "not assessed"), UK signals and products found.
 - Shows the reviewer, time and notes for decided domains.
-- Has approve, reject and change-decision forms. The type must be chosen, or explicitly set to unknown. The benchmark checkbox is only enabled for retailer types.
+- Has approve, reject and change-decision forms. The type must be chosen, or explicitly set to unknown. The benchmark checkbox is only enabled for retailer and manufacturer types.
 - Has an expandable evidence list (links, snippets, query, retrieval time) and the decision history.
 
 ## Limitations

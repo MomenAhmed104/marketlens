@@ -358,8 +358,8 @@ function DecisionForm(props: {
             disabled={!canBenchmark}
             onChange={(e) => setBenchmark(e.target.checked)}
           />{' '}
-          Use as a direct retailer price benchmark
-          {!canBenchmark && <span className="muted"> (retailer types only)</span>}
+          Use as a price benchmark
+          {!canBenchmark && <span className="muted"> (retailer or manufacturer types only)</span>}
         </label>
       )}
       <label className="field">

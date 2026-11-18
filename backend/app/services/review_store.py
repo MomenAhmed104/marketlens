@@ -15,6 +15,10 @@ Schema version 2 adds UK eligibility (separate from approval, class and benchmar
 - `uk_gate_exceptions` / `uk_gate_exception_history`: explicit user-approved
   search/benchmark exceptions, versioned, append-only history.
 - `uk_eligibility_proposals`: audit suggestions; never used by the gate.
+UK rows are keyed by the canonical registrable domain (`canonical_domain`, enforced by
+the models), the same key the gate looks up. An exception can only be granted while the
+domain is INSUFFICIENT_EVIDENCE, and a status change revokes an active exception in the
+same transaction (audited as a new exception version).
 
 A new (empty) database is created at version 2. An existing version-1 database
 is opened without any write: UK reads return nothing (every domain is then
@@ -43,8 +47,13 @@ from app.agents.discovery.schemas import (
     DiscoveryRunResult,
 )
 from app.schemas.review import DomainDecisionRecord, ReviewDecision
-from app.schemas.uk_eligibility import UkEligibilityProposal, UkEligibilityRecord, UkGateException
-from app.services.domains import registrable_domain
+from app.schemas.uk_eligibility import (
+    UkEligibilityProposal,
+    UkEligibilityRecord,
+    UkEligibilityStatus,
+    UkGateException,
+)
+from app.services.domains import canonical_domain, registrable_domain
 from app.services.uk_gate import UkGateState
 
 SCHEMA_VERSION = 2
@@ -134,6 +143,15 @@ class DecisionConflictError(Exception):
 
 class DecisionNotFoundError(Exception):
     pass
+
+
+class ExceptionNotAllowedError(Exception):
+    """A UK gate exception can only be granted while the domain is INSUFFICIENT_EVIDENCE."""
+
+    def __init__(self, domain: str, status: UkEligibilityStatus):
+        super().__init__(f"{domain} is {status.value}: UK gate exceptions are only allowed for "
+                         "INSUFFICIENT_EVIDENCE domains")  # fmt: skip
+        self.domain, self.status = domain, status
 
 
 class MigrationRequiredError(RuntimeError):
@@ -359,9 +377,32 @@ class ReviewStore:
     def put_uk_eligibility(self, record: UkEligibilityRecord,
                            expected_version: int | None = None) -> UkEligibilityRecord:  # fmt: skip
         """Create (version 1) or update (version + 1) a domain's UK record; history is append-only.
-        `expected_version` is the version the caller saw (0 = none yet); a mismatch raises VersionConflictError."""
-        return self._put("uk_eligibility", "uk_eligibility_history", record, expected_version,
-                         {"status": record.status.value})  # fmt: skip
+        `expected_version` is the version the caller saw (0 = none yet); a mismatch raises VersionConflictError.
+
+        If the evidence status changes (an unassessed domain counts as INSUFFICIENT_EVIDENCE),
+        an active exception is revoked in the same transaction: a new exception version with
+        both scopes false and `revoked_by_status_change`, by this record's reviewer and time.
+        A later return to INSUFFICIENT_EVIDENCE therefore never revives it; a new exception
+        needs a new explicit approval."""
+        self._require_uk()
+        with self._tx() as conn:
+            row = conn.execute("SELECT status FROM uk_eligibility WHERE domain = ?", (record.domain,)).fetchone()
+            before = UkEligibilityStatus(row[0]) if row else UkEligibilityStatus.INSUFFICIENT_EVIDENCE
+            record = self._write(conn, "uk_eligibility", "uk_eligibility_history", record, expected_version,
+                                 {"status": record.status.value})  # fmt: skip
+            if record.status is not before:
+                current = self._current_exception(conn, record.domain)
+                if current is not None and current.active:
+                    revocation = UkGateException(
+                        domain=record.domain, allow_search=False, allow_benchmark=False,
+                        reason=f"Automatically revoked: UK eligibility changed from {before.value} to "
+                               f"{record.status.value} (eligibility record v{record.version}). A new exception "
+                               "needs a new explicit approval.",
+                        reviewer=record.reviewer, decided_at=record.decided_at, revoked_by_status_change=True,
+                    )  # fmt: skip
+                    self._write(conn, "uk_gate_exceptions", "uk_gate_exception_history", revocation, None,
+                                {"allow_search": 0, "allow_benchmark": 0})  # fmt: skip
+        return record
 
     def get_uk_exception(self, domain: str) -> UkGateException | None:
         return self._get_uk("uk_gate_exceptions", UkGateException, domain)
@@ -373,8 +414,27 @@ class ReviewStore:
         return self._history("uk_gate_exception_history", UkGateException, domain)
 
     def put_uk_exception(self, record: UkGateException, expected_version: int | None = None) -> UkGateException:
-        return self._put("uk_gate_exceptions", "uk_gate_exception_history", record, expected_version,
-                         {"allow_search": int(record.allow_search), "allow_benchmark": int(record.allow_benchmark)})
+        """Grant, change or revoke a domain's exception (versioned, append-only history).
+
+        Granting (search and/or benchmark allowed) is refused with ExceptionNotAllowedError
+        unless the domain's current evidence status, read in the same transaction, is
+        INSUFFICIENT_EVIDENCE (an unassessed domain counts as INSUFFICIENT_EVIDENCE).
+        A revocation (both scopes false) is always allowed."""
+        self._require_uk()
+        with self._tx() as conn:
+            if record.active:
+                row = conn.execute("SELECT status FROM uk_eligibility WHERE domain = ?", (record.domain,)).fetchone()
+                status = UkEligibilityStatus(row[0]) if row else UkEligibilityStatus.INSUFFICIENT_EVIDENCE
+                if status is not UkEligibilityStatus.INSUFFICIENT_EVIDENCE:
+                    raise ExceptionNotAllowedError(record.domain, status)
+            return self._write(conn, "uk_gate_exceptions", "uk_gate_exception_history", record, expected_version,
+                               {"allow_search": int(record.allow_search),
+                                "allow_benchmark": int(record.allow_benchmark)})  # fmt: skip
+
+    @staticmethod
+    def _current_exception(conn: sqlite3.Connection, domain: str) -> UkGateException | None:
+        row = conn.execute("SELECT record FROM uk_gate_exceptions WHERE domain = ?", (domain,)).fetchone()
+        return UkGateException.model_validate_json(row[0]) if row else None
 
     def list_uk_proposals(self) -> list[UkEligibilityProposal]:
         if not self.uk_supported:
@@ -397,6 +457,8 @@ class ReviewStore:
         return len(proposals)
 
     def _get_uk(self, table: str, model: type[BaseModel], domain: str):
+        """`domain` is canonicalised like stored keys ('WWW.X.co.uk' finds 'x.co.uk'); invalid raises ValueError."""
+        domain = canonical_domain(domain)
         if not self.uk_supported:
             return None
         with self._read() as conn:
@@ -404,24 +466,27 @@ class ReviewStore:
         return model.model_validate_json(row[0]) if row else None
 
     def _history(self, table: str, model: type[BaseModel], domain: str) -> list:
+        domain = canonical_domain(domain)
         if not self.uk_supported:
             return []
         with self._read() as conn:
             rows = conn.execute(f"SELECT record FROM {table} WHERE domain = ? ORDER BY version", (domain,)).fetchall()
         return [model.model_validate_json(r[0]) for r in rows]
 
-    def _put(self, table: str, history: str, record, expected_version: int | None, columns: dict):
-        self._require_uk()
-        with self._tx() as conn:
-            row = conn.execute(f"SELECT version FROM {table} WHERE domain = ?", (record.domain,)).fetchone()
-            current = row[0] if row else None
-            if expected_version is not None and expected_version != (current or 0):
-                raise VersionConflictError(record.domain, current)
-            record = record.model_copy(update={"version": (current or 0) + 1})
-            cols = {**columns, "version": record.version, "record": record.model_dump_json()}
-            updates = ", ".join(f"{c} = excluded.{c}" for c in cols)
-            conn.execute(f"INSERT INTO {table} (domain, {', '.join(cols)}) VALUES (?{', ?' * len(cols)}) "
-                         f"ON CONFLICT(domain) DO UPDATE SET {updates}", (record.domain, *cols.values()))  # fmt: skip
-            conn.execute(f"INSERT INTO {history} (domain, version, record) VALUES (?, ?, ?)",
-                         (record.domain, record.version, record.model_dump_json()))  # fmt: skip
+    @staticmethod
+    def _write(conn: sqlite3.Connection, table: str, history: str, record, expected_version: int | None,
+               columns: dict):  # fmt: skip
+        """Upsert the current version and append it to history, inside the caller's transaction.
+        `record.domain` is already canonical (model validation), so it is the one stored key."""
+        row = conn.execute(f"SELECT version FROM {table} WHERE domain = ?", (record.domain,)).fetchone()
+        current = row[0] if row else None
+        if expected_version is not None and expected_version != (current or 0):
+            raise VersionConflictError(record.domain, current)
+        record = record.model_copy(update={"version": (current or 0) + 1})
+        cols = {**columns, "version": record.version, "record": record.model_dump_json()}
+        updates = ", ".join(f"{c} = excluded.{c}" for c in cols)
+        conn.execute(f"INSERT INTO {table} (domain, {', '.join(cols)}) VALUES (?{', ?' * len(cols)}) "
+                     f"ON CONFLICT(domain) DO UPDATE SET {updates}", (record.domain, *cols.values()))  # fmt: skip
+        conn.execute(f"INSERT INTO {history} (domain, version, record) VALUES (?, ?, ?)",
+                     (record.domain, record.version, record.model_dump_json()))  # fmt: skip
         return record
