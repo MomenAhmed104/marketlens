@@ -52,6 +52,7 @@ export default function Overview() {
   const finished = run.status !== 'RUNNING' && run.status !== 'PENDING'
   const counts: Record<MatchStatus, number> = {
     EXACT_MATCH: run.summary.exact_matches,
+    EQUIVALENT_VARIANT: run.summary.equivalent_variants ?? 0,
     REVIEW_REQUIRED: run.summary.review_required,
     SIMILAR_MATCH: run.summary.similar_matches,
     NO_MATCH: run.summary.no_match,

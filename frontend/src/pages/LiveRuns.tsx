@@ -5,6 +5,7 @@ import CataloguePicker from '../dashboard/CataloguePicker'
 import EventTimeline from '../dashboard/EventTimeline'
 import PipelineStepper, { PipelineTrack } from '../dashboard/PipelineStepper'
 import RunControls from '../dashboard/RunControls'
+import { DiscoveredDomainsTable } from '../dashboard/RunDomains'
 import { CancelControl, LiveCounters, ProductProgress, RunSummary } from '../dashboard/RunPanels'
 import { plural, when } from '../format'
 import { isTerminal } from '../runStream'
@@ -89,6 +90,7 @@ export default function LiveRuns() {
   }
 
   const terminal = isTerminal(run)
+  const discovered = view.result?.discovery?.candidates ?? []
   return (
     <div className="stack">
       <section className="run-header" aria-labelledby="run-heading">
@@ -167,6 +169,20 @@ export default function LiveRuns() {
           </section>
         </div>
       </div>
+
+      {discovered.length > 0 && (
+        <section className="panel-flat" aria-labelledby="discovered-heading">
+          <div className="section-head">
+            <h2 id="discovered-heading">Discovered domains and UK evidence</h2>
+            <span className="hint-inline">{plural(discovered.length, 'domain')}</span>
+          </div>
+          <p className="hint">
+            UK evidence is verified by the backend and is separate from approval and benchmark permission. Pending
+            domains are not searched in this run; review them on Domain Review.
+          </p>
+          <DiscoveredDomainsTable candidates={discovered} />
+        </section>
+      )}
 
       <section className="panel-flat" aria-labelledby="timeline-heading">
         <div className="section-head">

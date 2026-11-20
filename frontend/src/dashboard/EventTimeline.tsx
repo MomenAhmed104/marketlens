@@ -1,10 +1,12 @@
 // Display-only view of the run's events, grouped by stage, newest first. Filtering
 // never touches ingestion, de-duplication or recovery, which stay in runStream.ts.
 import { useState } from 'react'
-import type { ExecutionEvent } from '../api'
+import type { CompetitorDiscoveredPayload, ExecutionEvent } from '../api'
 import CompetitorClassPill from '../components/CompetitorClassPill'
 import { fromBackendClass } from '../competitorClass'
 import { plural, timeOnly } from '../format'
+import { TONE_ICON } from '../status'
+import { ukEventStatus } from '../ukRelevance'
 
 type Group = 'lifecycle' | 'discovery' | 'search' | 'matching' | 'other'
 
@@ -155,9 +157,24 @@ export default function EventTimeline({ events }: { events: ExecutionEvent[] }) 
   )
 }
 
-/** A discovered domain's backend classification, shown as soon as its event arrives. */
+/** A discovered domain's backend classification and UK evidence status, shown as soon as its event arrives. */
 function DiscoveredClass({ event }: { event: ExecutionEvent }) {
   if (event.type !== 'competitor_discovered') return null
-  const cls = fromBackendClass(event.payload.competitor_class)
-  return cls ? <CompetitorClassPill cls={cls} /> : null // older events carry no class: show nothing
+  const p = event.payload as Partial<CompetitorDiscoveredPayload>
+  const cls = fromBackendClass(p.competitor_class)
+  const uk = ukEventStatus(p) // older events carry no class or UK fields: show nothing for them
+  if (!cls && !uk) return null
+  return (
+    <div className="fi-tags">
+      {cls && <CompetitorClassPill cls={cls} />}
+      {uk && (
+        <span className="fi-uk" data-testid="uk-evidence">
+          <span className={`pill tone-${uk.tone}`}>
+            <span className="pill-icon" aria-hidden="true">{TONE_ICON[uk.tone]}</span> {uk.label}
+          </span>{' '}
+          <span className="small">{uk.line}</span>
+        </span>
+      )}
+    </div>
+  )
 }

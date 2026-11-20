@@ -1,14 +1,19 @@
 """Deterministic text-matching helpers shared by discovery and the benchmark.
 
-These detect mentions; they do not decide product identity (Phase 6).
+These detect mentions; they do not decide product identity (Phase 6). `quote_in_evidence`
+checks that an LLM-cited quote really is in the evidence it cites.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from decimal import Decimal
 from functools import lru_cache
+from typing import Protocol
 from urllib.parse import unquote, urlsplit
+
+from app.services.urls import canonical_url
 
 _SEP = r"[\s\-_./'’‘´`]*"
 # £1,234.56 / £ 99 / GBP 99.00. Excludes values followed by "k" or "m" (e.g. "£2k").
@@ -53,3 +58,42 @@ def gbp_prices(text: str | None) -> list[Decimal]:
 
 def is_uk_host(hostname: str) -> bool:
     return hostname.endswith(".uk")
+
+
+# --------------------------------------------------------------------------- verbatim quotes
+
+# Shorter quotes ("UK", "£99") prove nothing on their own and match too easily.
+MIN_QUOTE_CHARS = 10
+
+
+class QuotableEvidence(Protocol):
+    url: str
+    canonical_url: str
+    title: str | None
+    snippet: str | None
+
+
+def normalise_quote(text: str | None) -> str:
+    """Whitespace collapsed and case folded: the only differences a 'verbatim' quote may have."""
+    return " ".join((text or "").split()).casefold()
+
+
+def quote_in_evidence(quote: str | None, url: str | None, evidence: Iterable[QuotableEvidence]) -> bool:
+    """True only if `quote` appears verbatim (whitespace and case aside) in the stored title
+    or the stored snippet of an evidence item with this URL (as given, or canonical).
+
+    The quote must sit inside one field: text stitched across title and snippet, or
+    across two items, does not count. A quote from another URL does not count either,
+    even if the same words appear there. Quotes under MIN_QUOTE_CHARS never count."""
+    q = normalise_quote(quote)
+    if len(q) < MIN_QUOTE_CHARS or not url:
+        return False
+    wanted = {url.strip()}
+    try:
+        wanted.add(canonical_url(url))
+    except ValueError:
+        pass
+    for e in evidence:
+        if {e.url, e.canonical_url} & wanted and (q in normalise_quote(e.title) or q in normalise_quote(e.snippet)):
+            return True
+    return False

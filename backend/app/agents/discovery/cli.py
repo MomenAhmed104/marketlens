@@ -69,8 +69,7 @@ async def main_async(product_ids: list[str], record: bool = True) -> int:
         print(f"Unknown product IDs: {missing}", file=sys.stderr)
         return 2
     try:
-        agent = await build_discovery_agent(settings, catalogue, review_decisions=store.list_decisions(),
-                                            uk_state=store.uk_gate_state())
+        agent = await build_discovery_agent(settings, catalogue, review_decisions=store.list_decisions())
     except ProviderError as e:
         print(f"Not configured: {e}", file=sys.stderr)
         return 3

@@ -181,6 +181,114 @@ writes a JSON report (default `data/backfill_reports/`, git-ignored). Code:
   the no-LLM rules (no proposal) is replaced by the newer run, as before. Tests:
   `tests/test_review_merge.py`.
 
+## UK relevance evidence (Option B, 19 Nov 2026)
+
+LLM 1 discovers UK-focused competitors (UK-based shops and shops abroad that serve UK
+customers) and cites the evidence for how each relates to the UK market. **There is no UK
+category and no UK confidence:** Python verifies the quotes and decides whether the
+evidence is sufficient. The result is stored on the candidate as `uk_assessment`
+(`UkEvidenceAssessment`) and shown in review with its uncertainty. There is no separate UK
+eligibility gate (retired the same day; see "Retired" below).
+
+Three concepts stay separate and are stored separately: **UK relevance evidence**,
+**domain approval** (Phase 4 decisions) and **benchmark permission** (the workbook flag or
+the reviewer's `benchmark_eligible`). None is derived from another.
+
+- **LLM output** (`CompanyClassification.uk_evidence`): up to 5 items (`url`, exact
+  `quote`, `kind`), with no verdict. Kinds: `UK_PHYSICAL_STORE`, `UK_ADDRESS`,
+  `UK_COMPANY_REGISTRATION`, `UK_DELIVERY`, `NON_UK_OPERATOR`, `NO_UK_SERVICE`,
+  `WEAK_SIGNAL`. Required by the strict output schema. A malformed UK answer never fails
+  the classification or the batch: malformed quotes are dropped and each one is recorded
+  (`_isolate_uk_fields`). Legacy `uk_relevance` / `uk_confidence` keys are ignored.
+  Core-field errors fail exactly as before (repair retry, then `LLMOutputError`).
+- **Quote verification** (`rules.verify_uk_quotes`, unchanged from Phase A): a quote
+  counts only if it is verbatim (whitespace and case aside) in the stored title or
+  snippet of the cited URL (`text_match.quote_in_evidence`), and its text fits its kind:
+  a UK postcode for an address, "registered" plus a number for a company, positive UK
+  delivery wording (no negation; `sell` counts) for delivery, an explicit "does not ship
+  to the UK" for no UK service, and a visitable shop (not an online store) for a physical
+  store. "No delivery charge to the UK" is not a no-UK-service statement. GBP prices, a
+  `.uk` domain or "UK" alone never count.
+- **Evidence result** (`rules.assess_uk_evidence`, `summarise_uk_evidence`):
+  - `sufficient`: a supporting UK shop, UK address or UK company registration quote; or a
+    supporting based-abroad (`NON_UK_OPERATOR`) quote together with a supporting UK
+    delivery quote.
+  - `contradicted`: a supporting quote says the UK is not delivered to or served.
+  - `mixed_location`: UK-presence evidence and a based-abroad quote at the same time.
+  - `independent_sources`: distinct evidence pages (canonical URLs) among the quotes that
+    support UK relevance. Several quotes from one page count as one source.
+  - `evidence` holds the supporting quotes; `unverified_claims` holds the others (context
+    only, never presented as verified). Both are clipped to 500 characters after
+    verification. `reasons` says what was discarded or cleaned.
+  - Every completed LLM 1 classification is assessed. No quotes means insufficient
+    evidence, never "assumed UK". With LLM 1 disabled nothing is assessed
+    (`uk_assessment = null`) and every new domain stays pending.
+- **Approval (`decide`):**
+  - a verified contradiction → `APPROVAL_REQUIRED` with the reason, never rejected
+    automatically (decision D4);
+  - auto-approval needs sufficient verified UK evidence, no contradiction, no mixed
+    location, and supporting quotes from **at least two different evidence pages**
+    (`AUTO_APPROVE_MIN_UK_SOURCES = 2`, user decision 19 Nov 2026), plus every other
+    existing criterion (type, confidence, relevance, verified name, product match,
+    evidence URLs, not a marketplace). `.uk` domain, GBP price and UK postcode signals are
+    **not** an auto-approval requirement, so an overseas retailer that demonstrably serves
+    the UK is not disadvantaged. They are still recorded (`uk_signals`) and still used by
+    the Direct Competitor class safeguard (unchanged).
+  - **Auto-approval never grants benchmark permission:** `decide` always sets
+    `price_benchmark=false`. Only a reviewer's explicit `benchmark_eligible` (type rules
+    apply) or the workbook flag for configured competitors makes a domain a benchmark.
+- **`uk_seller` follows the verified evidence** (`rules.reconcile_uk_seller`, with a
+  validation note when it changes): yes only when the evidence is sufficient, not
+  contradicted, and LLM 1 also said yes; no only for a verified contradiction with no
+  sufficient UK evidence; otherwise unknown. An unverified "no" never rejects.
+- **Review view** (`rules.uk_review`, deterministic, never stored): sufficiency,
+  contradiction, mixed location and sources are recomputed from the stored supporting
+  quotes, so a stored flag is never trusted on its own. The view (`UkReview`) has
+  `assessed`, `sufficient`, `contradicted`, `mixed_location`, `independent_sources`, a
+  plain-English `summary`, `reasons`, `missing_evidence`, `verified_evidence` and
+  `unverified_claims`. If a reviewer approves despite a contradiction or without
+  sufficient evidence, the summary says so; the evidence and the contradiction stay
+  visible and unchanged.
+- **Reviewer decisions:** approve or reject explicitly, with optional free-text `notes`
+  (kept in the append-only decision history). There is no UK override; requests that
+  still send `uk_relevance_override` get 422. A reviewer-approved domain is searched even
+  with contradictory evidence (user decision 19 Nov 2026).
+- **API and events:** `GET /api/review/candidates` and `/candidates/{domain}` return
+  `uk_review` for every candidate (`assessed: false` for older records). Discovery API
+  candidates carry `uk_assessment` and the same `uk_review`. `competitor_discovered`
+  events carry `uk_assessed`, `uk_evidence_sufficient`, `uk_evidence_contradicted` and
+  `uk_independent_sources`.
+- **Evidence for LLM 1 and search** (unchanged from Phase A): at most 8 items per domain,
+  with up to 3 slots kept for profile pages; profile snippets up to 400 characters,
+  discovery snippets up to 280. The planning prompt asks for UK shops and shops abroad
+  that deliver to the UK. One profile search per candidate looks for about/contact pages,
+  addresses, showrooms, company registration and delivery terms.
+- **Persistence:** `uk_assessment` is part of the stored candidate JSON (no migration).
+  `merge_candidate` keeps it when a later run has no completed classification, and a
+  stored assessment is never replaced by none. Records stored with the retired category
+  fields load (the extra keys are ignored and never trusted) and are never rewritten.
+- **Dashboard:** each Domain Review card shows what the verified evidence says ("Verified
+  UK evidence", "Contradictory UK evidence", "Insufficient UK evidence", "UK evidence:
+  check location" or "not assessed") and from how many independent pages; "Show evidence"
+  adds the verified UK evidence (kind, quote, link), what is missing, and the unverified
+  claims in their own section. Approving a contradicted or insufficient domain shows a
+  warning but is not blocked.
+- Tests: `tests/test_uk_relevance.py`, `tests/test_uk_classification_schema.py`,
+  `tests/test_uk_discovery_integration.py`, `tests/test_uk_review.py`,
+  `tests/test_search_targets.py`, `frontend/src/pages/DomainReviewUk.test.tsx`.
+
+### Retired (Option B, 19 Nov 2026)
+
+- The formal four-category assessment (`UK_BASED`, `SERVES_UK_FROM_ABROAD`,
+  `NOT_SERVING_UK`, `UNKNOWN`), its confidence, the review recommendation and the
+  reviewer's UK relevance override.
+- The separate UK eligibility gate (`uk_gate.py`), its records, exceptions, review API
+  (`/api/review/uk-eligibility`) and migration CLI (`review_migration`). Product searches
+  use the configured competitors, reviewer-approved domains and (LLM enabled) this run's
+  auto-approved domains; benchmark comparisons use only the benchmark flag. Version-2
+  review databases still open; their UK tables are left untouched and never read. See
+  `docs/competitor-review.md` ("Storage versions").
+
 ## Failure behaviour
 
 - **Planning fails:** only the baseline queries run, with a warning.

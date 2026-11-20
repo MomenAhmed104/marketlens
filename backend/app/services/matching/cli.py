@@ -7,10 +7,13 @@ Prints a summary and writes the full result to data/matching_runs/<run_id>.json
 
 The run file is never trusted for who a competitor is. Exactly as in
 POST /api/matching/evaluate, every candidate's competitor (benchmark flag,
-approval, type and UK gate decision) is rebuilt from the catalogue and the review
-database (REVIEW_DB_PATH, or --review-db), which is only read, never written. If
-that database is missing or cannot be read safely, matching still runs but fails
-closed: no domain passes the UK gate, so no price is a benchmark.
+approval and type) is rebuilt from the catalogue and the review database
+(REVIEW_DB_PATH, or --review-db), which is only read, never written. If that
+database is missing or cannot be read safely, matching still runs but fails
+closed: no domain is a price benchmark.
+
+Availability is taken as recorded at extraction time; a run file from before a
+rule change keeps its recorded status.
 """
 
 from __future__ import annotations
@@ -31,7 +34,6 @@ from app.services.matching.trusted import (
     load_review_state,
     trusted_competitors,
 )
-from app.services.uk_gate import UkGateState
 
 
 def summarise(result) -> str:
@@ -41,11 +43,14 @@ def summarise(result) -> str:
     for pr in result.products:
         counts = ", ".join(f"{k.value}={v}" for k, v in pr.counts.items())
         lines += ["", f"{pr.product_id} {pr.product_name} (Stompbox £{pr.stompbox_price})",
-                  f"  {counts}; comparable prices: {pr.comparable_prices}"]  # fmt: skip
+                  f"  {counts}; comparable prices: {pr.comparable_prices}; "
+                  f"alternative prices: {pr.alternative_prices}"]  # fmt: skip
         for m in pr.candidates:
             price = f"{m.price.currency} {m.price.price}" if m.price.price is not None else "-"
             diff = f" diff £{m.comparison.difference_gbp}" if m.comparison.eligible else ""
-            lines.append(f"  [{m.match_status.value:15} {m.match_confidence.value:6}] {m.competitor.domain:24} "
+            if m.price_kind.value == "ALTERNATIVE":
+                diff = f" alternative ({m.alternative_price.condition_label})"
+            lines.append(f"  [{m.match_status.value:18} {m.match_confidence.value:6}] {m.competitor.domain:24} "
                          f"cond={m.condition.condition.value:11} price={m.price.status.value}:{price}{diff}")  # fmt: skip
             lines.append(f"      {m.product_url}")
             for r in m.match_reasons + [f"review: {r}" for r in m.review_reasons]:
@@ -57,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("run_file", type=Path)
     parser.add_argument("--review-db", type=Path, default=None,
-                        help="review database to read trusted decisions and UK gate data from "
+                        help="review database to read trusted reviewer decisions from "
                              "(default: REVIEW_DB_PATH); opened read-only")  # fmt: skip
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "matching_runs")
     args = parser.parse_args(argv)
@@ -71,12 +76,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     trust_warning = None
     try:
-        decisions, uk = load_review_state(args.review_db or settings.review_db_path)
+        decisions, trusted = load_review_state(args.review_db or settings.review_db_path), True
     except TrustedStateUnavailable as e:
-        decisions, uk = [], UkGateState.empty()  # fail closed: every domain blocked, nothing is a benchmark
+        decisions, trusted = [], False  # fail closed: nothing is a benchmark
         trust_warning = f"Trusted review data unavailable ({e}); no candidate can be a price benchmark"
         print(f"warning: {trust_warning}", file=sys.stderr)
-    run, replaced = trusted_competitors(run, catalogue.competitors, decisions, uk, settings)
+    run, replaced = trusted_competitors(run, catalogue.competitors, decisions, settings, benchmarks_allowed=trusted)
     try:
         result = evaluate_run(run, catalogue.products, settings.matching_price_max_age_hours)
     except KeyError as e:

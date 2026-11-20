@@ -38,7 +38,7 @@ describe('overview selectors (backend-generated fixture)', () => {
     const rows = coverageRows(result)
     expect(rows).toHaveLength(14)
     const and = rows.find((r) => r.target.domain === 'andertons.co.uk')!
-    expect(and.counts).toEqual({ EXACT_MATCH: 1, REVIEW_REQUIRED: 0, SIMILAR_MATCH: 1, NO_MATCH: 0 })
+    expect(and.counts).toEqual({ EXACT_MATCH: 1, EQUIVALENT_VARIANT: 0, REVIEW_REQUIRED: 0, SIMILAR_MATCH: 1, NO_MATCH: 0 })
     expect(rows.find((r) => r.target.domain === 'gibson.com')!.counts.REVIEW_REQUIRED).toBe(1)
     expect(rows.filter((r) => r.candidates === 0).length).toBe(14 - 4)
     expect(coverageRows(null)).toEqual([])
@@ -88,7 +88,12 @@ describe('overview selectors (backend-generated fixture)', () => {
     expect(gate).toMatchObject({ exactMatches: 3, llmDisabledReason: null, comparable: 1, validPrices: 1 })
     expect(gate.pricesExtracted).toBe(result.products[0].matching!.candidates.filter((c) => c.price.status !== 'NOT_EXTRACTED').length)
     // reasons come verbatim from comparison.reasons of exact matches that were not compared
-    expect(gate.blockers.map((b) => b.reason)).toEqual(['Price status is NOT_EXTRACTED', 'Price status is UNSUPPORTED'])
+    // (auto-approval never grants benchmark permission, D-15: Beckett's is searched but not a benchmark)
+    expect(gate.blockers.map((b) => b.reason)).toEqual([
+      'Price status is NOT_EXTRACTED',
+      "beckettsmusic.co.uk is not marked as a price benchmark (specialist_retailer)",
+      'Price status is UNSUPPORTED',
+    ])
     result.intelligence_mode = 'LLM_DISABLED'
     result.llm2_disabled_reason = 'LLM2_MODEL not set'
     expect(priceGate(run, result).llmDisabledReason).toBe('LLM2_MODEL not set')

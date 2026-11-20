@@ -59,6 +59,9 @@ class DomainDecisionRecord(BaseModel):
     evidence_urls: list[str] = Field(default_factory=list)
     source_run_id: str | None = None  # discovery run that last supplied the evidence
     version: int = Field(default=1, ge=1)  # increments on every update
+    # There is no UK relevance override: the reviewer's judgement is the decision itself plus
+    # `notes`. Older records may carry `uk_relevance_override` / `uk_override_note` keys; they
+    # are ignored on load (the stored rows and history are never rewritten).
 
     @model_validator(mode="after")
     def _benchmark_rules(self) -> DomainDecisionRecord:

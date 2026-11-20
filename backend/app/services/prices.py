@@ -99,8 +99,99 @@ def is_conditional_context(text: str, mention: PriceMention) -> bool:
     return bool(_CONDITIONAL_BEFORE.search(before) or _CONDITIONAL_AFTER.search(after))
 
 
+# --------------------------------------------------------------------------- delivery charges (Stage 6.1)
+
+# Delivery / shipping wording. A delivery charge is never a product price and never sale evidence.
+_DELIVERY_WORDS = re.compile(
+    r"\b(?:delivery|deliveries|shipping|postage|p\s?&\s?p|courier|carriage|click\s*(?:&|and)\s*collect"
+    r"|collect(?:ion)?\s+in[\s-]store|dispatch)\b",
+    re.IGNORECASE,
+)
+# Delivery wording just before an amount ("Next day delivery: £4.99", "SATURDAY delivery, 1hr window £7.49").
+_DELIVERY_BEFORE = re.compile(
+    r"\b(?:delivery|shipping|postage|p\s?&\s?p|courier|carriage|click\s*(?:&|and)\s*collect)\b(?P<gap>[^£€$\d]{0,30})$",
+    re.IGNORECASE,
+)
+# ... or just after it ("£4.99 delivery"), but not "£219 delivery included".
+_DELIVERY_AFTER = re.compile(r"^\s*\(?\s*(?:delivery|shipping|postage|p\s?&\s?p)\b(?!\s+(?:included|inc\b|free))",
+                             re.IGNORECASE)  # fmt: skip
+_FREE_BEFORE = re.compile(r"\bfree\s+(?:\w+\s+){0,2}$", re.IGNORECASE)  # "Free (UK) delivery £219"
+_PRICE_LABEL = re.compile(r"\b(?:price|now|our|only|just|for)\b", re.IGNORECASE)  # "delivery available. Our price £219"
+_SALE_WORDS = re.compile(
+    r"\b(?:was|rrp|r\.r\.p|save|saving|you\s+save|originally|original\s+price|list\s+price|compare\s+at|msrp"
+    r"|reduced|crossed[\s-]out|sale|clearance)\b|\d+\s?%\s?off\b",
+    re.IGNORECASE,
+)
+_FINANCE_WORDS = re.compile(r"\b(?:finance|per\s+month|monthly|deposit|instal?ments?|apr|klarna|paypal\s+credit)\b",
+                            re.IGNORECASE)  # fmt: skip
+
+
+def is_delivery_context(text: str, mention: PriceMention) -> bool:
+    """True when the amount is a delivery/shipping charge ("Next day delivery £4.99", "£3.49 postage")."""
+    before = text[max(0, mention.start - 40): mention.start]
+    after = text[mention.end: mention.end + 25]
+    m = _DELIVERY_BEFORE.search(before)
+    if m and not _FREE_BEFORE.search(before[: m.start()]) and not _PRICE_LABEL.search(m.group("gap")):
+        return True
+    return bool(_DELIVERY_AFTER.match(after))
+
+
+# A discount that applies to delivery, not to the product ("Save £5 on delivery", "£5 off shipping",
+# "Delivery: save £5", "50% off delivery"). Stage 6.1.1.
+_DELIVERY_DISCOUNT_AFTER = re.compile(
+    r"^\W{0,3}(?:off\s+)?(?:on|off|for|towards)?\s*(?:your\s+|the\s+|all\s+|uk\s+|standard\s+|next[\s-]day\s+)*"
+    r"(?:delivery|shipping|postage|p\s?&\s?p|carriage|click\s*(?:&|and)\s*collect)\b",
+    re.IGNORECASE,
+)
+# "Delivery: save £5" / "Shipping discount £5". Only a saving word straight after the delivery word, so
+# "Free delivery. Was £219 Now £189" stays a product sale.
+_DELIVERY_DISCOUNT_BEFORE = re.compile(
+    r"\b(?:delivery|shipping|postage|p\s?&\s?p|carriage)\b\W{0,3}(?:save|saving|discount|reduced\s+by)\W{0,3}$",
+    re.IGNORECASE,
+)
+_PERCENT_OFF = re.compile(r"\d+\s?%\s?off\b", re.IGNORECASE)
+_SALE_FLAG_WORDS = re.compile(r"\bsale\b|\bclearance\b", re.IGNORECASE)
+
+
+def is_delivery_discount(text: str, mention: PriceMention) -> bool:
+    """True when a saving amount applies to delivery rather than the product."""
+    after = text[mention.end: mention.end + 40]
+    before = text[max(0, mention.start - 30): mention.start]
+    return bool(_DELIVERY_DISCOUNT_AFTER.match(after) or _DELIVERY_DISCOUNT_BEFORE.search(before))
+
+
+def is_product_sale(text: str, mention: PriceMention) -> bool:
+    """A was/RRP/original/saving amount that is about the product, not about delivery."""
+    return (is_sale_context(text, mention) and not is_delivery_discount(text, mention)
+            and not is_delivery_context(text, mention))  # fmt: skip
+
+
+def ignored_price_category(text: str | None) -> str:
+    """Why LLM 2 ignored a price text: "sale", "delivery", "finance" or "other".
+
+    A product sale amount (was / RRP / original / saving / crossed-out) is "sale" even when the
+    text also mentions delivery ("Was £10 and free delivery"). A delivery charge or a delivery
+    discount ("Save £5 on delivery") is "delivery" and never sale evidence.
+    """
+    t = text or ""
+    mentions = find_prices(t)
+    if any(is_product_sale(t, m) for m in mentions):
+        return "sale"
+    if _DELIVERY_WORDS.search(t):
+        return "delivery"
+    if _SALE_WORDS.search(t):
+        return "sale"
+    if any(is_conditional_context(t, m) for m in mentions) or _FINANCE_WORDS.search(t):
+        return "finance"
+    return "other"
+
+
 def mentions_sale(text: str | None) -> bool:
-    """Whether any amount in the text is presented as a sale/original/saving figure."""
+    """Whether the text presents a product sale: a was/RRP/original/saving amount about the product,
+    "N% off" not about delivery, or "sale"/"clearance". Delivery discounts never count."""
     text = text or ""
-    return any(is_sale_context(text, m) for m in find_prices(text)) or bool(
-        re.search(r"\d+\s?%\s?off\b|\bsale\b|\bclearance\b", text, re.IGNORECASE))  # fmt: skip
+    if any(is_product_sale(text, m) for m in find_prices(text)):
+        return True
+    if any(not _DELIVERY_DISCOUNT_AFTER.match(text[m.end(): m.end() + 40]) for m in _PERCENT_OFF.finditer(text)):
+        return True
+    return bool(_SALE_FLAG_WORDS.search(text))

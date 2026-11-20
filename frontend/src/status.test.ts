@@ -10,6 +10,10 @@ const BACKEND_VALUES = [
   'VERIFIED', 'STALE', 'NOT_FOUND',
   'PRECONFIGURED', 'AUTO_APPROVED', 'APPROVAL_REQUIRED', 'APPROVED', 'REJECTED',
   'OK', 'EMPTY', 'BLOCKED', 'SKIPPED_NO_LLM', 'SKIPPED_NOT_RETRIEVED', 'SKIPPED_LLM_DISABLED',
+  // Product Intelligence Agent: final status, LLM 2 proposals, agreement, availability, price kinds
+  'EQUIVALENT_VARIANT', 'SIMILAR_ALTERNATIVE', 'NOT_A_MATCH', 'SKIPPED_NOT_ELIGIBLE',
+  'AGREES', 'PYTHON_STRICTER', 'LLM_STRICTER', 'NOT_AVAILABLE',
+  'IN_STOCK', 'OUT_OF_STOCK', 'PREORDER', 'BACKORDER', 'DISCONTINUED', 'DIRECT', 'ALTERNATIVE',
 ]
 
 describe('statusMeta', () => {
@@ -23,8 +27,10 @@ describe('statusMeta', () => {
   })
 
   it('keeps match statuses visually distinct', () => {
-    const tones = ['EXACT_MATCH', 'SIMILAR_MATCH', 'REVIEW_REQUIRED', 'NO_MATCH'].map((v) => statusMeta(v).tone)
-    expect(new Set(tones).size).toBe(4)
+    const tones = ['EXACT_MATCH', 'EQUIVALENT_VARIANT', 'SIMILAR_MATCH', 'REVIEW_REQUIRED', 'NO_MATCH'].map(
+      (v) => statusMeta(v).tone,
+    )
+    expect(new Set(tones).size).toBe(5)
     expect(statusMeta('SIMILAR_MATCH').tone).not.toBe(statusMeta('RUNNING').tone)
   })
 

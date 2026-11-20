@@ -8,6 +8,8 @@ from app.agents.discovery.schemas import (
     DiscoveredCompetitor,
     EvidenceItem,
     EvidenceKind,
+    UkRelevanceEvidenceKind as K,
+    UkRelevanceQuote,
     UkSeller,
 )
 from app.schemas.common import DomainApprovalStatus as S
@@ -25,10 +27,19 @@ def ev(url, title=None, snippet=None, kind=EvidenceKind.DISCOVERY_RESULT, produc
                         retrieved_at=NOW, mentions_product_model=model)  # fmt: skip
 
 
+def uk_pages(domain="beckettsmusic.co.uk"):
+    """Profile pages holding the verified UK evidence that `uk_quotes` cites (two different pages)."""
+    return [ev(f"https://{domain}/about", "About Beckett's Music", "Visit our shop at 12 High Street, Bedford MK40 1AB",
+               kind=EvidenceKind.DOMAIN_PROFILE, model=False),
+            ev(f"https://{domain}/delivery", "Delivery", "We deliver to all UK mainland addresses",
+               kind=EvidenceKind.DOMAIN_PROFILE, model=False)]  # fmt: skip
+
+
 def candidate(domain="beckettsmusic.co.uk", evidence=None, products=("SB-001",)):
     evidence = evidence or [
         ev(f"https://{domain}/boss-rc-5", "Boss RC-5 Loop Station - Beckett's Music", "£189.99 In stock"),
         ev(f"https://{domain}/boss-rc-1", "Boss RC-1 - Beckett's Music", "£99", model=False),
+        *uk_pages(domain),
     ]
     c = DiscoveredCompetitor(domain=domain, hostnames=[domain], homepage_url=f"https://{domain}/",
                              evidence=evidence, products_matched=list(products), uk_signals=[],
@@ -37,11 +48,18 @@ def candidate(domain="beckettsmusic.co.uk", evidence=None, products=("SB-001",))
     return c
 
 
+def uk_quotes(domain="beckettsmusic.co.uk"):
+    """Verified UK evidence from two different pages: a UK address and UK delivery."""
+    return [UkRelevanceQuote(url=f"https://{domain}/about", quote="12 High Street, Bedford MK40 1AB", kind=K.UK_ADDRESS),
+            UkRelevanceQuote(url=f"https://{domain}/delivery", quote="We deliver to all UK mainland addresses",
+                             kind=K.UK_DELIVERY)]  # fmt: skip
+
+
 def cls(domain="beckettsmusic.co.uk", **kw):
     base = dict(domain=domain, company_name="Beckett's Music", company_type=T.SPECIALIST_RETAILER,
                 relevant_categories=["Effects"], uk_seller=UkSeller.YES, sells_new_musical_instruments=True,
                 relevance=0.9, confidence=0.9, rationale="Sells Boss pedals in GBP.",
-                evidence_urls=[f"https://{domain}/boss-rc-5"])  # fmt: skip
+                evidence_urls=[f"https://{domain}/boss-rc-5"], uk_evidence=uk_quotes(domain))  # fmt: skip
     base.update(kw)
     return CompanyClassification(**base)
 
@@ -99,7 +117,8 @@ def test_apply_discards_unsupported_claims():
 
 def test_auto_approve_when_every_criterion_is_met():
     c = decided()
-    assert c.approval_status is S.AUTO_APPROVED and c.price_benchmark is True
+    # Auto-approval never grants benchmark permission; only a reviewer's explicit flag does.
+    assert c.approval_status is S.AUTO_APPROVED and c.price_benchmark is False
     assert c.decision_reasons[0].startswith("Auto-approved")
 
 
@@ -123,14 +142,14 @@ def test_needs_approval_when_a_criterion_fails(overrides, expected_reason):
     assert any(expected_reason in r for r in c.decision_reasons), c.decision_reasons
 
 
-def test_no_strong_uk_signal_or_single_url_or_no_product_needs_approval():
+def test_insufficient_uk_evidence_or_single_url_or_no_product_needs_approval():
     weak = candidate("shop.example.com", evidence=[
         ev("https://shop.example.com/rc5", "Boss RC-5 - Example Shop", "ships to UK"),
         ev("https://shop.example.com/rc1", "Boss RC-1 - Example Shop", "UK delivery", model=False)])  # fmt: skip
     c = decided({"domain": "shop.example.com", "company_name": "Example Shop",
-                 "evidence_urls": ["https://shop.example.com/rc5"]}, weak)  # fmt: skip
+                 "evidence_urls": ["https://shop.example.com/rc5"], "uk_evidence": []}, weak)  # fmt: skip
     assert c.approval_status is S.APPROVAL_REQUIRED
-    assert any("no strong UK signal" in r for r in c.decision_reasons)
+    assert any("insufficient verified UK evidence" in r for r in c.decision_reasons)
 
     single = candidate(evidence=[ev("https://beckettsmusic.co.uk/boss-rc-5", "Boss RC-5 - Beckett's Music", "£189")])
     assert decided(cand=single).approval_status is S.APPROVAL_REQUIRED
@@ -144,12 +163,14 @@ def test_rejections():
     c = decided({"company_type": T.OTHER, "relevance": 0.1, "confidence": 0.9})
     assert c.approval_status is S.REJECTED and "Not a shop" in c.decision_reasons[0]
 
+    # LLM 1 says it does not sell to the UK, but no verified quote says so: never rejected on
+    # an unverified claim. uk_seller is reconciled to unknown and a person decides.
     us = candidate("usshop.com", evidence=[ev("https://usshop.com/rc5", "Boss RC-5 - US Shop", "$189")])
     c = decided({"domain": "usshop.com", "uk_seller": UkSeller.NO, "company_name": "US Shop",
-                 "evidence_urls": ["https://usshop.com/rc5"]}, us)  # fmt: skip
-    assert c.approval_status is S.REJECTED and "does not sell to the UK" in c.decision_reasons[0]
+                 "evidence_urls": ["https://usshop.com/rc5"], "uk_evidence": []}, us)  # fmt: skip
+    assert c.approval_status is S.APPROVAL_REQUIRED and c.uk_seller is UkSeller.UNKNOWN
 
-    # Says "no" but there is a .uk domain: conflicting evidence -> a person decides.
+    # Says "no" while the verified evidence shows UK relevance: conflicting -> a person decides.
     c = decided({"uk_seller": UkSeller.NO})
     assert c.approval_status is S.APPROVAL_REQUIRED
 

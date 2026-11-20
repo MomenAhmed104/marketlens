@@ -9,7 +9,6 @@ from app.api import intelligence as intelligence_api
 from app.api import matching as matching_api
 from app.api import review as review_api
 from app.api import runs as runs_api
-from app.api import uk_eligibility as uk_eligibility_api
 from app.core.config import Settings, get_settings
 from app.services.catalogue import load_catalogue
 from app.orchestration.pipeline import PipelineDeps, RunManager
@@ -51,7 +50,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(catalogue_api.router)
     app.include_router(discovery_api.router)
     app.include_router(review_api.router)
-    app.include_router(uk_eligibility_api.router)
     app.include_router(intelligence_api.router)
     app.include_router(matching_api.router)
     app.include_router(runs_api.router)

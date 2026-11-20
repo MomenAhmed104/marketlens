@@ -22,12 +22,13 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.agents.discovery.rules import is_known_marketplace
+from app.agents.discovery.rules import is_known_marketplace, uk_review
 from app.agents.discovery.schemas import (
     ClassificationStatus,
     CompetitorClass,
     DiscoveryMode,
     EvidenceItem,
+    UkReview,
     UkSeller,
 )
 from app.schemas.common import DomainApprovalStatus
@@ -113,6 +114,10 @@ class CandidateSummary(BaseModel):
     # None on records stored before classification existed.
     competitor_class: CompetitorClass | None = None
     proposed_competitor_class: CompetitorClass | None = None
+    # UK relevance evidence view (additive): verified evidence, unverified claims, whether the
+    # evidence is sufficient or contradicted, and what is missing. Always present; a record
+    # with no assessment gives assessed=false. Never approval or benchmarking.
+    uk_review: UkReview
     evidence_count: int
     first_seen_at: datetime
     last_seen_at: datetime
@@ -169,7 +174,7 @@ def _summary(s: StoredCandidate, d: DomainDecisionRecord | None, labels: tuple[s
         uk_seller=c.uk_seller, uk_signals=c.uk_signals, products_matched=c.products_matched,
         known_marketplace=is_known_marketplace(s.domain, labels), evidence_count=len(c.evidence),
         competitor_class=c.competitor_class, proposed_competitor_class=c.proposed_competitor_class,
-        first_seen_at=s.first_seen_at, last_seen_at=s.last_seen_at, times_seen=s.times_seen,
+        uk_review=uk_review(c.uk_assessment, d), first_seen_at=s.first_seen_at, last_seen_at=s.last_seen_at, times_seen=s.times_seen,
         last_run_id=s.last_run_id,
     )  # fmt: skip
 

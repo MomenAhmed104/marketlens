@@ -104,12 +104,13 @@ def test_missing_model_number(run):
 
 
 def test_left_handed_must_be_confirmed(run):
-    lh = "https://www.andertons.co.uk/epiphone-les-paul-standard-60s-left-handed-iced-tea-burst"
-    m = run("SB-028", candidate(lh, "Epiphone Les Paul Standard '60s Left-Handed, Iced Tea Burst"))
-    assert m.match_status is M.EXACT_MATCH and variant(m, "handedness").result is CheckResult.MATCH
-    assert variant(m, "finish").result is CheckResult.MATCH
-    rh = "https://www.andertons.co.uk/epiphone-les-paul-standard-60s-iced-tea-burst"
-    m = run("SB-028", candidate(rh, "Epiphone Les Paul Standard '60s, Iced Tea Burst"))
+    # SB-028 is the approved Figured model (20 Nov 2026), so the test pages name it.
+    lh = "https://www.andertons.co.uk/epiphone-les-paul-standard-60s-figured-left-handed-iced-tea-burst"
+    m = run("SB-028", candidate(lh, "Epiphone Les Paul Standard '60s Figured Left-Handed, Iced Tea Burst"))
+    assert variant(m, "handedness").result is CheckResult.MATCH and variant(m, "finish").result is CheckResult.MATCH
+    assert m.match_status is M.EXACT_MATCH
+    rh = "https://www.andertons.co.uk/epiphone-les-paul-standard-60s-figured-iced-tea-burst"
+    m = run("SB-028", candidate(rh, "Epiphone Les Paul Standard '60s Figured, Iced Tea Burst"))
     assert m.match_status is M.REVIEW_REQUIRED and any("handedness" in r for r in m.review_reasons)
 
 
@@ -120,8 +121,9 @@ def test_left_handed_listing_never_matches_right_handed_product(run):
 
 
 def test_finish_conflict_and_partial_finish(run):
+    # U-1: otherwise the same product, only the cosmetic finish differs -> EQUIVALENT_VARIANT (was SIMILAR_MATCH).
     m = run("SB-021", candidate("https://www.thomann.co.uk/cort-g250-se-black", "Cort G250 SE Electric Guitar Black"))
-    assert m.match_status is M.SIMILAR_MATCH and variant(m, "finish").result is CheckResult.CONFLICT
+    assert m.match_status is M.EQUIVALENT_VARIANT and variant(m, "finish").result is CheckResult.CONFLICT
     lh = "https://www.andertons.co.uk/epiphone-les-paul-standard-60s-left-handed-bourbon-burst"
     m = run("SB-028", candidate(lh, "Epiphone Les Paul Standard '60s Left-Handed, Bourbon Burst"))
     assert m.match_status is M.REVIEW_REQUIRED and variant(m, "finish").result is CheckResult.UNVERIFIED
@@ -285,3 +287,99 @@ def test_phase5_field_statuses_map_to_price_statuses(run):
         assert (m.price.status, m.price.evidence_status) == (ps, es), fs
         assert m.price.price is None and not m.comparison.eligible
         assert m.match_status is M.EXACT_MATCH  # price validity never changes the match
+
+
+# --------------------------------------------------------------------------- SB-028: approved Figured identity
+
+# User decision (20 Nov 2026): SB-028 is the Epiphone Les Paul Standard '60s Figured Left-Handed.
+# "Figured" is a model designation (attribute "designation"), not a finish.
+FIGURED = ("https://www.andertons.co.uk/epiphone-les-paul-standard-60s-figured-left-handed-electric-guitar-iced-tea-burst",
+           "Epiphone Inspired by Gibson Les Paul Standard ‘60s Figured Left Handed Electric Guitar in Iced Tea Burst")
+PLAIN = ("https://www.andertons.co.uk/epiphone-les-paul-standard-60s-left-handed-iced-tea-burst",
+         "Epiphone Les Paul Standard '60s Left-Handed, Iced Tea Burst")
+
+
+def lp(page, **kw):
+    kw.setdefault("model", "Les Paul Standard '60s")
+    return candidate(*page, llm=True, product_title=page[1], brand="Epiphone", price="599.00", quote="£599.00",
+                     **kw)  # fmt: skip
+
+
+def test_sb028_figured_page_is_an_exact_match(run):
+    m = run("SB-028", lp(FIGURED, model="Les Paul Standard ‘60s Figured", sku="EIGLP6ITNHRL"))
+    d = variant(m, "designation")
+    assert d.result is CheckResult.MATCH and d.critical and d.expected == "Figured"
+    assert variant(m, "handedness").result is CheckResult.MATCH and variant(m, "finish").result is CheckResult.MATCH
+    assert m.match_status is M.EXACT_MATCH and m.match_confidence is MatchConfidence.HIGH
+    # Price treatment unchanged: the catalogue's £579 (recorded as a sale price) is the Stompbox side.
+    assert m.comparison.eligible and m.comparison.stompbox_price == Decimal("579.00")
+    assert m.comparison.difference_gbp == Decimal("20.00")
+
+
+def test_sb028_figured_is_confirmed_by_a_listed_figured_sku(run):
+    m = run("SB-028", candidate("https://www.gear4music.com/Guitar-and-Bass/Epiphone-Les-Paul-Standard-60s-LH/6UYY",
+                                "Epiphone Les Paul Standard 60s Left Handed, Iced Tea Burst", llm=True,
+                                model="Les Paul Standard 60s", sku="EIGLP6ITNH1L"))  # fmt: skip
+    assert variant(m, "designation").result is CheckResult.MATCH and m.match_status is M.EXACT_MATCH
+
+
+def test_sb028_plain_top_page_is_never_accepted_as_figured(run):
+    m = run("SB-028", lp(PLAIN))
+    assert variant(m, "designation").result is CheckResult.UNVERIFIED
+    assert m.match_status is M.REVIEW_REQUIRED and m.match_confidence is MatchConfidence.LOW
+    assert any("designation not confirmed" in r for r in m.review_reasons)
+    assert not m.comparison.eligible and m.comparison.difference_gbp is None  # no direct price
+
+
+def test_sb028_plain_top_sku_is_a_different_model(run):
+    m = run("SB-028", lp(PLAIN, sku="EILS6ITNH1"))
+    d = variant(m, "designation")
+    assert d.result is CheckResult.CONFLICT and d.found == ["EILS6ITNH1"]
+    assert m.match_status is M.SIMILAR_MATCH  # a model difference, never an equivalent variant
+    assert not m.comparison.eligible
+
+
+def test_sb028_figured_with_the_plain_top_sku_is_contradictory(run):
+    m = run("SB-028", lp(FIGURED, sku="EILS6ITNH1"))
+    assert variant(m, "designation").result is CheckResult.UNVERIFIED and m.match_status is M.REVIEW_REQUIRED
+
+
+def test_sb028_sku_tokens_are_exact(run):
+    # "EILS6ITNH1L" is a different token from the plain-top "EILS6ITNH1"; neither is a listed Figured SKU.
+    m = run("SB-028", lp(PLAIN, sku="EILS6ITNH1L"))
+    assert variant(m, "designation").result is CheckResult.UNVERIFIED and m.match_status is M.REVIEW_REQUIRED
+
+
+def test_sb028_figured_specification_alone_is_not_identity_evidence(run):
+    from app.agents.intelligence.schemas import NormalizedSpec  # noqa: PLC0415
+
+    c = lp(PLAIN)
+    c.specifications = [NormalizedSpec(name="Body Top", value="Maple with Highly Figured Maple Veneer")]
+    m = run("SB-028", c)
+    assert variant(m, "designation").result is CheckResult.UNVERIFIED and m.match_status is M.REVIEW_REQUIRED
+
+
+def test_sb028_other_variant_checks_still_apply(run):
+    rh = ("https://www.andertons.co.uk/epiphone-les-paul-standard-60s-figured-iced-tea-burst",
+          "Epiphone Les Paul Standard '60s Figured Right Handed, Iced Tea Burst")
+    assert run("SB-028", lp(rh)).match_status is M.SIMILAR_MATCH  # handedness conflict
+    ebony = ("https://www.andertons.co.uk/epiphone-les-paul-standard-60s-figured-left-handed-ebony",
+             "Epiphone Les Paul Standard '60s Figured Left Handed, Ebony")
+    m = run("SB-028", lp(ebony))
+    assert m.match_status is M.EQUIVALENT_VARIANT and variant(m, "finish").result is CheckResult.CONFLICT
+    assert not m.comparison.eligible  # an alternative-product price, never a direct one
+    used = ("https://www.gear4music.com/Guitar-and-Bass/Epiphone-Les-Paul-Standard-60s-Figured-LH-Secondhand/1",
+            "Epiphone Les Paul Standard 60s Figured Left Handed, Iced Tea Burst - Secondhand")
+    assert run("SB-028", lp(used)).match_status is M.SIMILAR_MATCH
+
+
+def test_designations_are_controlled_and_only_for_sb028(run, catalogue):
+    from app.services.matching.attributes import APPROVED_DESIGNATIONS  # noqa: PLC0415
+
+    assert set(APPROVED_DESIGNATIONS) == {"SB-028"} and APPROVED_DESIGNATIONS["SB-028"].designation == "Figured"
+    m = run("SB-001", candidate(AND_RC5, "Boss RC-5 Loop Station Pedal | Andertons Music Co."))
+    assert m.match_status is M.EXACT_MATCH and not any(v.attribute == "designation" for v in m.variants)
+    # The catalogue record itself is unchanged: no "Figured", price still the recorded £579.
+    p = catalogue.products["SB-028"]
+    assert "figured" not in f"{p.product_name} {p.manufacturer_model}".casefold()
+    assert p.displayed_price == Decimal("579.00")

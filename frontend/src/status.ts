@@ -27,6 +27,7 @@ const TONES: Record<string, Tone> = {
   PENDING: 'neutral',
   // matching
   EXACT_MATCH: 'success',
+  EQUIVALENT_VARIANT: 'info',
   SIMILAR_MATCH: 'similar',
   REVIEW_REQUIRED: 'warning',
   NO_MATCH: 'neutral',
@@ -66,6 +67,23 @@ const TONES: Record<string, Tone> = {
   SKIPPED_NO_LLM: 'neutral',
   SKIPPED_NOT_RETRIEVED: 'neutral',
   SKIPPED_LLM_DISABLED: 'neutral',
+  // LLM 2 match proposals (Task A): proposals are advisory, Python decides
+  SIMILAR_ALTERNATIVE: 'similar',
+  NOT_A_MATCH: 'neutral',
+  SKIPPED_NOT_ELIGIBLE: 'neutral',
+  AGREES: 'success',
+  PYTHON_STRICTER: 'info',
+  LLM_STRICTER: 'warning',
+  NOT_AVAILABLE: 'neutral',
+  // availability
+  IN_STOCK: 'success',
+  OUT_OF_STOCK: 'warning',
+  PREORDER: 'info',
+  BACKORDER: 'info',
+  DISCONTINUED: 'danger',
+  // price kinds
+  DIRECT: 'success',
+  ALTERNATIVE: 'similar',
 }
 
 // A review queue entry that is PENDING needs a decision: warning, not neutral.
@@ -74,6 +92,7 @@ const REVIEW_TONES: Record<string, Tone> = { PENDING: 'warning' }
 const LABELS: Record<string, string> = {
   PARTIALLY_COMPLETED: 'Partially completed',
   EXACT_MATCH: 'Exact match',
+  EQUIVALENT_VARIANT: 'Equivalent variant',
   SIMILAR_MATCH: 'Similar',
   REVIEW_REQUIRED: 'Review required',
   NO_MATCH: 'No match',
@@ -92,6 +111,20 @@ const LABELS: Record<string, string> = {
   SKIPPED_NOT_RETRIEVED: 'Skipped (not retrieved)',
   SKIPPED_LLM_DISABLED: 'Skipped (no LLM 1)',
   OK: 'Retrieved',
+  SIMILAR_ALTERNATIVE: 'Similar alternative',
+  NOT_A_MATCH: 'Not a match',
+  SKIPPED_NOT_ELIGIBLE: 'Skipped (not eligible)',
+  AGREES: 'Agrees with Python',
+  PYTHON_STRICTER: 'Python more cautious',
+  LLM_STRICTER: 'LLM 2 more cautious',
+  NOT_AVAILABLE: 'No verified proposal',
+  IN_STOCK: 'In stock',
+  OUT_OF_STOCK: 'Out of stock',
+  PREORDER: 'Pre-order',
+  BACKORDER: 'Back-order',
+  DISCONTINUED: 'Discontinued',
+  DIRECT: 'Direct competitor price',
+  ALTERNATIVE: 'Alternative-product price',
 }
 
 export type StatusKind = 'default' | 'review'

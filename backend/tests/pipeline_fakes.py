@@ -18,7 +18,6 @@ from tests.intelligence_fakes import FakeIntelSearch
 from tests.search_fakes import make_settings
 from tests.test_discovery_agent import GLOBAL_HITS, PROFILE_HITS
 from tests.test_intelligence_agent import HITS, PAGES
-from tests.uk_fakes import CONFIGURED_13, seed_store
 
 NO_LLM1 = "OPENROUTER_API_KEY and LLM1_MODEL not set"
 NO_LLM2 = "OPENROUTER_API_KEY and LLM2_MODEL not set"
@@ -44,34 +43,28 @@ class Harness:
 
 def harness(catalogue, tmp_path, *, llm1=None, llm2=None, disc_search=None, intel_search=None, decisions=(),
             intel_agent_cls=ProductIntelligenceAgent, discovery_factory=None, intelligence_factory=None,
-            clock=lambda: FAKE_NOW + timedelta(hours=1), uk_eligible=CONFIGURED_13, uk_records=(), uk_exceptions=(),
-            **settings_kw) -> Harness:  # fmt: skip
-    """`uk_eligible`: domains explicitly seeded UK_ELIGIBLE (default: the 13 configured competitors, so
-    pre-gate tests keep their meaning). Pass `uk_eligible=()` to test the strict default."""
+            clock=lambda: FAKE_NOW + timedelta(hours=1), **settings_kw) -> Harness:  # fmt: skip
     values = {"search_provider": "exa", "exa_api_key": "exa-test-key", "review_db_path": tmp_path / "review.sqlite3"}
     values.update(settings_kw)
     s = make_settings(**values)
     review = ReviewStore(s.review_db_path, s.discovery_excluded_competitor_domains)
     for d in decisions:
         review.create_decision(d)
-    seed_store(review, uk_eligible, uk_exceptions)
-    for r in uk_records:
-        review.put_uk_eligibility(r)
     h = Harness(manager=None, review=review, settings=s)  # type: ignore[arg-type]
     cats = [p.category for p in catalogue.products.values()]
 
-    async def disc_factory(decisions, uk):
+    async def disc_factory(decisions):
         agent = CompetitorDiscoveryAgent(disc_search() if disc_search else FakeSearch(GLOBAL_HITS, PROFILE_HITS),
                                          llm1() if llm1 else None, s, catalogue.competitors, cats,
-                                         llm_disabled_reason=None if llm1 else NO_LLM1, review_decisions=decisions,
-                                         uk_state=uk)  # fmt: skip
+                                         llm_disabled_reason=None if llm1 else NO_LLM1,
+                                         review_decisions=decisions)  # fmt: skip
         h.discovery_agents.append(agent)
         return agent
 
-    async def intel_factory(targets, skipped, uk):
+    async def intel_factory(targets, skipped):
         agent = intel_agent_cls(intel_search() if intel_search else FakeIntelSearch(HITS, PAGES),
                                 llm2() if llm2 else None, s, targets, skipped,
-                                llm_disabled_reason=None if llm2 else NO_LLM2, uk_state=uk)  # fmt: skip
+                                llm_disabled_reason=None if llm2 else NO_LLM2)  # fmt: skip
         h.intelligence_agents.append(agent)
         return agent
 

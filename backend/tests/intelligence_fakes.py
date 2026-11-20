@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.agents.intelligence.schemas import PageExtraction, PageType
+from app.agents.intelligence.schemas import (
+    MatchProposal,
+    PageExtraction,
+    PageType,
+    ProposalDifference,
+    ProposalReason,
+    ProposedMatch,
+)
 from app.schemas.search import (
     CostBasis,
     CostInfo,
@@ -70,18 +77,32 @@ class FakeIntelSearch(SearchProvider):
 
 
 class FakeExtractLLM(LLMClient):
-    """Returns the extraction registered for the page URL found in the prompt."""
+    """Returns the extraction (Task B) or match proposal (Task A) registered for the
+    page URL found in the prompt.
+
+    A page with no registered proposal gets `DEFAULT_PROPOSAL`: it cites no quote, so
+    Python marks it UNSUPPORTED and the matcher ignores it (results stay as without it).
+    """
 
     model = "fake/llm-2"
 
-    def __init__(self, by_url: dict[str, PageExtraction | Exception]):
+    def __init__(self, by_url: dict[str, PageExtraction | Exception],
+                 proposals: dict[str, MatchProposal | Exception] | None = None):  # fmt: skip
         self.by_url = by_url
+        self.proposals = proposals or {}
         self.calls: list[dict] = []
         self.closed = False
 
     async def complete_structured(self, *, system, user, output_model, schema_name):
         self.calls.append({"system": system, "user": user, "schema": schema_name})
-        assert output_model is PageExtraction
+        if output_model is MatchProposal:
+            assert schema_name == "match_proposal"
+            value = next((v for u, v in self.proposals.items() if f'"url": "{u}"' in user), DEFAULT_PROPOSAL)
+            if isinstance(value, Exception):
+                raise value
+            return LLMResult(value=value, model="fake/llm-2@2026", request_ids=[f"gen-{len(self.calls)}"],
+                             latency_ms=2, usage=LLMUsage(1000, 100, Decimal("0.001")))  # fmt: skip
+        assert output_model is PageExtraction and schema_name == "page_extraction"
         for url, value in self.by_url.items():
             if f'"url": "{url}"' in user:
                 if isinstance(value, Exception):
@@ -90,8 +111,26 @@ class FakeExtractLLM(LLMClient):
                                  latency_ms=3, usage=LLMUsage(2000, 300, Decimal("0.003")))  # fmt: skip
         raise AssertionError(f"no fake extraction for prompt: {user[:200]}")
 
+    def calls_for(self, schema: str) -> list[dict]:
+        return [c for c in self.calls if c["schema"] == schema]
+
     async def aclose(self):
         self.closed = True
+
+
+def proposal(classification: ProposedMatch = ProposedMatch.EXACT_MATCH, reasons=(), diffs=(), **kw) -> MatchProposal:
+    """reasons: (text, quote) pairs; diffs: (attribute, catalogue value, page value, quote) tuples."""
+    return MatchProposal(
+        classification=classification,
+        reasons=[ProposalReason(text=t, quote=q) for t, q in reasons],
+        differing_attributes=[ProposalDifference(attribute=a, catalogue_value=c, page_value=v, quote=q)
+                              for a, c, v, q in diffs],
+        confidence=kw.pop("confidence", 0.8), notes=kw.pop("notes", None),
+    )  # fmt: skip
+
+
+DEFAULT_PROPOSAL = MatchProposal(classification=ProposedMatch.EXACT_MATCH, differing_attributes=[], reasons=[],
+                                 confidence=0.5, notes="fake default: no quotes")  # fmt: skip
 
 
 def extraction(**kw) -> PageExtraction:

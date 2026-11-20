@@ -1,10 +1,10 @@
 """Trusted competitor records for matching: never take them from a run payload or file.
 
 A Phase 5 run result (an API body or a saved file) can be edited, so each candidate's
-`competitor` (benchmark flag, approval, company type and UK gate decision) is rebuilt
-from trusted server-side data: the catalogue's configured competitors, the reviewer's
-decisions and the UK eligibility records and exceptions. A domain that is not a current
-search target, or whose page URL is on another domain, can never be a price benchmark.
+`competitor` (benchmark flag, approval and company type) is rebuilt from trusted
+server-side data: the catalogue's configured competitors (workbook flags) and the
+reviewer's decisions. A domain that is not a current search target, or whose page URL is
+on another domain, can never be a price benchmark.
 
 Used by `POST /api/matching/evaluate` and the matching CLI.
 """
@@ -27,11 +27,10 @@ from app.schemas.review import DomainDecisionRecord
 from app.services import sqlite_backup
 from app.services.domains import registrable_domain
 from app.services.review_store import SUPPORTED_SCHEMA_VERSIONS, ReviewStore
-from app.services.uk_gate import UkGateState, gate_decision
 
 
 class TrustedStateUnavailable(RuntimeError):
-    """The review database (decisions and UK gate data) could not be read safely."""
+    """The review database (reviewer decisions) could not be read safely."""
 
 
 def _domain(value: str) -> str | None:
@@ -42,10 +41,15 @@ def _domain(value: str) -> str | None:
 
 
 def trusted_competitors(run: IntelligenceRunResult, competitors: list[CompetitorDomain],
-                        decisions: list[DomainDecisionRecord], uk: UkGateState,
-                        settings: Settings) -> tuple[IntelligenceRunResult, int]:  # fmt: skip
-    """The run with every candidate's competitor replaced from trusted state. Returns (run, replaced)."""
-    targets, _ = eligible_search_targets(competitors, decisions, uk, settings)
+                        decisions: list[DomainDecisionRecord], settings: Settings, *,
+                        benchmarks_allowed: bool = True) -> tuple[IntelligenceRunResult, int]:  # fmt: skip
+    """The run with every candidate's competitor replaced from trusted state. Returns (run, replaced).
+
+    `benchmarks_allowed=False` (the trusted review data could not be read) fails closed:
+    no candidate can be a price benchmark, configured competitors included."""
+    targets, _ = eligible_search_targets(competitors, decisions, settings)
+    if not benchmarks_allowed:
+        targets = [t.model_copy(update={"price_benchmark": False}) for t in targets]
     by_domain = {t.domain: t for t in targets}
     replaced = 0
     products = []
@@ -57,8 +61,7 @@ def trusted_competitors(run: IntelligenceRunResult, competitors: list[Competitor
             server = by_domain.get(claimed) if claimed and claimed == page else None
             if server is None:  # not a searchable target now, or the page is elsewhere: never a benchmark
                 server = SearchTarget(domain=claimed or c.competitor.domain, company_name=None, company_type=None,
-                                      approval_status=c.competitor.approval_status, price_benchmark=False,
-                                      uk_gate=gate_decision(claimed, uk) if claimed else None)  # fmt: skip
+                                      approval_status=c.competitor.approval_status, price_benchmark=False)  # fmt: skip
             if server != c.competitor:
                 replaced += 1
             candidates.append(c.model_copy(update={"competitor": server}))
@@ -67,11 +70,11 @@ def trusted_competitors(run: IntelligenceRunResult, competitors: list[Competitor
 
 
 REPLACED_WARNING = ("{n} candidate competitor record(s) differed from server state and were replaced: "
-                    "benchmark eligibility and UK eligibility are always recomputed server-side")  # fmt: skip
+                    "benchmark eligibility is always recomputed server-side")  # fmt: skip
 
 
-def load_review_state(db_path: Path) -> tuple[list[DomainDecisionRecord], UkGateState]:
-    """Decisions and the UK gate state from an existing review database, without writing it.
+def load_review_state(db_path: Path) -> list[DomainDecisionRecord]:
+    """Reviewer decisions from an existing review database, without writing it.
 
     The schema version is checked on a read-only connection first, so `ReviewStore`
     (which would initialise a brand-new or version-0 file) never writes. Raises
@@ -86,7 +89,7 @@ def load_review_state(db_path: Path) -> tuple[list[DomainDecisionRecord], UkGate
         if version not in SUPPORTED_SCHEMA_VERSIONS:
             raise TrustedStateUnavailable(f"review database {path.name} has unsupported schema version {version}")
         store = ReviewStore(path)
-        return store.list_decisions(), store.uk_gate_state()
+        return store.list_decisions()
     except TrustedStateUnavailable:
         raise
     except (sqlite3.Error, ValidationError, ValueError, OSError) as e:

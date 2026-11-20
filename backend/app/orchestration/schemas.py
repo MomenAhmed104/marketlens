@@ -108,10 +108,12 @@ class RunSummary(BaseModel):
     products_failed: int = 0
     candidates: int = 0
     exact_matches: int = 0
+    equivalent_variants: int = 0
     similar_matches: int = 0
     review_required: int = 0
     no_match: int = 0
-    comparable_prices: int = 0
+    comparable_prices: int = 0  # direct competitor prices (EXACT_MATCH) only
+    alternative_prices: int = 0  # equivalent-variant / similar prices shown; never in comparable_prices
 
 
 class ExecutionRun(BaseModel):

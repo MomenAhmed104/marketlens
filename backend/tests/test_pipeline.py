@@ -32,7 +32,6 @@ from tests.pipeline_fakes import NO_LLM1, NO_LLM2, SlowIntelligenceAgent, harnes
 from tests.search_fakes import Recorder, ok
 from tests.test_discovery_agent import CLASSIFICATIONS, PLAN
 from tests.test_intelligence_agent import AND, EXTRACTIONS, HITS, PAGES
-from tests.uk_fakes import CONFIGURED_13
 
 NOW = datetime(2026, 11, 13, tzinfo=UTC)
 IDS = ["SB-001", "SB-028"]
@@ -105,9 +104,9 @@ def test_events_are_ordered_and_complete(catalogue, tmp_path):
 
 
 def test_full_llm_pipeline_with_comparable_price(catalogue, tmp_path):
-    # Beckett's is explicitly assessed UK_ELIGIBLE here; without that the UK gate blocks it (see test_uk_gate_paths).
+    # Beckett's has verified UK evidence from two pages (fixture), so LLM 1 may auto-approve it for this run.
     h = harness(catalogue, tmp_path, llm1=lambda: FakeLLM(PLAN, CLASSIFICATIONS),
-                llm2=lambda: FakeExtractLLM(EXTRACTIONS), uk_eligible=[*CONFIGURED_13, "beckettsmusic.co.uk"])  # fmt: skip
+                llm2=lambda: FakeExtractLLM(EXTRACTIONS))  # fmt: skip
     run, result, events = asyncio.run(h.run(product_ids=["SB-001"]))
     # LLM 1 auto-approved Beckett's for this run only: searched, but not persisted as a decision.
     targets = {t.domain: t for t in result.search_targets}
@@ -137,7 +136,7 @@ def test_approved_pending_rejected_and_directory_domains(catalogue, tmp_path):
         dec("beckettsmusic.co.uk", ctype=T.SPECIALIST_RETAILER, bench=True),
         dec("ebay.co.uk", ReviewDecision.REJECTED, T.MARKETPLACE),
         dec("idealo.co.uk", ctype=T.DIRECTORY),
-    ], uk_eligible=[*CONFIGURED_13, "beckettsmusic.co.uk"])  # fmt: skip
+    ])  # fmt: skip
     _, result, _ = asyncio.run(h.run(product_ids=["SB-001"]))
     searched = searched_domains(h)
     assert "beckettsmusic.co.uk" in searched  # reviewer-approved
@@ -164,7 +163,7 @@ def test_discovery_can_be_skipped_and_domains_narrowed(catalogue, tmp_path):
 
 
 def test_discovery_failure_does_not_stop_product_search(catalogue, tmp_path):
-    async def broken(decisions, uk):
+    async def broken(decisions):
         raise ProviderUnavailableError("exa", "simulated outage")
 
     h = harness(catalogue, tmp_path, discovery_factory=broken)
@@ -186,7 +185,7 @@ def test_discovery_timeout(catalogue, tmp_path):
 
     hanging = Hanging()
 
-    async def factory(decisions, uk):
+    async def factory(decisions):
         return hanging
 
     h = harness(catalogue, tmp_path, discovery_factory=factory, pipeline_discovery_timeout_seconds=0.05)
@@ -235,7 +234,7 @@ def test_product_timeout(catalogue, tmp_path):
 
 
 def test_intelligence_cannot_start(catalogue, tmp_path):
-    async def broken(targets, skipped, uk):
+    async def broken(targets, skipped):
         raise ProviderUnavailableError("exa", "down")
 
     h = harness(catalogue, tmp_path, intelligence_factory=broken)
@@ -263,7 +262,7 @@ def test_transient_provider_errors_are_retried_by_the_transport(catalogue, tmp_p
                    "statuses": [{"id": AND, "status": "success", "source": "cached"}]}  # fmt: skip
     rec = Recorder(ok({"error": "busy"}, status=503), ok(search_ok), ok(contents_ok))
 
-    async def factory(targets, skipped, uk):
+    async def factory(targets, skipped):
         import httpx
 
         s = h.settings
@@ -448,3 +447,65 @@ def test_competitor_discovered_events_carry_the_backend_class(catalogue, tmp_pat
     else:
         assert all(p["proposed_competitor_class"] is None for p in payloads.values())
         assert payloads["beckettsmusic.co.uk"]["competitor_class"] == "NEEDS_REVIEW"
+
+
+def test_events_and_summary_carry_product_intelligence_fields(catalogue, tmp_path):
+    h = harness(catalogue, tmp_path, llm1=lambda: FakeLLM(PLAN, CLASSIFICATIONS),
+                llm2=lambda: FakeExtractLLM(EXTRACTIONS), openrouter_api_key="sk-or-never-in-events")  # fmt: skip
+    run, result, events = asyncio.run(h.run(product_ids=["SB-001"]))
+    extracted = [e for e in events if e.type == "competitor_product_extracted"]
+    assert extracted and all({"availability_status", "match_proposal_status", "proposed_match", "issues"}
+                             <= set(e.payload) for e in extracted)  # fmt: skip
+    matched = [e for e in events if e.type == "match_validated"]
+    assert all({"proposed_match", "proposal_agreement", "availability_status"} <= set(e.payload) for e in matched)
+    priced = [e for e in events if e.type == "price_validated"]
+    assert all(e.payload["price_kind"] in ("DIRECT", "ALTERNATIVE", "NONE") for e in priced)
+    done = next(e for e in events if e.type == "product_completed")
+    assert "EQUIVALENT_VARIANT" in done.payload["counts"] and "alternative_prices" in done.payload
+    assert run.summary.alternative_prices == sum(p.matching.alternative_prices for p in result.products)
+    for m in result.products[0].matching.candidates:
+        assert m.intelligence is not None and m.intelligence.seller.domain == m.competitor.domain
+        if m.price_kind.value != "DIRECT":
+            assert m.intelligence.price.difference_gbp is None
+    stage = next(s for s in run.stages if s.name.value == "extraction")
+    assert "match proposal" in stage.message
+    assert "sk-or-never-in-events" not in json.dumps([e.model_dump(mode="json") for e in events])
+
+
+def test_extraction_succeeds_but_only_the_match_call_fails(catalogue, tmp_path):
+    """Audit follow-up: every extraction succeeds; one Task A call fails. The extraction and Python's
+    match are kept; the failure is reported as a match-proposal failure, not an extraction failure."""
+    from tests.intelligence_fakes import extraction
+    from tests.test_intelligence_agent import BECK
+
+    extractions = dict(EXTRACTIONS, **{BECK: extraction(product_title="Boss RC-5", title_quote="Boss RC-5",
+                                                         displayed_price="£185.00", currency="GBP",
+                                                         price_quote="Boss RC-5 £185.00 In stock")})  # fmt: skip
+    h = harness(catalogue, tmp_path, llm1=lambda: FakeLLM(PLAN, CLASSIFICATIONS),
+                llm2=lambda: FakeExtractLLM(extractions, {AND: llm_failure()}))  # fmt: skip
+    run, result, events = asyncio.run(h.run(product_ids=["SB-001"]))
+    u = result.intelligence_usage
+    assert u.llm_match_failures == 1 and u.llm_failures == 1  # the only failure is the Task A call
+    # 3 retrieved pages (Andertons, Gear4music, Beckett's): 3 extraction calls + 3 match calls, all sent.
+    assert u.llm_calls == 6 and u.llm_match_calls == 3
+    cands = {c.product_url: c for c in result.products[0].intelligence.candidates}
+    assert all(c.extraction_status is ExtractionStatus.COMPLETED for c in cands.values()
+               if c.page.status and c.page.status.value == "OK")  # fmt: skip
+    assert cands[AND].match_proposal_status.value == "FAILED" and str(cands[AND].price) == "189.00"
+    # Python's decision and the direct price stand; the dashboard summary counts are intact.
+    m = next(m for m in result.products[0].matching.candidates if m.product_url == AND)
+    assert m.match_status is MatchStatus.EXACT_MATCH and m.comparison.eligible and m.price_kind.value == "DIRECT"
+    assert any("match proposal failed" in x for x in m.intelligence.uncertainties)
+    assert run.summary.exact_matches >= 1 and run.summary.comparable_prices >= 1
+    assert run.summary.candidates == len(result.products[0].matching.candidates)
+    # Current policy (unchanged): any LLM 2 failure makes the extraction stage PARTIAL, so the run is
+    # PARTIALLY_COMPLETED; the stage errors say it was a match proposal, not an extraction.
+    ext = stages(run)[StageName.EXTRACTION]
+    assert ext.status is StageStatus.PARTIAL and run.status is RunStatus.PARTIALLY_COMPLETED
+    assert ext.errors == ["1 match proposal(s) failed"]
+    extracted = next(e for e in events if e.type == "competitor_product_extracted" and e.payload["url"] == AND)
+    assert extracted.payload["match_proposal_status"] == "FAILED"
+    # The pipeline reports LLM 2 failures through the stage errors above (the agent's end-of-run
+    # warnings come from agent.run(), which the pipeline does not call); none claims an extraction failure.
+    assert not any("extraction failed" in w for w in run.warnings)
+    assert "match proposal" in ext.message and "1 failed" in ext.message

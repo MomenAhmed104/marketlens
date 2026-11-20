@@ -83,6 +83,18 @@ always closed, including on cancellation.
   - product search: `search_started`, `page_retrieved` (with the failed domains), `extraction_skipped`, `competitor_product_extracted`;
   - matching: `match_validated`, `price_validated`;
   - products: `product_completed`, `product_failed`.
+- **Product Intelligence payload fields** (additive):
+  - `competitor_product_extracted`: `availability_status`,
+    `match_proposal_status`, `proposed_match`, `issues` (verified issue count);
+  - `match_validated`: `proposed_match`, `proposal_agreement`,
+    `availability_status`;
+  - `price_validated`: `price_kind` (`DIRECT`, `ALTERNATIVE`, `NONE`) and
+    `alternative_price` (never a difference);
+  - `product_completed`: `counts` includes `EQUIVALENT_VARIANT`, plus
+    `alternative_prices`. The run summary has `equivalent_variants` and
+    `alternative_prices`; `comparable_prices` counts direct prices only.
+  - The extraction stage message counts both LLM 2 calls, for example
+    "7 LLM 2 call(s) (3 match proposal), 1 failed".
 - **Event cap:** `PIPELINE_MAX_EVENTS_PER_RUN` (5000) caps the detail events.
   Lifecycle, stage and product events are always kept.
 - **SSE:** `GET /api/runs/{id}/stream` (`text/event-stream`).
@@ -158,3 +170,13 @@ BopDJ (reviewer-approved) and Gibson, followed over SSE:
 - **Not yet run with real LLMs:** the LLM-enabled path is tested with mocked
   LLM 1 and LLM 2 only.
 - **Frontend:** run controls and live views are in Phase 8 (`docs/dashboard.md`).
+
+## UK evidence in events (Stage 6.3)
+
+`competitor_discovered` also carries `uk_mixed_location` (additive). The event
+carries flags only (`uk_assessed`, `uk_evidence_sufficient`,
+`uk_evidence_contradicted`, `uk_mixed_location`, `uk_independent_sources`);
+the quotes are in the run result (`discovery.candidates[].uk_review`). The
+whole workflow (discover, review through the API, re-run, extract, match,
+stream) is covered by `tests/test_workflow_integration.py` with fakes and a
+temporary database.

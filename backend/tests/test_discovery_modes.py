@@ -6,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agents.discovery import build_discovery_agent, llm1_disabled_reason
-from app.services.uk_gate import UkGateState
 from app.agents.discovery.agent import CompetitorDiscoveryAgent
 from app.agents.discovery.schemas import (
     ClassificationStatus,
@@ -24,7 +23,6 @@ from app.services.search.http import ProviderNotConfiguredError
 from tests.discovery_fakes import FakeLLM, FakeSearch
 from tests.search_fakes import make_settings
 from tests.test_discovery_agent import CLASSIFICATIONS, GLOBAL_HITS, PLAN, PROFILE_HITS
-from tests.uk_fakes import all_eligible
 
 SECRET = "sk-or-should-never-appear"
 IDS = ("SB-001", "SB-028")
@@ -36,7 +34,6 @@ def run_mode(catalogue, llm):
         search, llm, make_settings(), catalogue.competitors,
         [p.category for p in catalogue.products.values()],
         llm_disabled_reason=None if llm else "OPENROUTER_API_KEY and LLM1_MODEL not set",
-        uk_state=all_eligible(),  # explicit UK seeding
     )  # fmt: skip
     result = asyncio.run(agent.run([catalogue.products[i] for i in IDS]))
     asyncio.run(agent.aclose())
@@ -163,8 +160,7 @@ def test_llm1_disabled_reason(overrides, reason):
 
 def test_factory_selects_mode_and_never_needs_an_llm_key(catalogue):
     async def build(**kw):
-        agent = await build_discovery_agent(make_settings(search_provider="exa", exa_api_key="exa-k", **kw), catalogue,
-                                            uk_state=UkGateState.empty())  # fmt: skip
+        agent = await build_discovery_agent(make_settings(search_provider="exa", exa_api_key="exa-k", **kw), catalogue)
         info = (agent.mode, agent.llm_disabled_reason, type(agent.search), type(agent.llm))
         await agent.aclose()
         return info
@@ -174,7 +170,7 @@ def test_factory_selects_mode_and_never_needs_an_llm_key(catalogue):
     assert asyncio.run(build(openrouter_api_key=SECRET, llm1_model="vendor/model")) == (
         DiscoveryMode.LLM_ENABLED, None, ExaProvider, OpenRouterClient)  # fmt: skip
     with pytest.raises(ProviderNotConfiguredError, match="SEARCH_PROVIDER"):
-        asyncio.run(build_discovery_agent(make_settings(), catalogue, uk_state=UkGateState.empty()))
+        asyncio.run(build_discovery_agent(make_settings(), catalogue))
 
 
 def test_app_starts_without_openrouter_key_and_reports_mode():
@@ -202,8 +198,7 @@ def test_api_run_in_disabled_mode(catalogue):
         async def factory():
             return CompetitorDiscoveryAgent(FakeSearch(GLOBAL_HITS, PROFILE_HITS), None, make_settings(),
                                             app.state.catalogue.competitors, ["Effects"],
-                                            llm_disabled_reason="OPENROUTER_API_KEY and LLM1_MODEL not set",
-                                            uk_state=all_eligible())  # fmt: skip
+                                            llm_disabled_reason="OPENROUTER_API_KEY and LLM1_MODEL not set")
 
         return factory
 

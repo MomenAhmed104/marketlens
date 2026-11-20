@@ -11,7 +11,7 @@ import type {
   SearchTarget,
 } from './api'
 
-export const MATCH_STATUSES: MatchStatus[] = ['EXACT_MATCH', 'REVIEW_REQUIRED', 'SIMILAR_MATCH', 'NO_MATCH']
+export const MATCH_STATUSES: MatchStatus[] = ['EXACT_MATCH', 'EQUIVALENT_VARIANT', 'REVIEW_REQUIRED', 'SIMILAR_MATCH', 'NO_MATCH']
 
 export interface OverviewKpis {
   productsCompleted: number
@@ -56,7 +56,7 @@ export function coverageRows(result: PipelineResult | null): CoverageRow[] {
   const rows = new Map<string, CoverageRow>(
     result.search_targets.map((t) => [
       t.domain,
-      { target: t, counts: { EXACT_MATCH: 0, REVIEW_REQUIRED: 0, SIMILAR_MATCH: 0, NO_MATCH: 0 }, candidates: 0, searchErrors: [] },
+      { target: t, counts: { EXACT_MATCH: 0, EQUIVALENT_VARIANT: 0, REVIEW_REQUIRED: 0, SIMILAR_MATCH: 0, NO_MATCH: 0 }, candidates: 0, searchErrors: [] },
     ]),
   )
   for (const p of result.products) {

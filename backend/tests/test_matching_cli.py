@@ -11,16 +11,19 @@ from contextlib import closing
 
 import pytest
 
+from app.schemas.common import DomainApprovalStatus as DS
 from app.schemas.competitor import CompanyType as T
+from app.schemas.review import ReviewDecision
 from app.services.matching import cli
 from app.services.review_store import ReviewStore
 from tests.matching_fakes import target
 from tests.search_fakes import make_settings
-from tests.test_uk_gate_paths import AND_RC5, fresh, payload
-from tests.uk_fakes import S, make_v1_db, seed_store, uk_exception, uk_record
+from tests.test_intelligence_agent import dec
+from tests.test_search_targets import AND_RC5, fresh, payload
+from tests.uk_fakes import make_v1_db, make_v2_db, table_snapshot
 
 GIBSON = "https://www.gibson.com/boss-rc-5"
-THOMANN = "https://www.thomann.co.uk/boss_rc5.htm"
+PENDING = "https://www.pending-shop.co.uk/boss-rc-5-loop-station-pedal"
 
 
 @pytest.fixture
@@ -54,9 +57,8 @@ def sha(p):
 
 def test_tampered_file_cannot_make_gibson_a_benchmark(env):
     settings, tmp = env
-    # Even a (search + benchmark) exception for Gibson: its reference-only flag comes from the workbook.
-    seed_store(ReviewStore(settings.review_db_path), exceptions=[uk_exception("gibson.com", True, True)])
-    tampered = target("gibson.com", ctype=T.RETAILER, benchmark=True, uk_eligible=True)
+    ReviewStore(settings.review_db_path)  # an empty, readable review database
+    tampered = target("gibson.com", ctype=T.RETAILER, benchmark=True)  # its reference-only flag is in the workbook
     code, result = run_cli(tmp, fresh(GIBSON, tampered))
     assert code == 0
     g = by_domain(result)["gibson.com"]
@@ -65,26 +67,25 @@ def test_tampered_file_cannot_make_gibson_a_benchmark(env):
     assert any("replaced" in w for w in result["warnings"])
 
 
-@pytest.mark.parametrize("seeded", ["not_uk_eligible", "unassessed"])
-def test_tampered_file_cannot_make_a_non_uk_eligible_domain_a_benchmark(env, seeded):
+@pytest.mark.parametrize("decided", ["pending", "rejected", "approved_without_flag"])
+def test_tampered_file_cannot_make_an_unflagged_domain_a_benchmark(env, decided):
     settings, tmp = env
     store = ReviewStore(settings.review_db_path)
-    if seeded == "not_uk_eligible":
-        store.put_uk_eligibility(uk_record("thomann.co.uk", S.NOT_UK_ELIGIBLE))
-    tampered = target("thomann.co.uk", benchmark=True, uk_eligible=True)  # claims UK_ELIGIBLE
-    code, result = run_cli(tmp, fresh(THOMANN, tampered))
-    t = by_domain(result)["thomann.co.uk"]
-    assert code == 0 and not t["comparison"]["eligible"]
-    expected = "NOT_UK_ELIGIBLE" if seeded == "not_uk_eligible" else "INSUFFICIENT_EVIDENCE"
-    assert t["competitor"]["uk_gate"]["evidence_status"] == expected
-    assert t["competitor"]["uk_gate"]["benchmark_allowed"] is False
+    if decided == "rejected":
+        store.create_decision(dec("pending-shop.co.uk", ReviewDecision.REJECTED))
+    elif decided == "approved_without_flag":
+        store.create_decision(dec("pending-shop.co.uk", bench=False))
+    tampered = target("pending-shop.co.uk", benchmark=True, status=DS.APPROVED)  # claims a benchmark
+    code, result = run_cli(tmp, fresh(PENDING, tampered))
+    c = by_domain(result)["pending-shop.co.uk"]
+    assert code == 0 and not c["comparison"]["eligible"] and c["competitor"]["price_benchmark"] is False
 
 
 def test_page_on_another_domain_is_never_a_benchmark(env):
     settings, tmp = env
-    seed_store(ReviewStore(settings.review_db_path), ["andertons.co.uk"])
+    ReviewStore(settings.review_db_path)
     code, result = run_cli(tmp, fresh("https://www.evil.example/boss-rc-5-loop-station-pedal",
-                                      target("andertons.co.uk", uk_eligible=True)))  # fmt: skip
+                                      target("andertons.co.uk")))  # fmt: skip
     c = result["products"][0]["candidates"][0]
     assert code == 0 and not c["comparison"]["eligible"] and c["competitor"]["price_benchmark"] is False
 
@@ -92,25 +93,36 @@ def test_page_on_another_domain_is_never_a_benchmark(env):
 # --------------------------------------------------------------------------- legitimate use
 
 
-def test_legitimate_uk_eligible_competitor_is_compared_with_server_flags(env, capsys):
+def test_configured_competitor_is_compared_with_server_flags(env, capsys):
     settings, tmp = env
-    seed_store(ReviewStore(settings.review_db_path), ["andertons.co.uk"])
-    # The file under-claims (no benchmark, no UK clearance): trusted state still wins.
-    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk", benchmark=False, uk_eligible=False)))
+    ReviewStore(settings.review_db_path)
+    # The file under-claims (no benchmark flag): the workbook flag still wins.
+    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk", benchmark=False)))
     a = by_domain(result)["andertons.co.uk"]
     assert code == 0 and a["match_status"] == "EXACT_MATCH" and a["comparison"]["eligible"]
-    assert a["competitor"]["price_benchmark"] is True and a["competitor"]["uk_gate"]["search_basis"] == "UK_ELIGIBLE"
+    assert a["competitor"]["price_benchmark"] is True and "uk_gate" not in a["competitor"]
     assert a["comparison"]["difference_gbp"] is not None
     out = capsys.readouterr()
     assert "Full result:" in out.out and "andertons.co.uk" in out.out and "warning:" not in out.err
 
 
-def test_pre_gate_run_files_still_load(env):
-    """Older Phase 5 files have no `uk_gate` on their competitors; they are rebuilt, not rejected."""
+def test_reviewer_flagged_domain_is_compared(env):
     settings, tmp = env
-    seed_store(ReviewStore(settings.review_db_path), ["andertons.co.uk"])
+    ReviewStore(settings.review_db_path).create_decision(dec("pending-shop.co.uk", bench=True))
+    code, result = run_cli(tmp, fresh(PENDING, target("pending-shop.co.uk", benchmark=False)))
+    c = by_domain(result)["pending-shop.co.uk"]
+    assert code == 0 and c["competitor"]["price_benchmark"] is True and c["comparison"]["eligible"]
+
+
+@pytest.mark.parametrize("variant", ["without_uk_gate", "with_legacy_uk_gate"])
+def test_older_run_files_still_load(env, variant):
+    """Run files from before and during the UK gate both load; a legacy `uk_gate` key is ignored."""
+    settings, tmp = env
+    ReviewStore(settings.review_db_path)
     old = json.loads(payload(fresh(AND_RC5, target("andertons.co.uk"))))
-    del old["products"][0]["candidates"][0]["competitor"]["uk_gate"]
+    if variant == "with_legacy_uk_gate":
+        old["products"][0]["candidates"][0]["competitor"]["uk_gate"] = {"domain": "andertons.co.uk",
+                                                                        "benchmark_allowed": False}
     code, result = run_cli(tmp, raw=json.dumps(old))
     assert code == 0 and by_domain(result)["andertons.co.uk"]["comparison"]["eligible"]
 
@@ -131,14 +143,15 @@ def test_invalid_run_file_and_unknown_product_still_exit_2(env, capsys):
 def assert_fail_closed(result, capsys):
     cands = result["products"][0]["candidates"]
     assert cands and not any(c["comparison"]["eligible"] for c in cands)
-    assert all(c["competitor"]["uk_gate"]["search_allowed"] is False for c in cands)
+    # Configured competitors included: without readable trusted data nothing is a benchmark.
+    assert all(c["competitor"]["price_benchmark"] is False for c in cands)
     assert any("Trusted review data unavailable" in w for w in result["warnings"])
     assert "no candidate can be a price benchmark" in capsys.readouterr().err
 
 
 def test_missing_review_database_fails_closed_and_is_not_created(env, capsys):
     settings, tmp = env
-    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk", uk_eligible=True)))
+    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk")))
     assert code == 0
     assert_fail_closed(result, capsys)
     assert not settings.review_db_path.exists()
@@ -156,32 +169,45 @@ def test_unreadable_or_unsupported_review_database_fails_closed_and_is_untouched
             c.execute("CREATE TABLE t (x)") if kind == "version_9" else None
             c.commit()
     before = sha(db)
-    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk", uk_eligible=True)), review_db=db)
+    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk")), review_db=db)
     assert code == 0
     assert_fail_closed(result, capsys)
     assert sha(db) == before
 
 
-def test_corrupt_uk_record_fails_closed(env, capsys):
+def test_corrupt_decision_record_fails_closed(env, capsys):
     settings, tmp = env
-    store = ReviewStore(settings.review_db_path)
-    seed_store(store, ["andertons.co.uk"])
+    ReviewStore(settings.review_db_path).create_decision(dec("pending-shop.co.uk", bench=True))
     with closing(sqlite3.connect(settings.review_db_path)) as c:
-        c.execute("UPDATE uk_eligibility SET record = '{\"domain\": \"andertons.co.uk\"}'")
+        c.execute("""UPDATE domain_decisions SET record = '{"domain": "pending-shop.co.uk"}'""")
         c.commit()
-    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk", uk_eligible=True)))
+    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk")))
     assert code == 0
     assert_fail_closed(result, capsys)
 
 
-def test_version_1_database_is_read_only_and_blocks_every_benchmark(env, capsys):
-    """Like the real database today: schema version 1, no UK tables, so every domain is blocked."""
+def test_version_1_database_is_read_only_and_configured_flags_apply(env, capsys):
+    """Like the real database today: schema version 1. Read without writing; workbook flags apply."""
     settings, tmp = env
     db = make_v1_db(tmp / "v1.sqlite3")
     before = sha(db)
-    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk", uk_eligible=True)), review_db=db)
+    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk", benchmark=False)), review_db=db)
     a = by_domain(result)["andertons.co.uk"]
-    assert code == 0 and not a["comparison"]["eligible"]
-    assert a["competitor"]["uk_gate"]["evidence_status"] == "INSUFFICIENT_EVIDENCE"
-    assert not any("Trusted review data unavailable" in w for w in result["warnings"])  # readable, just strict
+    assert code == 0 and a["comparison"]["eligible"] and a["competitor"]["price_benchmark"] is True
+    assert not any("Trusted review data unavailable" in w for w in result["warnings"])
     assert sha(db) == before
+
+
+def test_legacy_version_2_database_is_read_only_and_its_uk_rows_are_ignored(env, capsys):
+    """A file left by the retired UK gate (andertons NOT_UK_ELIGIBLE, a Gibson benchmark exception):
+    readable, unchanged, and its UK rows influence nothing."""
+    settings, tmp = env
+    db = make_v2_db(tmp / "v2.sqlite3")
+    before, uk_rows = sha(db), table_snapshot(db)
+    code, result = run_cli(tmp, fresh(AND_RC5, target("andertons.co.uk", benchmark=False)),
+                           fresh(GIBSON, target("gibson.com", ctype=T.MANUFACTURER, benchmark=True)),
+                           review_db=db)  # fmt: skip
+    cands = by_domain(result)
+    assert code == 0 and cands["andertons.co.uk"]["comparison"]["eligible"]
+    assert cands["gibson.com"]["competitor"]["price_benchmark"] is False  # the exception means nothing
+    assert sha(db) == before and table_snapshot(db) == uk_rows

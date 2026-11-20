@@ -88,6 +88,24 @@ All routes are under `/api/review`.
 (`www.shop.co.uk` becomes `shop.co.uk`). Unknown body fields are rejected
 (422). Responses never include settings or keys.
 
+Every candidate has `uk_review` (additive): whether the verified UK evidence is sufficient,
+contradicted or mixed, from how many independent pages, the verified evidence, unverified
+claims and what is missing. There is no UK category and no UK override (Option B, 19 Nov
+2026): the reviewer's judgement is the approve/reject decision and its `notes`, kept in the
+decision history. Bodies that still send `uk_relevance_override` are refused (422). A
+decision never changes the stored evidence, and approval never implies benchmark
+permission. Rules: `docs/competitor-discovery.md` ("UK relevance evidence").
+
+## Storage versions
+
+- Version 1 is the three tables above. New databases are created at version 1.
+- Version 2 (checkpoint a6d5a15) added five tables for the retired UK eligibility gate.
+  Version-2 files still open and work for the three core tables; their UK tables are
+  never read, written or dropped, and the file's version is never changed.
+- Opening any existing file never writes it; unsupported versions are refused. There is
+  no migration (the `review_migration` CLI was removed with the gate). Tests:
+  `tests/test_review_store_versions.py`.
+
 ## Frontend
 
 The **Competitor domain review** section on the main page:
@@ -110,3 +128,16 @@ The **Competitor domain review** section on the main page:
   is no pruning yet.
 - The UI has no automated frontend tests (none exist in the project). It is
   covered by lint, type-checked build and backend API tests.
+
+## Stored records and thresholds (checked 20 November 2026)
+
+- The real review database holds 48 candidates (39 pending, 7 approved, 2
+  rejected). None has a UK evidence assessment: 38 come from no-LLM runs and 10
+  from an LLM 1 run on 14 November 2026, before Option B. They show "UK evidence
+  not assessed" until rediscovered with LLM 1, and are not backfilled (D9).
+- Auto-approval thresholds are the settings defaults (confidence 0.85,
+  relevance 0.75, 2 evidence URLs; rejection at relevance 0.3), not overridden
+  in `.env`. They are uncalibrated starting values; calibrate them against a
+  labelled set (Phase 9) before changing them.
+- Version-2 review databases (retired UK gate) are still opened read/write for
+  the three core tables; their UK tables are never read, written or dropped.

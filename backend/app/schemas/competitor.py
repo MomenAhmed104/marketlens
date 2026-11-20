@@ -17,8 +17,8 @@ class CompanyType(StrEnum):
     OTHER = "other"
 
 
-# Only these types can ever be price benchmarks (still only with an explicit benchmark flag and
-# UK gate clearance). Manufacturers are included by business decision (18 Nov 2026): a
+# Only these types can ever be price benchmarks (still only with an explicit benchmark flag; the
+# separate UK gate clearance was retired on 19 Nov 2026). Manufacturers are included by business decision (18 Nov 2026): a
 # manufacturer's own displayed price joins the main benchmark alongside retailers. A
 # reference-only site such as Gibson stays out through its own price_benchmark=false.
 # Marketplaces, directories and other types never qualify.

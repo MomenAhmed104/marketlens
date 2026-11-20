@@ -7,11 +7,15 @@ Flow for a set of selected products:
   3. The search provider (Exa by default) runs the global queries.
   4. Results are grouped by registrable domain. Own site, known competitors and
      non-shop platforms are separated out deterministically.
-  5. Each new candidate gets a domain-restricted "profile" search for more
-     evidence about the business.
-  6. LLM 1 classifies candidates from that evidence only.
+  5. Each new candidate gets one domain-restricted "profile" search for more
+     evidence about the business (about/contact, address, registration, delivery).
+  6. LLM 1 classifies candidates from that evidence only, including UK relevance
+     evidence: exact quotes with their kind (no UK verdict). Python verifies the quotes
+     and decides whether they are sufficient (`uk_assessment`, rules.uk_assessment_from).
   7. Python validates the classification against the evidence and decides:
-     AUTO_APPROVED, APPROVAL_REQUIRED or REJECTED.
+     AUTO_APPROVED, APPROVAL_REQUIRED or REJECTED. Auto-approval needs sufficient,
+     uncontradicted verified UK evidence from at least two evidence pages; it never
+     grants benchmark permission.
   8. Persisted reviewer decisions (Phase 4) override step 7: REJECTED domains
      are never searched; APPROVED ones are searched even if not rediscovered.
   9. Targeted queries are generated for search targets only: preconfigured
@@ -43,6 +47,7 @@ from app.agents.discovery.rules import (
     apply_review_decision,
     classify_competitor,
     decide,
+    uk_review,
     uk_signals,
 )
 from app.agents.discovery.schemas import (
@@ -74,10 +79,12 @@ from app.services.llm import LLMClient, LLMOutputError, LLMResult, LLMUsage
 from app.services.search import SearchProvider
 from app.services.search.http import ProviderError
 from app.services.text_match import mentions_model, url_text
-from app.services.uk_gate import UkGateState, gate_decision
 
 MAX_QUERY_CHARS = 200
-PROFILE_QUERY = "music shop about us contact delivery returns"
+# One profile search per candidate (cost control). Aimed at the pages that show UK relevance:
+# about/contact, a shop or showroom address, company registration, and delivery terms
+# (including any statement that the UK is not served).
+PROFILE_QUERY = "music shop about us contact address showroom company registered delivery shipping to UK"
 APPROVED_FOR_SEARCH = (DomainApprovalStatus.PRECONFIGURED, DomainApprovalStatus.AUTO_APPROVED,
                        DomainApprovalStatus.APPROVED)  # fmt: skip
 
@@ -111,18 +118,11 @@ class CompetitorDiscoveryAgent:
         allowed_categories: list[str],
         llm_disabled_reason: str | None = None,
         review_decisions: list[DomainDecisionRecord] | None = None,
-        uk_state: UkGateState | None = None,
     ):
         """`llm=None` runs in LLM_DISABLED mode; pass `llm_disabled_reason` to say why.
 
         `review_decisions` are persisted reviewer decisions (Phase 4). Decisions on
         preconfigured competitors are ignored: those stay exactly as configured.
-
-        `uk_state` gates the reported `search_targets` and `targeted_queries` (never
-        run here) so they match what product searches may use; the default (empty)
-        blocks every domain. Discovery's own evidence-gathering searches (global
-        queries and per-candidate profile searches) are not product searches and are
-        not gated: they are how UK evidence is collected for review.
         """
         self.search = search
         self.llm = llm
@@ -130,7 +130,6 @@ class CompetitorDiscoveryAgent:
         self.llm_disabled_reason = None if llm else (llm_disabled_reason or "No LLM client provided")
         self.s = settings
         self.known = known_competitors
-        self.uk_state = uk_state if uk_state is not None else UkGateState.empty()
         known_domains = {registrable_domain(c.domain) for c in known_competitors}
         self.review_decisions = {d.domain: d for d in review_decisions or [] if d.domain not in known_domains}
         self.allowed_categories = sorted(set(allowed_categories))
@@ -340,8 +339,8 @@ class CompetitorDiscoveryAgent:
         return out
 
     def search_targets(self, candidates: list[DiscoveredCompetitor]) -> list[SearchTarget]:
-        """Domains allowed into targeted searches. Pending and rejected never are, and
-        neither is any domain the UK gate blocks."""
+        """Domains allowed into targeted searches: preconfigured competitors (as configured),
+        this run's auto-approved and reviewer-approved domains. Pending and rejected never are."""
         targets = [SearchTarget.from_known(c) for c in self.known]
         seen = {t.domain for t in targets}
         for c in candidates:
@@ -353,12 +352,7 @@ class CompetitorDiscoveryAgent:
             if d.decision is ReviewDecision.APPROVED and d.domain not in seen:
                 targets.append(SearchTarget.from_decision(d))
                 seen.add(d.domain)
-        allowed = []
-        for t in targets:
-            g = gate_decision(t.domain, self.uk_state)
-            if g.search_allowed:
-                allowed.append(t.model_copy(update={"uk_gate": g}))
-        return allowed
+        return targets
 
     # ------------------------------------------------------------------ run
 
@@ -413,6 +407,7 @@ class CompetitorDiscoveryAgent:
             classify_competitor(c, self.s.marketplace_domain_labels)  # independent of approval
             if decision := self.review_decisions.get(c.domain):
                 apply_review_decision(c, decision)
+            c.uk_review = uk_review(c.uk_assessment, c.review_decision)  # same view as the review API
 
         known_evidence = [
             KnownCompetitorEvidence(

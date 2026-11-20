@@ -46,6 +46,42 @@ export interface DomainDecision {
   version: number
 }
 
+// --- UK relevance evidence (Option B) ----------------------------------------
+// Mirrors backend schemas. There is no UK category: the backend verifies LLM 1's quotes and
+// decides whether the evidence is sufficient, contradicted or mixed (rules.uk_review); the UI
+// only shows it. UK evidence, domain approval and benchmark permission are separate.
+
+export type UkEvidenceKind =
+  | 'UK_PHYSICAL_STORE'
+  | 'UK_ADDRESS'
+  | 'UK_COMPANY_REGISTRATION'
+  | 'UK_DELIVERY'
+  | 'NON_UK_OPERATOR'
+  | 'NO_UK_SERVICE'
+  | 'WEAK_SIGNAL'
+
+export interface UkQuote {
+  url: string
+  quote: string
+  kind: UkEvidenceKind
+  verified: boolean
+  supports: boolean
+  note: string | null
+}
+
+export interface UkReview {
+  assessed: boolean // false: no UK evidence assessment (LLM disabled, failed, or an older record)
+  sufficient: boolean // verified evidence of UK relevance
+  contradicted: boolean // a verified quote says the UK is not served
+  mixed_location: boolean // verified UK presence and a verified based-abroad quote
+  independent_sources: number // distinct evidence pages behind the supporting quotes
+  summary: string
+  reasons: string[]
+  missing_evidence: string[]
+  verified_evidence: UkQuote[]
+  unverified_claims: UkQuote[]
+}
+
 /** Backend competitor classification (LLM 1 proposal + deterministic code safeguards). */
 export type BackendCompetitorClass = 'DIRECT_COMPETITOR' | 'RELATED_RETAILER' | 'NEEDS_REVIEW'
 
@@ -73,6 +109,8 @@ export interface CandidateSummary {
   // before classification existed (not yet backfilled); optional for older fixtures.
   competitor_class?: BackendCompetitorClass | null
   proposed_competitor_class?: BackendCompetitorClass | null
+  // UK relevance evidence view. Optional for older backends and fixtures.
+  uk_review?: UkReview | null
   evidence_count: number
   first_seen_at: string
   last_seen_at: string
@@ -181,7 +219,14 @@ export interface CompetitorDomain {
 // --- Shared enums --------------------------------------------------------------
 
 export type DomainApprovalStatus = 'PRECONFIGURED' | 'AUTO_APPROVED' | 'APPROVAL_REQUIRED' | 'APPROVED' | 'REJECTED'
-export type MatchStatus = 'EXACT_MATCH' | 'SIMILAR_MATCH' | 'REVIEW_REQUIRED' | 'NO_MATCH'
+export type MatchStatus = 'EXACT_MATCH' | 'EQUIVALENT_VARIANT' | 'SIMILAR_MATCH' | 'REVIEW_REQUIRED' | 'NO_MATCH'
+// LLM 2 Task A proposal labels (mapped by the backend; never the final status).
+export type ProposedMatch = 'EXACT_MATCH' | 'EQUIVALENT_VARIANT' | 'SIMILAR_ALTERNATIVE' | 'NOT_A_MATCH'
+export type ProposalStatus = 'COMPLETED' | 'UNSUPPORTED' | 'SKIPPED_NO_LLM' | 'SKIPPED_NOT_ELIGIBLE' | 'FAILED'
+export type ProposalAgreement = 'AGREES' | 'PYTHON_STRICTER' | 'LLM_STRICTER' | 'NOT_AVAILABLE'
+export type AvailabilityStatus = 'IN_STOCK' | 'OUT_OF_STOCK' | 'PREORDER' | 'BACKORDER' | 'DISCONTINUED' | 'UNKNOWN'
+// DIRECT = exact-match benchmark price; ALTERNATIVE = equivalent variant / similar, information only.
+export type PriceKind = 'DIRECT' | 'ALTERNATIVE' | 'NONE'
 export type EvidenceStatus = 'VERIFIED' | 'UNVERIFIED' | 'STALE' | 'NOT_FOUND' | 'CONFLICT'
 export type LlmMode = 'LLM_ENABLED' | 'LLM_DISABLED'
 
@@ -233,6 +278,8 @@ export interface DiscoveredCompetitor {
   automatic_approval_status: DomainApprovalStatus | null
   price_benchmark: boolean
   review_decision: DomainDecision | null
+  // UK relevance evidence view, the same as the review API's (optional for older fixtures).
+  uk_review?: UkReview | null
 }
 
 export interface DiscoveryUsage {
@@ -290,6 +337,71 @@ export interface CompetitorProduct {
   extraction_error: string | null
   product_title: string | null
   availability: string | null
+  // Product Intelligence Agent additions (optional: absent in older fixtures).
+  availability_status?: AvailabilityStatus
+  // Prices LLM 2 ignored, with a backend category. Only SALE sets sale_indicated; DELIVERY never does.
+  sale_indicated?: boolean
+  ignored_prices?: string[]
+  ignored_price_details?: IgnoredPriceRecord[]
+  // Verified specifications with their deterministic key and category (category null in older records).
+  specifications?: NormalizedSpec[]
+  option_prices?: OptionPriceEvidence[]
+  // selected_value is set only with explicit selection evidence; LLM 2's claim is kept separately.
+  options?: {
+    name: string
+    values: string[]
+    selected_value: string | null
+    claimed_selected_value?: string | null
+    selection_evidence?: string | null
+    quote: string
+  }[]
+  extraction_issues?: { kind: string; fields: string[]; description: string; quotes: string[]; verified: boolean }[]
+  match_proposal?: MatchProposalRecord | null
+  match_proposal_status?: ProposalStatus | null
+  match_proposal_error?: string | null
+}
+
+// Mirrors backend IgnoredPriceCategory and SpecCategory (checked by backend/tests/test_stage611_integration.py).
+export type IgnoredPriceCategory = 'SALE' | 'DELIVERY' | 'FINANCE' | 'OTHER'
+export interface IgnoredPriceRecord {
+  text: string
+  category: IgnoredPriceCategory
+}
+export type SpecCategory = 'power_supply' | 'output_power' | 'controls' | 'electronics' | 'pickup_configuration' | 'other'
+export interface NormalizedSpec {
+  name: string
+  value: string
+  key: string | null
+  category: SpecCategory | null
+}
+
+export interface OptionPriceEvidence {
+  option: string
+  status: string
+  price_text: string | null
+  amount: string | null
+  currency: string | null
+  quote: string | null
+  note: string | null
+  // Set when several current prices were associated with the catalogue variant by the backend.
+  matches_catalogue_variant?: boolean | null
+  variant_checks?: Record<string, 'MATCH' | 'CONFLICT' | 'UNKNOWN' | 'ABSENT'>
+}
+
+export interface MatchProposalRecord {
+  classification: ProposedMatch
+  corresponding_status: MatchStatus
+  reasons: { text: string; quote: string | null; verified: boolean }[]
+  differing_attributes: {
+    attribute: string
+    catalogue_value: string | null
+    page_value: string | null
+    quote: string | null
+    verified: boolean
+    cosmetic: boolean
+  }[]
+  confidence: number | null
+  notes: string | null
 }
 
 export interface DomainSearchSummary {
@@ -317,6 +429,8 @@ export interface IntelligenceUsage {
   llm_model: string | null
   llm_calls: number
   llm_failures: number
+  llm_match_calls?: number
+  llm_match_failures?: number
   llm_cost_usd: string | null
 }
 
@@ -371,6 +485,58 @@ export interface PriceComparison {
   difference_gbp: string | null // competitor - Stompbox, computed by the backend
 }
 
+export interface AlternativePrice {
+  shown: boolean
+  match_status: MatchStatus
+  reasons: string[]
+  price: string | null
+  currency: string | null
+  price_text: string | null
+  condition: 'NEW' | 'USED' | 'REFURBISHED' | 'UNKNOWN'
+  condition_label: string | null
+  benchmark_eligible: false
+}
+
+export interface AvailabilityView {
+  status: AvailabilityStatus
+  text: string | null
+  quote: string | null
+  reason: string | null
+  proposed: AvailabilityStatus | null
+}
+
+// Task C: the backend's combined answer per candidate (seller, match, price, availability).
+export interface ProductIntelligenceView {
+  candidate_id: string
+  product_url: string
+  seller: SearchTarget
+  match: {
+    status: MatchStatus
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+    proposed: ProposedMatch | null
+    proposal_status: ProposalStatus | null
+    agreement: ProposalAgreement
+    reasons: string[]
+    review_reasons: string[]
+  }
+  price: {
+    kind: PriceKind
+    status: PriceStatus
+    evidence_status: EvidenceStatus
+    price: string | null
+    currency: string | null
+    price_text: string | null
+    quote: string | null
+    source_url: string
+    retrieved_at: string | null
+    difference_gbp: string | null // DIRECT only
+    condition_label: string | null
+    not_shown_reasons: string[]
+  }
+  availability: AvailabilityView
+  uncertainties: string[]
+}
+
 export interface CandidateMatch {
   candidate_id: string
   stompbox_product_id: string
@@ -392,7 +558,16 @@ export interface CandidateMatch {
     note: string | null
   }
   price: PriceValidation
-  comparison: PriceComparison
+  comparison: PriceComparison // direct comparison: EXACT_MATCH only
+  // Product Intelligence Agent additions (optional: absent in older fixtures).
+  proposed_match?: ProposedMatch | null
+  proposal_status?: ProposalStatus | null
+  proposal_agreement?: ProposalAgreement
+  alternative_price?: AlternativePrice | null
+  price_kind?: PriceKind
+  availability?: AvailabilityView | null
+  spec_category_mismatches?: string[] // stored categories the backend ignored (audit only)
+  intelligence?: ProductIntelligenceView | null
 }
 
 export interface ProductMatchSummary {
@@ -403,6 +578,7 @@ export interface ProductMatchSummary {
   stompbox_price: string | null
   counts: Record<MatchStatus, number>
   comparable_prices: number
+  alternative_prices?: number
   candidates: CandidateMatch[]
 }
 
@@ -444,10 +620,12 @@ export interface RunSummary {
   products_failed: number
   candidates: number
   exact_matches: number
+  equivalent_variants?: number
   similar_matches: number
   review_required: number
   no_match: number
-  comparable_prices: number
+  comparable_prices: number // direct (exact-match) prices only
+  alternative_prices?: number // never mixed into comparable_prices
 }
 
 export interface ExecutionRun {
@@ -486,6 +664,12 @@ export interface CompetitorDiscoveredPayload {
   competitor_class?: BackendCompetitorClass | null // absent on events from older backends
   proposed_competitor_class?: BackendCompetitorClass | null
   reviewed: boolean
+  // UK relevance evidence view (absent on events from older backends).
+  uk_assessed?: boolean
+  uk_evidence_sufficient?: boolean
+  uk_evidence_contradicted?: boolean
+  uk_mixed_location?: boolean
+  uk_independent_sources?: number
 }
 
 export interface ProductRunResult {

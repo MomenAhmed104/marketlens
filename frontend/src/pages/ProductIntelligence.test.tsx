@@ -41,7 +41,14 @@ describe('Product Intelligence page', () => {
     const gear = screen.getByText('gear4music.com').closest('tr')!
     expect(within(gear).getByText('Not compared')).toBeInTheDocument()
     expect(within(gear).getByText('Price status is UNSUPPORTED')).toBeInTheDocument()
-    expect(screen.getAllByText('Not compared')).toHaveLength(4)
+    // Exact matches and review rows: "Not compared". The similar row sits in the separate
+    // alternative-products section, which has no difference column at all.
+    expect(screen.getAllByText('Not compared')).toHaveLength(3)
+    const alt = screen.getByRole('region', { name: 'Alternative products' })
+    expect(within(alt).queryByText(/Difference/)).not.toBeInTheDocument()
+    expect(within(alt).getByText('Alternative-product price')).toBeInTheDocument()
+    expect(within(andertons).getByText('LLM 2 proposed exact match')).toBeInTheDocument()
+    expect(within(andertons).getByText('In stock')).toBeInTheDocument()
     expect(container.querySelector('main')!.textContent).not.toMatch(/%|saving|discount/i)
   })
 

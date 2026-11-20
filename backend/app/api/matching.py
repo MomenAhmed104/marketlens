@@ -8,9 +8,9 @@ is involved, and nothing is stored. Running Phase 5 and 6 together is
 workflow orchestration (Phase 7).
 
 The client's payload is never trusted for who a competitor is: each
-candidate's `competitor` (benchmark flag, approval, type and UK gate decision)
-is recomputed from server state (catalogue, review decisions, UK eligibility
-and exceptions). A domain that is not a current server-side search target, or
+candidate's `competitor` (benchmark flag, approval and type) is recomputed from
+server state (catalogue and review decisions). A domain that is not a current
+server-side search target, or
 whose page URL is on another domain, can never be a price benchmark.
 """
 
@@ -30,7 +30,7 @@ def server_side_competitors(body: IntelligenceRunResult, request: Request) -> tu
     """The payload with every candidate's competitor replaced from server state. Returns (run, replaced)."""
     state = request.app.state
     return trusted_competitors(body, state.catalogue.competitors, state.review_store.list_decisions(),
-                               state.review_store.uk_gate_state(), state.settings)  # fmt: skip
+                               state.settings)  # fmt: skip
 
 
 @router.post("/evaluate", response_model=MatchingRunResult)

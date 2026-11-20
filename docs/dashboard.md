@@ -87,23 +87,36 @@ generic admin-panel look.
   - a compact distribution bar with the candidate and comparable counts;
   - the Stompbox price at 34 px, or "missing (nothing can be compared)", with
     the snapshot date and source link.
-- **Comparison groups** (`dashboard/ComparisonTable.tsx`): exact, review,
-  similar, and no match (collapsed). Each has a coloured dot and count, a short
-  note, and a coloured rail on every row.
+- **Comparison groups** (`dashboard/ComparisonTable.tsx`): exact and review
+  first (direct competitor prices), then a separate **Alternative products**
+  section with equivalent variants and similar alternatives, then no match
+  (collapsed). Each group has a coloured dot and count, a short note, and a
+  coloured rail on every row. Equivalent variants use the teal `--equivalent`
+  token.
   - **Rows:** competitor (domain in monospace, approval pill if not
-    configured, "Not a price benchmark"), page and match confidence, condition,
-    competitor price with its status and the Stompbox price.
+    configured, "Not a price benchmark"), page and match confidence with "LLM 2
+    proposed …" (and "Python more cautious" / "LLM 2 more cautious" when they
+    differ), condition (the backend's condition label for alternatives),
+    availability status, and the price.
   - **Difference:** a chip shown **only when `comparison.eligible`**; otherwise
     "Not compared" with the first backend reason.
+  - **Alternative products** have no difference column at all: the backend's
+    `alternative_price` is shown as "information only · not benchmarked", or
+    "Not shown" with its reason. Alternative prices never appear in the
+    exact-match table or the price KPIs (D-28).
 - **Evidence drawer** (`dashboard/EvidencePanel.tsx`, `components/Drawer.tsx`):
   a modal side panel, full screen on mobile. It traps focus, closes on Escape
   and returns focus to the opener. Three tabs:
-  - **Price:** a receipt with status, displayed price, the verbatim quote,
-    source and retrieval time; then the backend equation, or the reasons it was
-    not compared;
-  - **Identity:** match reasons, a "To resolve" callout, and a ✓ / ✕ / ?
-    checklist of Stompbox against competitor values;
-  - **Source:** page, retrieval, search query and rank, extraction, page type.
+  - **Price:** a receipt with price kind, status, displayed price, the verbatim
+    quote, source and retrieval time; prices shown for options; then the backend
+    equation, the alternative-product price callout, or the reasons it was not
+    compared;
+  - **Identity:** match reasons, a "To resolve" callout, the LLM 2 match
+    proposal (classification, agreement, verified reasons and differing
+    attributes with quotes) or why there is none, the backend's uncertainties,
+    and a ✓ / ✕ / ? checklist of Stompbox against competitor values;
+  - **Source:** page, retrieval, search query and rank, extraction,
+    availability (status, verified text, reason), page type.
 
   Review-required rows open on Identity; the others open on Price.
 
@@ -130,7 +143,17 @@ generic admin-panel look.
   - filter chips (`aria-pressed`), a product filter, and a "Follow live" switch;
   - while paused, a "N new · resume" pill;
   - events grouped under sticky stage headings, newest first, capped at 200.
+  - each `competitor_discovered` item shows the backend class and a UK evidence
+    pill with "From N independent pages" (`ukRelevance.ukEventStatus`, flags
+    only; events from older backends without UK fields show no pill).
   - This is display only; SSE ingestion is untouched.
+- **Discovered domains and UK evidence** (Stage 6.3.3, shown when the run result
+  has discovery candidates): `RunDomains.DiscoveredDomainsTable`, the same table
+  as Domain Review's run summary, with a UK evidence column. Each row shows the
+  evidence status and, on demand, the verified quotes with their kinds, missing
+  evidence, unverified claims (labelled "Not verified", kept apart) and how it was
+  assessed (`components/UkEvidence.tsx`, shared with the Domain Review cards).
+  A domain without a UK view shows "UK evidence not assessed" and nothing else.
 - **New run:** the catalogue picker, and a sticky **selection tray** with "N of
   5 selected", discovery and domain options, the disabled reason and Start.
 
@@ -242,6 +265,7 @@ page tests render the whole app against `mockAppApi`.
 | `pages/Overview.test.tsx` | hero product and key finding; stat tiles and their sources; distribution counts only; price cards; coverage folding; price explainer when LLM 2 is off; needs attention; empty and expired states |
 | `pages/ProductIntelligence.test.tsx` | header; eligible-only difference; non-benchmark label; **evidence drawer** (opening tab by status, tab arrows, Escape, Close returns focus, focus trap); collapsed no-match; missing price; no-LLM and empty states |
 | `pages/LiveRuns.test.tsx` | start request and SSE; 429; two-step cancel with focus and 409; every stage state; outcome, re-run and approved-since note; feed filter chips; expired run |
+| `pages/LiveRunsUk.test.tsx` | UK evidence in Live Runs: verified quotes and kinds, unverified claims kept apart, contradiction and reasons, not-assessed rows, no section without discovery, feed pills from event flags, older events without UK fields |
 | `pages/DomainReview.test.tsx` | approval workflow; **approval and benchmark shown separately**; configured tiles; rejected; run-scoped excluded; arrow-key tabs; selected-run summary |
 | `CataloguePicker`, `reviewer`, `format` tests | filter and 5-product limit; shared reviewer name; formatting (missing vs zero, signed difference, dates without seconds, plurals) |
 
@@ -253,5 +277,12 @@ page tests render the whole app against `mockAppApi`.
   price explainer says why and how to enable extraction.
 - **Excluded domains are run-scoped;** rejected decisions persist.
 - **Approval:** approval never affects a running run.
-- **Visual check:** not done by me in a real browser; screenshots from the user
-  at 1440, 1024 and 390 px are needed.
+- **Visual check (20 Nov 2026, Stage 6.3.6):** done with headless Chrome against
+  the production build and a read-only mock API serving the generated fixture
+  (no backend, no providers), at 1440, 1024 and 390 px (390 and 1024 inside an
+  iframe of exactly that width). It found that wide tables widened Live Runs at
+  390 px (grid items with `min-width: auto`); fixed in `index.css`. After the fix
+  no page scrolls horizontally; tables scroll inside their own container, so the
+  UK evidence column of the discovered-domains table needs a sideways scroll on
+  a phone. Not checked: a real phone, other browsers, touch interaction, a live
+  run streaming real data.

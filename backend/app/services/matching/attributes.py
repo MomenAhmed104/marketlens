@@ -35,6 +35,19 @@ _CAB = re.compile(r"(?<![0-9a-z])([1248])\s?x\s?(8|10|12|15)(?![0-9a-z])", re.IG
 _AMP_FORM = re.compile(r"\b(head|combo|cab|cabinet|stack)\b", re.IGNORECASE)
 _BUNDLE = re.compile(r"\b(bundle|pack|kit|package|starter set)\b|\s\+\s", re.IGNORECASE)
 
+# Electronics and functional variants (audit fix). Pickup layout codes match in any case ("HSS", "hss",
+# "Hss", lower-case URL slugs) and are normalised to upper case. Only whole tokens count: the
+# letter/digit boundaries keep codes inside words ("hhh", "class") from matching.
+_PICKUPS = re.compile(r"(?<![A-Za-z0-9])(HSS|SSS|HSH|HH|SSH)(?![A-Za-z0-9])", re.IGNORECASE)
+# In titles "active"/"passive" only counts next to an electronics word; in electronics specs it counts bare.
+_ACTIVE_CTX = re.compile(r"\b(active|passive)[\s_-]+(?:pickups?|electronics|eq|preamp|circuit(?:ry)?|bass|humbuckers?)\b",
+                         re.IGNORECASE)  # fmt: skip
+_ACTIVE_BARE = re.compile(r"\b(active|passive)\b", re.IGNORECASE)
+_ELECTRO = re.compile(r"\belectro[\s_-]?acoustic\b|\bacoustic[\s_-]?electric\b", re.IGNORECASE)
+_NO_ELECTRO = re.compile(r"\bnon[\s_-]?electro\b|\b(?:no|without)\s+(?:pickups?|electronics|preamp)\b"
+                         r"|\bacoustic[\s_-]?only\b|\bpurely\s+acoustic\b", re.IGNORECASE)  # fmt: skip
+_NONE_VALUE = re.compile(r"^\s*(?:none|no|n/?a|not applicable|-+)\s*\.?$", re.IGNORECASE)
+
 _ROMAN = {"ii": 2, "iii": 3, "iv": 4, "vi": 6, "vii": 7, "viii": 8}
 _GEN = re.compile(
     r"(?<![0-9a-z])(?:mk\.?\s?(?P<mk>[ivx]{1,4}|\d{1,2})|v(?P<v>\d{1,2})|gen(?:eration)?\.?\s?(?P<gen>\d{1,2})"
@@ -97,6 +110,31 @@ def amp_forms(text: str | None) -> set[str]:
 
 def is_bundle(text: str | None) -> bool:
     return bool(_BUNDLE.search(text or ""))
+
+
+def pickup_configs(text: str | None) -> set[str]:
+    """Pickup layout codes written in the text (HSS, SSS, HH, HSH, SSH), normalised to upper case."""
+    return {m.upper() for m in _PICKUPS.findall(text or "")}
+
+
+def electronics_modes(text: str | None, bare: bool = False) -> set[str]:
+    """"active" / "passive" electronics. `bare=True` for electronics spec values."""
+    rx = _ACTIVE_BARE if bare else _ACTIVE_CTX
+    return {m.lower() for m in rx.findall(text or "")}
+
+
+def electro_states(text: str | None) -> set[str]:
+    """"electro" when the text says electro-acoustic, "none" when it explicitly says no electronics."""
+    out = set()
+    if _ELECTRO.search(text or ""):
+        out.add("electro")
+    if _NO_ELECTRO.search(text or ""):
+        out.add("none")
+    return out
+
+
+def is_none_value(value: str | None) -> bool:
+    return bool(_NONE_VALUE.match(value or ""))
 
 
 def generations(text: str | None) -> set[int]:
@@ -230,6 +268,103 @@ class ProductProfile:
     editions: set[str]
     type_stems: set[str]
     name_words: set[str] = field(default_factory=set)  # words that are part of the identity, not a finish
+    pickups: set[str] = field(default_factory=set)  # stated pickup layout codes
+    electronics: set[str] = field(default_factory=set)  # stated "active" / "passive"
+    # True: electro-acoustic (stated); False: an acoustic guitar the catalogue classes as non-electro; None: unknown.
+    electro: bool | None = None
+    # Approved model designation missing from the catalogue record (see APPROVED_DESIGNATIONS).
+    designation: ApprovedDesignation | None = None
+
+
+# Approved product-identity decisions: catalogue products whose model designation is part of the
+# product identity but is not written in the catalogue record. Each entry is a user decision; the
+# catalogue itself is unchanged. The designation is a model attribute, never a finish alias.
+# Matching is exact: the designation as a whole word in a title, the URL or the extracted
+# model/SKU; specifications never count. SKUs are compared exactly (case and punctuation ignored)
+# and only SKUs seen on real retailer pages are listed. No fuzzy matching, no generic aliases.
+@dataclass(frozen=True)
+class ApprovedDesignation:
+    designation: str  # e.g. "Figured"
+    decided: str  # when and by whom the identity was approved
+    model_skus: tuple[str, ...] = ()  # retailer SKUs verified to be this designated model
+    other_model_skus: tuple[str, ...] = ()  # retailer SKUs verified to be the undesignated model
+
+
+APPROVED_DESIGNATIONS: dict[str, ApprovedDesignation] = {
+    # SB-028 is the Epiphone Les Paul Standard '60s Figured Left-Handed (user decision, 20 Nov 2026).
+    # Figured is a separate Epiphone model (AAA figured maple top) from the plain-top Les Paul
+    # Standard '60s (AA flame maple top). SKUs from the Stage 6 / 6.2 run records (19 Nov 2026):
+    # EIGLP6ITNHRL (Andertons) and EIGLP6ITNH1L (Gear4music) are the Figured LH; EILS6ITNH1
+    # (Gear4music secondhand) is the plain-top model.
+    "SB-028": ApprovedDesignation(
+        designation="Figured", decided="User decision, 20 Nov 2026 (Stage 6.3)",
+        model_skus=("EIGLP6ITNHRL", "EIGLP6ITNH1L"), other_model_skus=("EILS6ITNH1",),
+    ),
+}
+
+
+def designation_in(designation: str, text: str | None) -> bool:
+    """The designation as a whole word ("Figured" in "Standard '60s Figured Left Handed")."""
+    return bool(text) and re.search(rf"(?<![a-z0-9]){re.escape(designation.casefold())}(?![a-z0-9])",
+                                    text.casefold()) is not None  # fmt: skip
+
+
+def sku_in(skus: tuple[str, ...], text: str | None) -> set[str]:
+    """Listed SKUs written in the text as a whole token ("EILS6ITNH1", "eils6itnh1", "EI-LS6ITNH1").
+
+    A token is a run of letters/digits joined by "-", "_" or "."; it is compared with case and those
+    joiners removed. "EILS6ITNH1L" is a different token from "EILS6ITNH1" and never matches it."""
+    tokens = {compact(t) for t in re.findall(r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*", text or "")}
+    return {s for s in skus if compact(s) in tokens}
+
+
+# Controlled finish aliases (Stage 6.1): catalogue finish -> other spellings verified on real retailer
+# pages. Matching is exact on the normalised phrase (case, spacing and punctuation ignored); there is no
+# fuzzy matching. Add an alias only with evidence, and note where it was seen.
+FINISH_ALIASES: dict[str, tuple[str, ...]] = {
+    "iced tea burst": ("ice tea",),  # Gear4music "Epiphone Les Paul Standard 60s, Ice Tea" (Stage 6, 19 Nov 2026)
+}
+
+
+def finish_key(text: str | None) -> str:
+    """Normalised finish phrase: casefolded, punctuation as spaces, whitespace collapsed."""
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", (text or "").casefold()).split())
+
+
+def finish_names(finish: str) -> list[str]:
+    key = finish_key(finish)
+    return [key, *FINISH_ALIASES.get(key, ())]
+
+
+def finish_in(finish: str, text: str | None) -> bool:
+    """The catalogue finish, or one of its controlled aliases, as a whole phrase in the text."""
+    if mentions_model(finish, text):
+        return True
+    padded = f" {finish_key(text)} "
+    return any(name and f" {name} " in padded for name in finish_names(finish))
+
+
+# Colour words that describe a part, not the body finish ("Gold Hardware", "Cream Binding"), and sheen
+# words that qualify a finish rather than name another one ("Natural Satin"). Stage 6.1.1.
+_PART_COLOUR = re.compile(
+    r"\b[a-z]+ (?:hardware|pickguard|scratch ?plate|binding|fingerboard|fretboard|inlays?|knobs?|tuners?|headstock"
+    r"|case|gig bag|bag|strap)\b"
+)
+_SHEEN = frozenset({"satin", "gloss", "matte", "metallic"})
+
+
+def other_finish_colours(finish: str, text: str | None, ignore: set[str] = frozenset()) -> set[str]:
+    """Colour words left in the text after removing the catalogue finish and its aliases.
+
+    Non-empty means the text names another finish as well ("Ice Tea / Ebony"): mixed evidence,
+    never a confirmed finish. Part colours, sheen words and `ignore` (identity words) are skipped.
+    """
+    padded = f" {finish_key(text)} "
+    for name in finish_names(finish):
+        while name and f" {name} " in padded:
+            padded = padded.replace(f" {name} ", " ")
+    padded = _PART_COLOUR.sub(" ", padded)
+    return colour_words(padded) - _SHEEN - set(ignore)
 
 
 def _finish(name: str) -> str | None:
@@ -263,4 +398,18 @@ def profile(p: StompboxProduct) -> ProductProfile:
         generations=generations(f"{p.manufacturer_model} {p.product_name}"),
         editions=editions(p.product_name), type_stems=type_stems(f"{p.subcategory} {p.product_name}"),
         name_words=set(words(f"{p.brand} {p.manufacturer_model} {name_wo_finish}")),
+        pickups=pickup_configs(f"{p.product_name} {p.manufacturer_model} {p.specifications or ''}"),
+        electronics=electronics_modes(f"{p.product_name} {p.manufacturer_model} {p.subcategory}")
+        | electronics_modes(p.specifications, bare=True),
+        electro=_electro(p, text), designation=APPROVED_DESIGNATIONS.get(p.product_id),
     )  # fmt: skip
+
+
+def _electro(p: StompboxProduct, text: str) -> bool | None:
+    """From the catalogue only: an "Electro-acoustic" product is electro; one whose subcategory is
+    an acoustic guitar without electro wording is not; anything else is unknown."""
+    if _ELECTRO.search(text):
+        return True
+    if p.category == "Guitars" and re.search(r"\bacoustic\b", p.subcategory, re.IGNORECASE):
+        return False
+    return None

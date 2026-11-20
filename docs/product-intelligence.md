@@ -1,17 +1,29 @@
-# Product intelligence (LLM 2), Phase 5
+# Product Intelligence Agent (LLM 2)
 
 Implemented in `backend/app/agents/intelligence/`. For each selected Stompbox
 product, the agent searches the approved competitor domains, retrieves the
-candidate pages, and (when LLM 2 is configured) extracts structured product
-fields. Deterministic Python checks every extracted value against the page
-text.
+candidate pages, and (when LLM 2 is configured) runs LLM 2's tasks on them.
+Deterministic Python checks every LLM 2 value against the page text. The
+architecture and approved decisions (D-20 to D-34) are in
+`stompbox_uk_competitor_intelligence_implementation_plan.md` §3.6 and §8.6.
 
-**Out of scope here (Phase 6):**
-- deciding whether a page is the same product (exact or similar);
-- checking prices against the catalogue;
-- comparing prices.
+LLM 2 is one logical agent with three tasks, each with its own prompt and
+structured output, on the existing OpenRouter client and `LLM2_MODEL`:
 
-No record in this phase claims a match.
+| Task | Where | What |
+|---|---|---|
+| B, extraction | 1st call per retrieved page (`PageExtraction`) | Title, brand, model, SKU, price, currency, availability, specifications, options, per-option prices and issues, each with verbatim quotes |
+| A, match proposal | 2nd call, only on a retrieved page Task B classified as `product_page` (`MatchProposal`) | `EXACT_MATCH`, `EQUIVALENT_VARIANT`, `SIMILAR_ALTERNATIVE` or `NOT_A_MATCH`, with reasons and differing attributes, each quoting the page |
+| C, combined output | Python, no call (`app/services/matching/view.py`) | One evidence-backed view per candidate: seller, match, price, availability, uncertainties |
+
+LLM 2 proposes; Python validates and decides. The final match status, price
+validation, price kind (direct or alternative) and availability status are set
+deterministically (see `product-matching.md`). Search and retrieval are
+unchanged.
+
+**Not done by LLM 2:** domain approval or search permission, search and
+retrieval, quote/price/currency validation, the final match decision,
+benchmark eligibility and orchestration.
 
 ## Status: what has been tested (12 Nov 2026)
 
@@ -119,6 +131,99 @@ then.
 | `CONFLICT` | The stated currency differs from the symbol on the page, or the quote shows several currencies |
 | `INVALID` | Not exactly one amount with a currency marker, or zero or negative |
 
+**Task B additions** (`rules.check_extraction`):
+
+- **Per-option prices** (`option_prices`) get the same checks as the main price.
+  Several verified current amounts (main and option prices, or a verified
+  `MULTIPLE_PRICES`/`CONFLICTING_INFORMATION` issue on `price` whose quotes show
+  two current amounts) are resolved by `variants.associate` (audit fix, P-6):
+  - The candidates are the verified option prices, plus the main price labelled
+    with the options **explicitly** shown as selected (if any).
+  - An option counts as selected only when its verified quote marks the whole
+    value with selection wording (`rules.selection_evidence`): "Selected: Black",
+    "Selected colour - Black", "Black (selected)", "Black - selected", "✓ Black",
+    "[x] Black", or "You have selected Black".
+    - A value merely appearing on the page, or a heading such as "Colour: Black",
+      is not evidence. Retrieved pages use the same form for spec bullets
+      ("- Colour: Ocean Blue Grey") and hardware ("Finish: Chrome").
+    - "Selected: Black Sunburst" and "Jet Black (selected)" do not select
+      "Black".
+    - Without evidence, the option is kept with `selected_value=null`; LLM 2's
+      claim stays in `claimed_selected_value`. The main price is then not
+      treated as the Stompbox variant's price, and it becomes `AMBIGUOUS` unless
+      an option-specific price matches.
+  - Each label is checked against every known catalogue variant attribute:
+    finish, handedness, size, strings, configuration, bundle, pickups,
+    active/passive and electro-acoustic. Each attribute is `MATCH`, `CONFLICT`,
+    `UNKNOWN` or `ABSENT`.
+  - An option matches only with no `CONFLICT` and no `UNKNOWN`. So a finish match
+    alone is not enough: a left-handed product needs "left-handed" stated, and
+    "Black Left-Handed" conflicts with a right-handed Black product.
+  - Handedness, size, strings and electronics stated in the verified product
+    title apply to every option, unless some option states them itself.
+  - The price is kept only when **exactly one** option matches. Otherwise it is
+    `AMBIGUOUS`: no option matches, several match, an attribute can't be
+    verified, the catalogue names no finish while the options vary by colour,
+    the page is not a single-product page, or a verified issue names a price that
+    no option accounts for.
+  - Non-matching options stay in `option_prices` as alternative information
+    (`matches_catalogue_variant=false`, `variant_checks`).
+  - The lowest, first or default-option price is never chosen. Without the
+    catalogue product, several prices stay `AMBIGUOUS` as before.
+- **Options** are kept only if their quote and every value are in the page.
+- **Issues** (`AMBIGUOUS_VARIANT`, `CONFLICTING_INFORMATION`, `MULTIPLE_PRICES`,
+  `MISSING_INFORMATION`) are `verified` only if every quote is in the page.
+  Unverified issues never affect anything.
+- **Specifications** get a deterministic `key` (`strings`, `pickups`, `finish`,
+  ...; otherwise a slug) and a `category` (`app/services/specs.py`, Stage 6.1):
+  `power_supply`, `output_power`, `controls`, `electronics`,
+  `pickup_configuration` or `other`.
+  - "Power: 9V AC Adapter/Battery" is a power supply; "Power: 50W" is output
+    power. A value that mixes watts with supply wording is `other`, because
+    output wattage is never inferred from a supply voltage.
+  - "Controls" is never electronics.
+  - LLM 2's `normalized_name` is only a lookup hint, and never sets a
+    category-dependent key (`output_power`, `power_supply`, `controls`,
+    `electronics`, `pickups`).
+- **Ignored prices and the sale flag** (Stage 6.1):
+  - Each ignored price gets a category in `ignored_price_details` (`SALE`,
+    `DELIVERY`, `FINANCE`, `OTHER`). The raw texts stay in `ignored_prices` for
+    audit.
+  - `sale_indicated` is set only by a `SALE` entry or sale wording in the price
+    quote. Delivery, shipping, postage and click & collect charges never set it.
+  - A delivery amount never becomes a price. If its quote shows it as a
+    delivery charge it is `INVALID`; if the same amount is listed as a delivery
+    charge it is `AMBIGUOUS`.
+  - "Free delivery £219" is still a product price.
+  - Stage 6.1.1:
+    - A delivery discount ("Save £5 on delivery", "£5 off shipping") is never
+      sale evidence. A product sale that also mentions delivery ("Was £10 and
+      free delivery") still is.
+    - Amounts counted from verified multiple-price issue quotes exclude
+      delivery, collection and finance charges.
+    - Matching re-checks delivery context independently (`validate_price`).
+- **Availability** (`app/services/availability.py`, P-5, U-3): the verified text
+  maps to `IN_STOCK`, `OUT_OF_STOCK`, `PREORDER`, `BACKORDER`, `DISCONTINUED` or
+  `UNKNOWN`. Missing, unverified, unrecognised, mixed or contradicted text, or an
+  LLM 2 proposal that disagrees with the mapping, gives `UNKNOWN`. "Only 2 left"
+  or "Low stock" is `IN_STOCK` only when the page shows the product can be bought
+  now (in stock, add to basket, buy now).
+
+**Task A checks** (`rules.check_match_proposal`): each reason and differing
+attribute must quote the page text (never the catalogue product), and a
+differing attribute's page value must be in its quote. Whether a difference is
+cosmetic (finish or colour only) is decided in Python from the attribute name.
+Statuses: `COMPLETED` (at least one verified quote), `UNSUPPORTED` (none:
+ignored), `SKIPPED_NO_LLM`, `SKIPPED_NOT_ELIGIBLE` (not a retrieved
+single-product page, extraction failed, or `INTELLIGENCE_MATCH_PROPOSALS=false`)
+and `FAILED`. An account-level error on either call stops all further LLM 2
+calls in the run. Usage counts both calls (`llm_calls`) and Task A separately
+(`llm_match_calls`, `llm_match_failures`); both tasks share
+`LLM2_MAX_COMPLETION_TOKENS`. `llm_calls` counts requests actually sent. The
+failure counters also include pages and proposals **not attempted** after an
+account-level error, so `llm_failures` can exceed `llm_calls`, and
+`llm_match_failures` can exceed `llm_match_calls`.
+
 A field's value appears on the `CompetitorProduct` only when its status is
 `EXTRACTED`. Otherwise it is null, and the rejected value stays in
 `field_evidence` for audit. Specifications are kept only if their value
@@ -209,3 +314,47 @@ most 20 LLM 2 calls per product. Narrow the run with `domains` to cut cost.
   the condition for Phase 6.
 - **Synchronous requests:** a large run can take a minute or more.
   Streaming over SSE is Phase 7.
+
+## Geographic availability (Stage 6.3.1)
+
+Stage 6.2 retrieved a Gear4music page that said "This product is currently
+unavailable for delivery to your country": the page was rendered for a visitor
+outside the UK (retrieval sends no location). It describes delivery, not stock.
+
+- A geographic or delivery restriction in the verified availability text
+  (`availability.geographic_restriction`: "unavailable for delivery to your
+  country", "not available in your region", "cannot ship to your location",
+  "do not ship to the United Kingdom", "not available for delivery") is always
+  `UNKNOWN`, whatever LLM 2 proposes and whatever else the text says.
+- Generic unavailability ("currently unavailable", "not available", "This
+  product is currently not available for purchase") stays `OUT_OF_STOCK` when
+  the page shows no restriction, because it states that the product cannot be
+  bought; if a restriction appears anywhere on the page it may be the cause, so
+  the status is `UNKNOWN`.
+- Explicit stock wording ("Out of stock", "Sold out", "Not in stock", "No
+  stock") is `OUT_OF_STOCK`; an LLM 2 proposal of only `UNKNOWN` does not
+  override it. Any other disagreeing proposal still gives `UNKNOWN`.
+- Footer wording such as "We deliver to over 100 countries" or "No delivery
+  charge in the UK" is not a restriction.
+- Matching uses the status recorded at extraction; older run files keep theirs.
+- Approved by the user on 20 November 2026 as a refinement of P-5.
+
+Tests: `tests/test_availability.py`, `tests/test_intelligence_tasks.py`,
+`tests/test_workflow_integration.py`.
+
+## Live evaluation (Stage 6 and Stage 6.2, 19 November 2026)
+
+Two small live runs (CLI, Exa, `openai/gpt-6-luna`): SB-001 and SB-028 on
+Andertons and Gear4music, 4 searches, 4 pages and 8 LLM 2 calls each (4 of
+them Task A), no failures, about $0.032 search and retrieval plus $0.005 LLM
+per run. Page text is not stored, only verified quotes.
+
+Verified live in Stage 6.2: Task A proposals on real pages (all verified),
+specification categories, the SB-028 "Figured" disagreement (since resolved:
+SB-028 is the approved Figured model, and Task A now receives
+`model_designation`), a geographic
+delivery restriction and an "OTHER" ignored amount. Verified offline only:
+delivery-price exclusion (seen live in Stage 6 only), delivery discounts,
+genuine sale wording, the Ice Tea alias, mixed finishes, option prices and
+spec-category tampering. Extraction accuracy at scale, latency and cost per full
+pipeline run are not measured yet.

@@ -19,7 +19,14 @@ from datetime import datetime, timedelta
 from app.agents.intelligence.schemas import CompetitorProduct, ExtractedField, ExtractionStatus, FieldStatus, PageType
 from app.schemas.common import EvidenceStatus
 from app.services.matching.schemas import PriceStatus, PriceValidation
-from app.services.prices import find_prices, is_conditional_context, is_sale_context, parse_single_price
+from app.services.prices import (
+    find_prices,
+    ignored_price_category,
+    is_conditional_context,
+    is_delivery_context,
+    is_sale_context,
+    parse_single_price,
+)
 
 _FROM_FIELD = {
     FieldStatus.NOT_FOUND: (PriceStatus.MISSING, EvidenceStatus.NOT_FOUND),
@@ -34,6 +41,12 @@ _NOT_EXTRACTED_REASON = {
     ExtractionStatus.SKIPPED_NOT_RETRIEVED: "Page was not retrieved: no price evidence",
     ExtractionStatus.FAILED: "LLM extraction failed: no price evidence",
 }
+
+
+def _delivery_amounts(c: CompetitorProduct) -> set:
+    """Amounts listed as delivery charges, re-derived from the raw ignored-price texts (the stored
+    categories are not trusted, and older records have none)."""
+    return {m.amount for t in c.ignored_prices if ignored_price_category(t) == "delivery" for m in find_prices(t)}
 
 
 def validate_price(c: CompetitorProduct, now: datetime, max_age_hours: int) -> PriceValidation:
@@ -66,6 +79,15 @@ def validate_price(c: CompetitorProduct, now: datetime, max_age_hours: int) -> P
         problems.append(f"price text currency {parsed.currency} differs from stored {c.currency}")
     if not in_quote:
         problems.append("amount not found in its quote")
+    elif all(is_delivery_context(quote, m) for m in in_quote):
+        # Stage 6.1.1: re-checked here too, so an older run file or a client-submitted run can never
+        # turn a delivery charge into a VALID product price.
+        return PriceValidation(status=PriceStatus.INVALID, evidence_status=EvidenceStatus.UNVERIFIED,
+                               reasons=["Amount is a delivery/shipping charge in its quote, not a product price"],
+                               **base)  # fmt: skip
+    elif c.price in _delivery_amounts(c):
+        return PriceValidation(status=PriceStatus.AMBIGUOUS, evidence_status=EvidenceStatus.UNVERIFIED,
+                               reasons=["The same amount is listed as a delivery charge on the page"], **base)  # fmt: skip
     elif all(is_sale_context(quote, m) for m in in_quote):
         return PriceValidation(status=PriceStatus.EXCLUDED_SALE_PRICE, evidence_status=EvidenceStatus.UNVERIFIED,
                                reasons=["Amount is shown as a was/RRP/original/saving figure in its quote"], **base)  # fmt: skip

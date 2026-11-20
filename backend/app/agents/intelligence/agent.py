@@ -10,17 +10,22 @@ For each selected Stompbox product:
      Caps per domain and per product bound cost.
   4. Retrieve page text through the provider (one batched call per product),
      fetching the canonical URL (UK storefront for locale-prefixed URLs).
-  5. LLM 2 extracts the page's product fields with verbatim quotes.
+  5. LLM 2 Task B extracts the page's product fields with verbatim quotes.
   6. Python checks every quote against the page text and the price against
-     sale/conditional context (`rules.check_extraction`).
+     sale/conditional context, verifies options, per-option prices and issues,
+     and normalises availability (`rules.check_extraction`).
+  7. LLM 2 Task A (second call, only on a retrieved page that Task B classified
+     as a single-product page) proposes a match classification with quotes;
+     Python verifies the quotes (`rules.check_match_proposal`).
 
 Two modes, as in discovery:
-- LLM_ENABLED: steps 1-6.
+- LLM_ENABLED: steps 1-7.
 - LLM_DISABLED (no LLM client): steps 1-4 only. Every candidate is
   SKIPPED_NO_LLM and no product field is filled in.
 
 Results are returned, not persisted (temporary execution state). Nothing here
-decides whether a page is the same product or compares prices (Phase 6).
+decides whether a page is the same product or compares prices: the matcher
+does, and a Task A proposal can only add uncertainty there.
 """
 
 from __future__ import annotations
@@ -33,7 +38,7 @@ from decimal import Decimal
 
 from app.agents.discovery.schemas import SearchTarget
 from app.agents.intelligence import prompts
-from app.agents.intelligence.rules import check_extraction, product_queries
+from app.agents.intelligence.rules import CheckedExtraction, check_extraction, check_match_proposal, product_queries
 from app.agents.intelligence.schemas import (
     CompetitorProduct,
     DomainSearchSummary,
@@ -42,7 +47,10 @@ from app.agents.intelligence.schemas import (
     IntelligenceMode,
     IntelligenceRunResult,
     IntelligenceUsage,
+    MatchProposal,
     PageExtraction,
+    PageType,
+    ProposalStatus,
     PageRecord,
     ProductIntelligence,
     ProductSummary,
@@ -57,7 +65,6 @@ from app.services.llm import LLMClient, LLMOutputError, LLMUsage
 from app.services.search import SearchProvider
 from app.services.search.http import ProviderAuthError, ProviderError
 from app.services.text_match import mentions_model, url_text
-from app.services.uk_gate import UkGateState, blocked_reason, gate_decision
 
 MAX_ERROR_CHARS = 300
 # 401/403 auth, 402 insufficient credits: every further call would fail the same way.
@@ -81,15 +88,9 @@ class ProductIntelligenceAgent:
         targets: list[SearchTarget],
         skipped_targets: list[SkippedTarget] | None = None,
         llm_disabled_reason: str | None = None,
-        uk_state: UkGateState | None = None,
     ):
         """`targets` must already be filtered to approved, searchable domains
-        (see `eligible_search_targets`). `llm=None` runs in LLM_DISABLED mode.
-
-        Defence in depth for the UK gate: with `uk_state`, every target's gate decision
-        is recomputed here; without it, the target's attached `uk_gate` is used. Any
-        target the gate does not allow (or that was never checked) is dropped, with a
-        warning, and listed as skipped. It is never searched."""
+        (see `eligible_search_targets`). `llm=None` runs in LLM_DISABLED mode."""
         self.search = search
         self.llm = llm
         self.mode = IntelligenceMode.LLM_ENABLED if llm else IntelligenceMode.LLM_DISABLED
@@ -97,26 +98,11 @@ class ProductIntelligenceAgent:
         self.s = settings
         self.warnings: list[str] = []
         self.skipped_targets = list(skipped_targets or [])
-        self.targets = self._uk_checked(targets, uk_state)
+        self.targets = list(targets)
         self.usage = IntelligenceUsage(llm_model=llm.model if llm else None)
         self._search_sem = asyncio.Semaphore(settings.intelligence_search_concurrency)
         self._llm_sem = asyncio.Semaphore(settings.intelligence_llm_concurrency)
         self._llm_stopped: str | None = None
-
-    def _uk_checked(self, targets: list[SearchTarget], uk_state: UkGateState | None) -> list[SearchTarget]:
-        kept: list[SearchTarget] = []
-        already_skipped = {s.domain for s in self.skipped_targets}
-        for t in targets:
-            d = gate_decision(t.domain, uk_state) if uk_state is not None else t.uk_gate
-            if d is not None and d.search_allowed and d.domain == t.domain:
-                kept.append(t.model_copy(update={"uk_gate": d}))
-                continue
-            reason = blocked_reason(d) if d else "UK gate: not checked; not searched"
-            self.warnings.append(f"{t.domain} dropped before searching: {reason}")
-            if t.domain not in already_skipped:
-                self.skipped_targets.append(SkippedTarget(domain=t.domain, uk_gate=d, reason=reason,
-                                                          company_type=t.company_type and t.company_type.value))  # fmt: skip
-        return kept
 
     async def aclose(self) -> None:
         await self.search.aclose()
@@ -237,6 +223,13 @@ class ProductIntelligenceAgent:
         if usage.cost_usd is not None:
             self.usage.llm_cost_usd = (self.usage.llm_cost_usd or Decimal(0)) + usage.cost_usd
 
+    def _llm_error(self, e: ProviderError) -> None:
+        if isinstance(e, LLMOutputError) and e.usage is not None:  # e.g. truncated: tokens were spent
+            self._record_llm_usage(e.usage)
+        if isinstance(e, ProviderAuthError) or e.status_code in ACCOUNT_ERROR_STATUS:
+            self._llm_stopped = f"LLM 2 stopped after an account-level error ({_err(e)})"
+            self.warnings.append(f"{self._llm_stopped}; remaining pages were not sent")
+
     async def _extract(self, cand: CompetitorProduct, product: StompboxProduct, page: RetrievedPage) -> None:
         text = (page.content or "")[: self.s.intelligence_page_chars]
         async with self._llm_sem:
@@ -244,6 +237,7 @@ class ProductIntelligenceAgent:
                 self.usage.llm_failures += 1
                 cand.extraction_status = ExtractionStatus.FAILED
                 cand.extraction_error = f"Not attempted: {self._llm_stopped}"
+                self._skip_proposal(cand, "extraction was not attempted")
                 return
             cand.page.chars_sent_to_llm = len(text)
             self.usage.llm_calls += 1
@@ -255,18 +249,15 @@ class ProductIntelligenceAgent:
                 )  # fmt: skip
             except ProviderError as e:
                 self.usage.llm_failures += 1
-                if isinstance(e, LLMOutputError) and e.usage is not None:  # e.g. truncated: tokens were spent
-                    self._record_llm_usage(e.usage)
                 cand.extraction_status = ExtractionStatus.FAILED
                 cand.extraction_error = _err(e)
-                if isinstance(e, ProviderAuthError) or e.status_code in ACCOUNT_ERROR_STATUS:
-                    self._llm_stopped = f"LLM 2 stopped after an account-level error ({_err(e)})"
-                    self.warnings.append(f"{self._llm_stopped}; remaining pages were not sent")
+                self._llm_error(e)
+                self._skip_proposal(cand, "extraction failed")
                 return
         self.usage.llm_model = result.model
         self._record_llm_usage(result.usage)
         ext = result.value
-        checked = check_extraction(ext, text, page.title)
+        checked = check_extraction(ext, text, page.title, product)
         v = checked.values
         cand.extraction_status = ExtractionStatus.COMPLETED
         cand.llm_request_ids = result.request_ids
@@ -280,9 +271,65 @@ class ProductIntelligenceAgent:
         cand.specifications = checked.specifications
         cand.sale_indicated = checked.sale_indicated
         cand.ignored_prices = [t.strip()[:200] for t in ext.ignored_prices[:10]]
+        cand.ignored_price_details = checked.ignored_price_details
         cand.field_evidence = checked.evidence
         cand.llm_confidence = ext.confidence
         cand.llm_notes = (ext.notes or "").strip()[:500] or None
+        cand.options = checked.options
+        cand.option_prices = checked.option_prices
+        cand.extraction_issues = checked.issues
+        cand.availability_status = checked.availability_status
+        cand.availability_reason = checked.availability_reason
+        cand.availability_proposed = ext.availability_normalized
+        await self._propose(cand, product, page, text, checked)
+
+    # ------------------------------------------------------------------ Task A
+
+    def _skip_proposal(self, cand: CompetitorProduct, why: str,
+                       status: ProposalStatus = ProposalStatus.SKIPPED_NOT_ELIGIBLE) -> None:  # fmt: skip
+        cand.match_proposal_status = status
+        cand.match_proposal_error = f"Match proposal not run: {why}"
+
+    async def _propose(self, cand: CompetitorProduct, product: StompboxProduct, page: RetrievedPage, text: str,
+                       checked: CheckedExtraction) -> None:  # fmt: skip
+        """Second LLM 2 call (Task A), only for a retrieved single-product page."""
+        if not self.s.intelligence_match_proposals:
+            return self._skip_proposal(cand, "INTELLIGENCE_MATCH_PROPOSALS is false")
+        if cand.page_type is not PageType.PRODUCT_PAGE:
+            return self._skip_proposal(cand, f"page is a {cand.page_type.value}, not a single-product page")
+        verified = {
+            "product_title": cand.product_title, "brand": cand.brand, "model": cand.model, "sku": cand.sku,
+            "availability": cand.availability, "price_text": cand.price_text,
+            "specifications": {sp.name: sp.value for sp in checked.specifications},
+            "options": [{"name": o.name, "values": o.values, "selected": o.selected_value} for o in checked.options],
+        }  # fmt: skip
+        async with self._llm_sem:
+            if self._llm_stopped:
+                self.usage.llm_failures += 1
+                self.usage.llm_match_failures += 1
+                cand.match_proposal_status = ProposalStatus.FAILED
+                cand.match_proposal_error = f"Not attempted: {self._llm_stopped}"
+                return
+            self.usage.llm_calls += 1
+            self.usage.llm_match_calls += 1
+            try:
+                result = await self.llm.complete_structured(
+                    system=prompts.MATCH_SYSTEM,
+                    user=prompts.match_user(product, cand.competitor, cand.product_url, page.title, text, verified),
+                    output_model=MatchProposal, schema_name="match_proposal",
+                )  # fmt: skip
+            except ProviderError as e:
+                self.usage.llm_failures += 1
+                self.usage.llm_match_failures += 1
+                cand.match_proposal_status = ProposalStatus.FAILED
+                cand.match_proposal_error = _err(e)
+                self._llm_error(e)
+                return
+        self._record_llm_usage(result.usage)
+        status, record = check_match_proposal(result.value, text, page.title, result.request_ids)
+        cand.match_proposal, cand.match_proposal_status = record, status
+        if status is ProposalStatus.UNSUPPORTED:
+            cand.match_proposal_error = "No supporting quote was found in the page text; the proposal is ignored"
 
     # ------------------------------------------------------------------ run
 
@@ -316,9 +363,11 @@ class ProductIntelligenceAgent:
             if page is None or page.status is not RetrievalStatus.OK:
                 why = page.status.value if page else "not retrieved"
                 cand.extraction_error = f"Page {why}" + (f": {record.error}" if record.error else "")
+                self._skip_proposal(cand, f"page {why}")
             elif self.llm is None:
                 cand.extraction_status = ExtractionStatus.SKIPPED_NO_LLM
                 cand.extraction_error = f"LLM 2 not used ({self.llm_disabled_reason}); page retrieved, nothing extracted"
+                self._skip_proposal(cand, f"LLM 2 not used ({self.llm_disabled_reason})", ProposalStatus.SKIPPED_NO_LLM)
             else:
                 jobs.append(self._extract(cand, p, page))
         await asyncio.gather(*jobs)
@@ -338,9 +387,12 @@ class ProductIntelligenceAgent:
         if not self.targets:
             self.warnings.append("No approved search targets; nothing was searched")
         results = [await self.run_product(p) for p in products]
-        failed = self.usage.llm_failures
+        failed = self.usage.llm_failures - self.usage.llm_match_failures
         if failed:
             self.warnings.append(f"LLM 2 extraction failed for {failed} page(s); see extraction_error")
+        if self.usage.llm_match_failures:
+            self.warnings.append(f"LLM 2 match proposal failed for {self.usage.llm_match_failures} page(s); "
+                                 "see match_proposal_error (Python matching still ran)")
         return IntelligenceRunResult(
             run_id=f"intelligence-{started.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:6]}",
             mode=self.mode, llm_disabled_reason=self.llm_disabled_reason, started_at=started, finished_at=_now(),

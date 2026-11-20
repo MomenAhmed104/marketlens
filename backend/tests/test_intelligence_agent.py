@@ -10,7 +10,7 @@ import pytest
 from app.agents.intelligence import ProductIntelligenceAgent, eligible_search_targets
 from app.agents.intelligence.schemas import ExtractedField as F
 from app.agents.intelligence.schemas import ExtractionStatus as X
-from app.agents.intelligence.schemas import FieldStatus, IntelligenceMode
+from app.agents.intelligence.schemas import FieldStatus, IntelligenceMode, PageType
 from app.schemas.common import DomainApprovalStatus as S
 from app.schemas.competitor import CompanyType as T
 from app.schemas.review import DomainDecisionRecord, ReviewDecision
@@ -18,8 +18,7 @@ from app.schemas.search import RetrievalStatus
 from app.services.llm import OpenRouterClient
 from app.services.search.base import RawHit
 from app.services.search.http import ProviderUnavailableError
-from tests.uk_fakes import all_eligible
-from tests.intelligence_fakes import FakeExtractLLM, FakeIntelSearch, FakePage, extraction
+from tests.intelligence_fakes import FakeExtractLLM, FakeIntelSearch, FakePage, extraction, proposal
 from tests.discovery_fakes import llm_failure
 from tests.search_fakes import FAKE_KEY, Recorder, http_client, make_settings, ok
 
@@ -69,8 +68,13 @@ EXTRACTIONS = {
 }  # fmt: skip
 
 
+# Task A proposals with verified quotes (pages without one get the fake's unsupported default).
+PROPOSALS = {
+    AND: proposal(reasons=[("Same model and product", "Boss RC-5 Loop Station"), ("Model stated", "Model: RC-5")]),
+}  # fmt: skip
+
+
 # Explicit test seeding: every configured competitor and test domain assessed UK_ELIGIBLE.
-ALL_UK = all_eligible(["beckettsmusic.co.uk", "ebay.co.uk", "shop.co.uk", "guitarworld.com", "idealo.co.uk"])
 
 
 def dec(domain, decision=ReviewDecision.APPROVED, ctype=T.RETAILER, bench=False):
@@ -89,7 +93,7 @@ DECISIONS = [
 
 def make(catalogue, llm="fake", decisions=DECISIONS, search=None, **settings):
     s = make_settings(**settings)
-    targets, skipped = eligible_search_targets(catalogue.competitors, decisions, ALL_UK, s)
+    targets, skipped = eligible_search_targets(catalogue.competitors, decisions, s)
     search = search or FakeIntelSearch(HITS, PAGES)
     llm = FakeExtractLLM(EXTRACTIONS) if llm == "fake" else llm
     return ProductIntelligenceAgent(search, llm, s, targets, skipped,
@@ -116,7 +120,7 @@ def cands(result):
 
 
 def test_only_preconfigured_and_reviewer_approved_domains_are_targets(catalogue):
-    targets, skipped = eligible_search_targets(catalogue.competitors, DECISIONS, ALL_UK, make_settings())
+    targets, skipped = eligible_search_targets(catalogue.competitors, DECISIONS, make_settings())
     by = {t.domain: t for t in targets}
     assert len(by) == 15  # 13 preconfigured + beckett + ebay
     assert by["beckettsmusic.co.uk"].approval_status is S.APPROVED and by["beckettsmusic.co.uk"].price_benchmark
@@ -129,12 +133,12 @@ def test_only_preconfigured_and_reviewer_approved_domains_are_targets(catalogue)
 
 
 def test_pending_domains_are_never_targets(catalogue):
-    targets, _ = eligible_search_targets(catalogue.competitors, [], ALL_UK, make_settings())
+    targets, _ = eligible_search_targets(catalogue.competitors, [], make_settings())
     assert {t.domain for t in targets} == {c.domain for c in catalogue.competitors}
 
 
 def test_approved_unknown_type_is_searched_but_never_a_benchmark(catalogue):
-    targets, _ = eligible_search_targets(catalogue.competitors, [dec("shop.co.uk", ctype=None)], ALL_UK,
+    targets, _ = eligible_search_targets(catalogue.competitors, [dec("shop.co.uk", ctype=None)],
                                          make_settings())  # fmt: skip
     t = next(t for t in targets if t.domain == "shop.co.uk")
     assert t.company_type is None and t.price_benchmark is False
@@ -216,7 +220,9 @@ def test_usage_and_cost(outcome):
     result, _ = outcome
     u = result.usage
     assert u.search_requests == 15 and u.search_cost_usd == Decimal("0.105")
-    assert u.llm_calls == 4 and u.llm_prompt_tokens == 6000 and u.llm_cost_usd == Decimal("0.009")
+    # 4 extraction calls (one fails) + 3 match-proposal calls on the extracted single-product pages (P-1).
+    assert u.llm_calls == 7 and u.llm_match_calls == 3 and u.llm_match_failures == 0
+    assert u.llm_prompt_tokens == 6000 + 3000 and u.llm_cost_usd == Decimal("0.009") + Decimal("0.003")
     assert u.llm_model == "fake/llm-2@2026" and u.retrieval_cost_usd == Decimal("0.006")
     assert result.mode is IntelligenceMode.LLM_ENABLED
 
@@ -345,3 +351,86 @@ def test_reasoning_budget_exhausted_fails_page_cleanly_and_counts_cost(catalogue
     assert result.usage.llm_failures == 1 and result.usage.llm_cost_usd == Decimal("0.0043")
     assert result.usage.llm_completion_tokens == 8000
     assert not any("stopped" in w for w in result.warnings)
+
+
+# --------------------------------------------------------------------------- Task A: match proposals (P-1)
+
+
+def _agent(catalogue, proposals=None, extractions=None, **settings):
+    llm = FakeExtractLLM(extractions or EXTRACTIONS, proposals)
+    return make(catalogue, llm=llm, **settings), llm
+
+
+def test_two_calls_per_eligible_page_extraction_first_then_match(catalogue):
+    from tests.intelligence_fakes import proposal
+
+    agent, llm = _agent(catalogue, {AND: proposal(reasons=[("Same model RC-5", "Model: RC-5")])},
+                        intelligence_llm_concurrency=1)  # fmt: skip
+    result = run(agent, catalogue)
+    for url in (AND, G4M, EBAY):  # extracted single-product pages
+        seq = [c["schema"] for c in llm.calls if f'"url": "{url}"' in c["user"]]
+        assert seq == ["page_extraction", "match_proposal"], url
+    assert [c["schema"] for c in llm.calls if f'"url": "{BECK}"' in c["user"]] == ["page_extraction"]
+    a = cands(result)[AND]
+    assert a.match_proposal_status.value == "COMPLETED" and a.match_proposal.classification.value == "EXACT_MATCH"
+    assert a.match_proposal.reasons[0].verified and a.match_proposal.request_ids
+    # The Task A prompt carries the catalogue product and verified fields, never the Stompbox SKU.
+    match_prompt = next(c for c in llm.calls_for("match_proposal") if f'"url": "{AND}"' in c["user"])
+    assert '"manufacturer_model": "RC-5"' in match_prompt["user"] and "UNTRUSTED_PAGE_TEXT" in match_prompt["user"]
+    assert (catalogue.products["SB-001"].stompbox_sku or "@@none@@") not in match_prompt["user"]
+    # A default fake proposal cites nothing -> UNSUPPORTED (ignored by the matcher).
+    assert cands(result)[G4M].match_proposal_status.value == "UNSUPPORTED"
+
+
+def test_match_proposal_skipped_when_not_eligible(catalogue):
+    ext = dict(EXTRACTIONS)
+    ext[G4M] = extraction(page_type=PageType.LISTING_PAGE)
+    agent, llm = _agent(catalogue, extractions=ext)
+    c = cands(run(agent, catalogue))
+    assert c[G4M].match_proposal_status.value == "SKIPPED_NOT_ELIGIBLE" and "listing_page" in c[G4M].match_proposal_error
+    assert c[BECK].match_proposal_status.value == "SKIPPED_NOT_ELIGIBLE" and "extraction failed" in c[BECK].match_proposal_error
+    assert c[AND2].match_proposal_status.value == "SKIPPED_NOT_ELIGIBLE" and "BLOCKED" in c[AND2].match_proposal_error
+    assert not any(f'"url": "{G4M}"' in x["user"] for x in llm.calls_for("match_proposal"))
+
+
+def test_match_proposals_can_be_switched_off(catalogue):
+    agent, llm = _agent(catalogue, intelligence_match_proposals=False)
+    result = run(agent, catalogue)
+    assert llm.calls_for("match_proposal") == [] and result.usage.llm_match_calls == 0
+    assert cands(result)[AND].match_proposal_status.value == "SKIPPED_NOT_ELIGIBLE"
+
+
+def test_no_llm_mode_marks_proposals_skipped_no_llm(catalogue):
+    result = run(make(catalogue, llm=None), catalogue)
+    assert cands(result)[AND].match_proposal_status.value == "SKIPPED_NO_LLM"
+    assert cands(result)[AND].availability_status.value == "UNKNOWN"
+
+
+def test_failed_match_proposal_is_isolated_and_counted(catalogue):
+    agent, _ = _agent(catalogue, {AND: llm_failure()})
+    result = run(agent, catalogue)
+    a = cands(result)[AND]
+    assert a.extraction_status is X.COMPLETED and a.price == Decimal("189.00")  # extraction kept
+    assert a.match_proposal_status.value == "FAILED" and "simulated invalid output" in a.match_proposal_error
+    u = result.usage
+    assert u.llm_match_failures == 1 and u.llm_failures == 2  # BECK extraction + AND proposal
+    assert any("match proposal failed for 1 page" in w for w in result.warnings)
+    assert any("extraction failed for 1 page" in w for w in result.warnings)
+
+
+def test_account_error_on_match_call_stops_all_further_llm_calls(catalogue):
+    from app.services.search.http import ProviderAuthError
+
+    agent, llm = _agent(catalogue, {AND: ProviderAuthError("openrouter", "401 unauthorised", 401)},
+                        intelligence_llm_concurrency=1)  # fmt: skip
+    result = run(agent, catalogue)
+    first_failure = next(i for i, c in enumerate(llm.calls) if c["schema"] == "match_proposal"
+                         and f'"url": "{AND}"' in c["user"])  # fmt: skip
+    assert len(llm.calls) == first_failure + 1  # nothing sent after the account error
+    assert any("stopped after an account-level error" in w for w in result.warnings)
+
+
+def test_availability_status_is_set_from_verified_text(outcome):
+    c = cands(outcome[0])
+    assert c[AND].availability_status.value == "IN_STOCK" and c[G4M].availability_status.value == "OUT_OF_STOCK"
+    assert c[EBAY].availability_status.value == "UNKNOWN"  # no availability text extracted

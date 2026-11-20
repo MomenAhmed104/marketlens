@@ -8,14 +8,22 @@
 (deterministic matching and price validation) is complete (commit 2118cec).
 Phase 7 (pipeline orchestration) is complete (commit e295c17). Phase 8 (live
 dashboard) and the classification work are in the WIP checkpoint `970c7be` on
-branch `wip/uk-gate-2026-11-17`, awaiting review; see `docs/dashboard.md`. The
-UK eligibility gate and its review API are implemented (uncommitted); the real
-review database is still schema version 1, so every domain is blocked until the
-migration is applied and assessments are recorded. See "UK eligibility gate"
-below and `docs/uk-eligibility.md`. Do not start Phase 9 until the user approves. Product
-intelligence and discovery run in `LLM_DISABLED` mode until
-`OPENROUTER_API_KEY` is added: both models are configured as
-`openai/gpt-6-luna` (14 Nov 2026; see "OpenRouter configuration" below). See
+branch `wip/uk-gate-2026-11-17`, awaiting review; see `docs/dashboard.md`. UK
+relevance follows the approved Option B simplification (19 Nov 2026, uncommitted):
+verified UK evidence in discovery and review, no four-category assessment, and no
+separate UK eligibility gate (retired). See "UK relevance evidence, Option B" below and
+`docs/stompbox_uk_competitor_intelligence_implementation_plan.md` (the authoritative
+baseline). LLM 2 is now the three-task Product Intelligence Agent (plan §8.6
+stages 1-5 implemented 19 Nov 2026, uncommitted). Stage 6 controlled live evaluation was
+authorized and run twice on 19 Nov 2026 (Stage 6 and Stage 6.2: SB-001 and SB-028 on Andertons
+and Gear4music, about $0.04 each); Stages 6.1, 6.1.1 and 6.3 corrected what they found, offline
+only. See "Product Intelligence Agent, stages 1-5" and "Live evaluation runs" below. Stage 6.3
+(pre-demo hardening, 20 Nov 2026, uncommitted) awaits review before the Git checkpoint; its P-5
+refinement and the SB-028 Figured identity were approved on 20 Nov 2026, and the SB-028 price
+baseline (£579, recorded as a sale price) is still unconfirmed. Do not
+start Phase 9 or any further live (paid) run until the user approves. Both models are configured
+as `openai/gpt-6-luna` (14 Nov 2026; see "OpenRouter configuration" below); without
+`OPENROUTER_API_KEY` both agents run in `LLM_DISABLED` mode. See
 `docs/competitor-discovery.md`.\
 **Catalogue baseline:** 100 Stompbox products.\
 **Plan date:** 9 November 2026.
@@ -221,21 +229,40 @@ can be changed without rewriting agents.
 
 ### LLM 2 --- Product Intelligence Agent
 
-**Purpose:** turn retrieved content into structured competitor product
-information.
+**Purpose (approved 19 Nov 2026, plan §3.6 and §8.6, decisions D-20 to
+D-34):** for every selected catalogue product, help answer: which
+competitor sells it, how it matches (exact match, equivalent variant,
+similar alternative or not a match), its current selling price, and
+whether it is available.
 
-Responsibilities: 1. Extract product title, brand and model. 2. Extract
-standard displayed price/currency only when explicit. 3. Extract
-specifications and availability when present. 4. Normalize attributes
-and terminology. 5. Produce structured competitor product records. 6.
-Propose exact/similar candidates and explain evidence. 7. Identify
-missing, ambiguous or contradictory fields.
+LLM 2 is **one logical agent with three tasks**, each with its own prompt
+and structured output, on the existing OpenRouter client and `LLM2_MODEL`
+(no other model or provider):
+
+-   **Task B, extraction** (1st call per retrieved page): title, brand,
+    model, SKU, specifications, current price and currency, availability,
+    options, per-option prices and issues (ambiguous variant, conflicting
+    information, multiple prices, missing information), each with a
+    verbatim quote.
+-   **Task A, match proposal** (2nd call, only on a retrieved page that
+    Task B classified as a single-product page): `EXACT_MATCH`,
+    `EQUIVALENT_VARIANT`, `SIMILAR_ALTERNATIVE` or `NOT_A_MATCH`, with
+    reasons and differing attributes that quote the page.
+-   **Task C, combined output**: assembled in Python with no LLM call
+    (`ProductIntelligenceView`): seller, match, price, availability and
+    explicit uncertainties.
 
 Never invent product fields. Unknown values must remain null/unknown
 with an explicit status. Preserve source URL and retrieval timestamp.
 
-LLM 2 proposes matches; deterministic Python makes the final validation
-decision.
+LLM 2 proposes; Python validates and decides. Python keeps domain
+approval and search permissions, search and retrieval, quote
+verification, price validation and sale-price exclusion, currency and
+evidence validation, the final match decision, benchmark eligibility and
+orchestration. An LLM 2 proposal or verified issue can never upgrade,
+downgrade or replace a Python classification: its only possible effect
+is turning `EXACT_MATCH` / `EQUIVALENT_VARIANT` into `REVIEW_REQUIRED`
+(U-4).
 
 ### Python validation and matching
 
@@ -245,16 +272,35 @@ variant checks. - Price parsing and currency validation. -
 Price-difference calculations. - Evidence status assignment. - API
 schema validation and state transitions.
 
-Match statuses (names updated in Phase 6 to the user's brief): -
-`EXACT_MATCH`: same product identity and required variant. -
-`SIMILAR_MATCH`: related alternative, not the same product. -
-`REVIEW_REQUIRED`: potential match with unresolved identity/variant
-ambiguity. - `NO_MATCH`: evidence does not support a match.
+Match statuses (names updated in Phase 6 to the user's brief;
+`EQUIVALENT_VARIANT` added 19 Nov 2026, P-2/P-3): - `EXACT_MATCH`: same
+product identity and required variant. - `EQUIVALENT_VARIANT`: otherwise
+the same product, only the cosmetic finish or colour differs (U-1;
+decided by Python alone). - `SIMILAR_MATCH`: related alternative, not the
+same product. - `REVIEW_REQUIRED`: potential match with unresolved
+identity/variant ambiguity. - `NO_MATCH`: evidence does not support a
+match. LLM 2's `SIMILAR_ALTERNATIVE` maps to `SIMILAR_MATCH` and
+`NOT_A_MATCH` to `NO_MATCH`, only to compare the proposal with Python.
 
 Exact-match checks must consider brand, manufacturer model/product
 identifier and critical variants such as handedness, string count,
 finish, generation and configuration. Use SKU/part number when
-available. Similar products must never be mislabeled exact.
+available. Similar products must never be mislabeled exact. Handedness,
+size, configuration, electronics, functional specifications and model
+differences never qualify as an equivalent variant.
+
+**Direct vs alternative prices (D-28, D-32):** only `EXACT_MATCH`
+prices are direct competitor prices (benchmark gate unchanged, difference
+competitor − Stompbox). `EQUIVALENT_VARIANT` and `SIMILAR_MATCH` prices
+are alternative-product prices: same price validation, a search-approved
+domain but no benchmark flag needed, an explicit condition label for
+used/refurbished items, no difference, never in `comparable_prices`, and
+displayed separately. Several current prices that cannot be tied to the
+product or variant make the price `AMBIGUOUS`; the lowest is never
+chosen (P-6). Availability statuses (P-5): `IN_STOCK`, `OUT_OF_STOCK`,
+`PREORDER`, `BACKORDER`, `DISCONTINUED`, `UNKNOWN` (missing, ambiguous,
+conflicting or unverifiable evidence; low-stock wording is `IN_STOCK`
+only on a page that shows the product can be bought now, U-3).
 
 Evidence statuses: - `VERIFIED` - `UNVERIFIED` - `STALE` - `NOT_FOUND` -
 `CONFLICT`
@@ -692,7 +738,8 @@ or provide its path.
     manufacturers join the main price benchmark alongside retailers. A
     manufacturer still needs its own benchmark flag (Gibson stays
     `price_benchmark=false`; Yamaha Music London keeps `manufacturer` and
-    `true`) and UK gate clearance. The frontend mirror of the type list
+    `true`). (The UK gate clearance this also required was retired on 19 Nov 2026,
+    Option B.) The frontend mirror of the type list
     (`frontend/src/api.ts`) matches, and a non-benchmark competitor's reason
     now reads "… is not marked as a price benchmark (type)". Known marketplaces (`MARKETPLACE_DOMAIN_LABELS`) can only
     be approved as `marketplace` and are never auto-approved by
@@ -914,8 +961,11 @@ or provide its path.
     the whole budget with no answer) is never parsed or repaired.
     `LLMOutputError` carries the usage and request IDs of failed calls, and
     both agents add those tokens and that cost to their run usage.
--   No real OpenRouter call has been made yet. Accuracy, latency and cost per
-    run are unmeasured.
+-   Real OpenRouter calls since then (no others are recorded): one LLM 1 discovery run on
+    14 Nov 2026 (10 classified domains in the review database), the classification backfill on
+    16 Nov 2026 ($0.0142) and the two Stage 6 product-intelligence runs on 19 Nov 2026 (8 LLM 2
+    calls each, about $0.005 each). Accuracy, latency and cost per full pipeline run are still
+    unmeasured.
 
 ### Explicit competitor classification, stage 1 (15 Nov 2026, backend only)
 
@@ -972,50 +1022,191 @@ or provide its path.
     always Related, never Direct, even if LLM 1 proposed "retailer". Unnamed
     domains are titled by the domain, and a missing company type is not shown.
 
-### UK eligibility gate (17-18 Nov 2026, uncommitted)
+### UK relevance evidence, Option B (18-19 Nov 2026, uncommitted)
 
--   Full design, rules, API and migration procedure: `docs/uk-eligibility.md`.
--   One deterministic gate (`app/services/uk_gate.py`) decides search and
-    benchmark permission per canonical domain. Statuses: `UK_ELIGIBLE` (allowed),
-    `INSUFFICIENT_EVIDENCE` (the default for every unassessed domain, configured
-    or discovered; blocked unless an exception allows it) and `NOT_UK_ELIGIBLE`
-    (always blocked; exceptions never apply). The gate is applied in discovery's
-    reported targets, the intelligence agent, API and CLI, the pipeline
-    (including auto-approved domains) and the matcher's benchmark check.
--   Exceptions: explicit user approval, with independent `allow_search` and
-    `allow_benchmark` scopes (benchmarking needs search). They can only be granted
-    while the domain is `INSUFFICIENT_EVIDENCE` (409 otherwise). An evidence-status
-    change revokes an active exception in the same transaction
-    (`revoked_by_status_change`), so it never revives on its own. Approved, not
-    seeded: guitarguitar.co.uk and bax-shop.co.uk (search and benchmark), and
-    gibson.com (search only).
--   Evidence: `UK_ELIGIBLE` needs a strong item (physical store, UK registered
-    company with retail operations, UK operating address or UK retail operation).
-    Weak signals never suffice. `REVIEWER_SUPPLIED` evidence needs a note.
-    `SAVED_EVIDENCE` is verified against the domain's stored discovery evidence
-    (`app/services/uk_evidence.py`).
--   Separate concepts: UK eligibility, domain approval, competitor classification
-    and benchmark eligibility are stored and decided independently.
--   Audit fixes: D1 (one canonical domain key everywhere, `canonical_domain`), D2
-    and D3 (exception rules above) and D4 (the matching CLI and API rebuild
-    competitors from trusted state, `app/services/matching/trusted.py`, failing
-    closed if the review database cannot be read).
--   Review API: `app/api/uk_eligibility.py` under `/api/review/uk-eligibility`
-    (list, detail with histories, PUT assessment, PUT exception).
-    `expected_version` is required (409 on conflict). Writes are limited to
-    configured competitors and discovered domains (404 `UNKNOWN_DOMAIN`
-    otherwise). The list covers every configured and discovered domain, assessed
-    or not. **Decisions (18 Nov 2026, user):** keep the saved-evidence check;
-    keep 409 for refused exceptions; local-only demo, so there is no
-    authentication and `reviewer` is self-declared.
--   Storage: schema version 2 adds five UK tables. The explicit migration
-    (`python -m app.services.review_migration`) is a dry run by default;
-    `--apply` takes a verified backup first. It has **not** been run on the real
-    database (version 1; backup
-    `data/review/backups/competitor_review.pre-wip-preservation-20261117T200534Z.sqlite3`).
--   Manufacturer benchmarking: see the Phase 4 decision (18 Nov 2026).
-    Manufacturers are benchmark types; Yamaha Music London (`manufacturer`,
-    `price_benchmark=true`) is compared once UK-cleared, and Gibson
-    (`price_benchmark=false`) never is.
--   Not done: frontend for UK review, seeding the 13 assessments and three
-    exceptions, and the migration of the real database.
+-   **Authoritative baseline:** `docs/stompbox_uk_competitor_intelligence_implementation_plan.md`.
+    The user selected the simplified UK relevance approach (Option B) on 19 Nov 2026. Design
+    and rules: `docs/competitor-discovery.md` ("UK relevance evidence").
+-   LLM 1 discovers UK-focused competitors (UK-based shops and shops abroad that serve UK
+    customers) and returns `uk_evidence` only: up to 5 exact quotes, each with an evidence kind.
+    It gives no UK verdict. Python verifies each quote (verbatim at the cited URL, wording
+    fits its kind, weak signals never count) and stores `DiscoveredCompetitor.uk_assessment`
+    (`UkEvidenceAssessment`: `sufficient`, `contradicted`, `mixed_location`,
+    `independent_sources`, verified evidence, unverified claims, reasons).
+-   **Decisions (19 Nov 2026, user):**
+    -   No formal four-category assessment (`UK_BASED` / `SERVES_UK_FROM_ABROAD` /
+        `NOT_SERVING_UK` / `UNKNOWN`), no UK confidence, no review recommendation, and no
+        reviewer UK override. Reviewers approve or reject with optional `notes`.
+    -   Auto-approval needs sufficient verified UK evidence, no verified contradiction, no
+        mixed location, and supporting quotes from at least two different evidence pages
+        (several lines from one page count once), plus every other existing criterion.
+    -   `.uk` domain, GBP price and postcode signals are not an auto-approval requirement and
+        never establish UK relevance on their own (the Direct Competitor class safeguard
+        still uses them; unchanged).
+    -   Verified contradictory evidence goes to review and is never rejected automatically. A
+        reviewer may approve despite it: the domain is then searched, and the contradiction,
+        decision and note stay visible.
+    -   Auto-approval never grants benchmark permission (`decide` always sets
+        `price_benchmark=false`). Only the reviewer's explicit `benchmark_eligible` or the
+        workbook flag makes a domain a benchmark.
+    -   With LLM 1 disabled, new domains stay pending. Configured competitors keep their
+        configured path, workbook types and benchmark flags, with no new-domain rules applied.
+-   Earlier decisions kept: the seven approved domains stay approved with their benchmark
+    flags (D2); Thomann is searched and benchmarked from its workbook flag (D5); the 13 show
+    as Configured (D6); one profile search per candidate (D7); no paid backfill (D9).
+-   **The separate UK eligibility gate is retired:** `uk_gate.py`, `uk_evidence.py`,
+    `schemas/uk_eligibility.py`, `/api/review/uk-eligibility`, the `review_migration` CLI,
+    exceptions and seeding, and `docs/uk-eligibility.md`. Product searches use the 13
+    configured competitors, reviewer-approved domains and (LLM enabled,
+    `PIPELINE_SEARCH_AUTO_APPROVED`) this run's auto-approved domains. Pending, rejected and
+    directory domains are never searched. Benchmark comparisons need only the benchmark flag.
+    `trusted.py` still rebuilds competitors from server state and fails closed (no benchmarks)
+    if the review database cannot be read.
+-   **Storage:** new review databases are created at version 1 (three core tables). Existing
+    version-1 and version-2 files open without any write; a version-2 file's UK tables are
+    never read, written or dropped, and no file's version changes. No migration. Older
+    records with the retired category or override fields load (the extra keys are ignored)
+    and are never rewritten. The real database is version 1 with no UK assessments and was
+    not touched.
+-   API and events: `uk_review` on review candidates (evidence view); discovery candidates
+    carry `uk_assessment` and `uk_review`; `competitor_discovered` carries `uk_assessed`,
+    `uk_evidence_sufficient`, `uk_evidence_contradicted`, `uk_mixed_location` (Stage 6.3) and
+    `uk_independent_sources` (flags only; the quotes are in the run result).
+-   LLM 1's UK-evidence prompt has never run against the real model (the 14 Nov discovery run
+    predates Option B); the accuracy of its UK quotes is unmeasured.
+-   **Stored review records (checked 20 Nov 2026, read-only):** 48 candidates (39 pending,
+    7 approved, 2 rejected; 10 classified by LLM 1 on 14 Nov, 38 from no-LLM runs). None has a
+    `uk_assessment`, so all show "UK evidence not assessed" until a domain is rediscovered with
+    LLM 1. They are deliberately not backfilled (D9).
+-   **Auto-approval thresholds:** `DISCOVERY_AUTO_APPROVE_MIN_CONFIDENCE=0.85`,
+    `DISCOVERY_AUTO_APPROVE_MIN_RELEVANCE=0.75`, `DISCOVERY_AUTO_APPROVE_MIN_EVIDENCE_URLS=2`,
+    `DISCOVERY_REJECT_MAX_RELEVANCE=0.3` (settings defaults; not overridden in `.env`). They are
+    uncalibrated starting values: no labelled evaluation set exists yet. Calibrate them in Phase 9
+    before relying on auto-approval; do not change them without that evidence.
+
+### Product Intelligence Agent, stages 1-5 (19 Nov 2026, uncommitted)
+
+-   **Authority:** plan §3.6, §8.4.1, §8.5 and §8.6; decisions D-20 to D-34 (P-1 to P-7, U-1 to U-4
+    all approved; only the live test budget is open). Design notes: `docs/product-intelligence.md`
+    and `docs/product-matching.md`.
+-   **Stage 1, Task B:** `PageExtraction` gained `options`, `option_prices`, `issues`,
+    `availability_normalized` and `specifications[].normalized_name` (defaults keep old fakes valid;
+    the strict schema requires them). `rules.check_extraction` verifies each against the page,
+    gives specs a deterministic `key`, and makes the price `AMBIGUOUS` when more than one verified
+    current amount is shown. The shared amount checks are `rules._verify_amount`.
+-   **Stage 2, availability:** `app/services/availability.py`; `AvailabilityStatus` in
+    `app/schemas/common.py`. `CompetitorProduct.availability_status`, `availability_reason`,
+    `availability_proposed`.
+-   **Stage 3, Task A:** `MatchProposal` (LLM contract), `rules.check_match_proposal`,
+    `prompts.MATCH_SYSTEM`/`match_user` (no Stompbox SKU sent), `agent._propose`.
+    `CompetitorProduct.match_proposal`, `match_proposal_status`, `match_proposal_error`. Usage:
+    `llm_calls`/`llm_failures` count both calls; `llm_match_calls`/`llm_match_failures` Task A only.
+    `INTELLIGENCE_MATCH_PROPOSALS` (default true). Both calls share `LLM2_MAX_COMPLETION_TOKENS`
+    (the optional separate Task A cap in the plan was not added: the client takes one cap).
+-   **Stage 4, matching:** `MatchStatus.EQUIVALENT_VARIANT`; `matcher.decide` grants it when the
+    finish is the only critical conflict and nothing else needs review (a finish-only conflict with
+    an open review reason is `REVIEW_REQUIRED`). `matcher.reconcile` applies verified LLM 2 issues
+    and proposals (review only). `alternative_price`, `price_kind`, `availability`,
+    `proposal_agreement` on `CandidateMatch`; `alternative_prices` on summaries.
+    Approved behaviour change: a finish-only conflict that was `SIMILAR_MATCH` is now
+    `EQUIVALENT_VARIANT`.
+-   **Stage 5, Task C and integration:** `app/services/matching/view.py` builds
+    `CandidateMatch.intelligence`. Additive SSE payload fields and run-summary counts
+    (`docs/pipeline.md`). Dashboard: separate "Alternative products" section without a difference
+    column, availability pills, LLM 2 proposal and uncertainties in the evidence drawer
+    (`docs/dashboard.md`). The dashboard fixture was regenerated
+    (`python -m tests.make_dashboard_fixture`, fakes only).
+-   **Fakes:** `FakeExtractLLM(by_url, proposals)` answers both schemas; a page without a registered
+    proposal gets a quote-less default that Python marks `UNSUPPORTED`, so matching is unchanged.
+-   Stages 1-5 were built and tested with fakes only. Stage 6 then ran live twice (see "Live
+    evaluation runs" below); accuracy, latency and cost per full pipeline run of the two-call design
+    are still unmeasured beyond those two small runs.
+-   **Audit fixes (19 Nov 2026, uncommitted):**
+    -   Variant prices: `app/agents/intelligence/variants.py` (`associate`). `check_extraction(..., product)`
+        keeps a price only when exactly one verified option (or the main price labelled by the selected
+        options) matches every known catalogue variant attribute; otherwise `AMBIGUOUS`. Non-matching
+        option prices carry `matches_catalogue_variant=false` and `variant_checks`.
+    -   Electronics: `matcher.check_electronics` (pickups HSS/SSS/HH/HSH/SSH, active/passive,
+        electro-acoustic) using verified electronics specs (`EvidenceSource.EXTRACTED_SPEC`) and
+        title/URL evidence; the three attributes are in `CONFIRM_REQUIRED`. New profile fields:
+        `pickups`, `electronics`, `electro` (from the "Electro-acoustic" / "Acoustic guitar" subcategory).
+    -   Usage: `llm_failures` / `llm_match_failures` include pages not attempted after an account error,
+        so they can exceed `llm_calls` / `llm_match_calls` (documented in the schema).
+    -   A Task A failure alone still makes the extraction stage PARTIAL and the run PARTIALLY_COMPLETED
+        (unchanged policy, now tested).
+-   **Reliability fixes (19 Nov 2026, uncommitted):** an option's `selected_value` is kept only with explicit
+    selection wording around the whole value in its verified quote (`rules.selection_evidence`; a "Colour: Black"
+    heading is not evidence); otherwise `selected_value=null` and LLM 2's claim stays in `claimed_selected_value`.
+    Pickup layout codes are detected case-insensitively as whole tokens and normalised to upper case.
+-   **Stage 6.1 corrections (19 Nov 2026, uncommitted; from live run `intelligence-20261119T193707Z-8189db`):**
+    `sale_indicated` only from SALE-category ignored prices or sale wording in the price quote; delivery charges are
+    categorised (`ignored_price_details`) and never become a product price (`prices.is_delivery_context`).
+    Specification categories in `app/services/specs.py` (power_supply, output_power, controls, electronics,
+    pickup_configuration, other); only electronics / pickup_configuration specs feed the electronics rules.
+    Controlled finish aliases in `attributes.FINISH_ALIASES` ("ice tea" for "Iced Tea Burst"); no fuzzy matching.
+-   **Stage 6.1.1 integration fixes (19 Nov 2026, uncommitted):** `matching.price.validate_price` re-checks delivery
+    context and delivery-listed amounts (re-derived from the raw ignored texts); issue-quote price counting excludes
+    delivery/finance amounts; delivery discounts ("Save £5 on delivery") never set `sale_indicated`, genuine sales
+    mentioning delivery still do. Pickup selector/switch/toggle/blend/knob specs are controls; the matcher always
+    re-derives spec categories (stored ones are never trusted; disagreements go to `spec_category_mismatches`) and an
+    electronics spec confirms an electro-acoustic only if it names a device/type/maker (`specs.is_meaningful_electronics`).
+    A finish named together with another finish is UNVERIFIED in matching and UNKNOWN in option-price association
+    (`attributes.other_finish_colours`). Frontend types: `NormalizedSpec`, `SpecCategory`, `IgnoredPriceRecord`
+    (checked against the backend enums by `tests/test_stage611_integration.py`).
+
+### Live evaluation runs (Stage 6 and Stage 6.2, 19 Nov 2026)
+
+Both used the intelligence CLI (not the dashboard pipeline), Exa and `openai/gpt-6-luna`, for
+SB-001 (Boss RC-5) and SB-028 (Epiphone Les Paul Standard '60s LH, Iced Tea Burst) on
+Andertons and Gear4music. Run files are in `data/intelligence_runs/` (git-ignored, never edited);
+page text is not stored, only verified quotes and metadata.
+
+| Run | Searches / pages | LLM 2 calls | Cost (search + LLM) | Purpose |
+|---|---|---|---|---|
+| Stage 6 (`...193707Z-8189db`) | 4 / 4 | 8 (4 Task A), 0 failed | $0.032 + $0.0050 | First live evaluation; findings fixed in 6.1 and 6.1.1 |
+| Stage 6.2 (`...210447Z-8f9d6e`) | 4 / 4 | 8 (4 Task A), 0 failed | $0.032 + $0.0049 | Re-check after 6.1 and 6.1.1 |
+
+-   **Stage 6.2 outcomes (current code, recomputed offline from the run file):** Andertons RC-5
+    EXACT_MATCH, £219.00, comparable (+£29.01), IN_STOCK; Gear4music RC-5 secondhand SIMILAR_MATCH
+    (used), no price, UNKNOWN availability ("currently unavailable for delivery to your country");
+    Andertons and Gear4music LP Standard '60s **Figured** LH Iced Tea REVIEW_REQUIRED (Python now
+    confirms the approved Figured designation; the stored LLM 2 proposals, made before the decision,
+    flagged Figured as a different model, U-4), OUT_OF_STOCK. No
+    matching file was saved for Stage 6.2.
+-   **Verified live in 6.2:** Task A proposals (4 of 4 completed and verified), specification
+    categories on real pages, the Figured disagreement, a geographic delivery restriction, an
+    "OTHER" ignored amount. **Offline only (unit and integration tests):** delivery-price exclusion
+    (seen live only in Stage 6), delivery discounts, genuine sale wording (no sale page in 6.2),
+    the Ice Tea alias (Stage 6 page only), mixed finishes, option prices (no live page had options)
+    and spec-category tampering.
+
+### Stage 6.3, pre-demo hardening (20 Nov 2026, uncommitted)
+
+-   **Geographic availability (6.3.1):** `availability.geographic_restriction`. A restriction in the
+    availability text ("unavailable for delivery to your country", "cannot ship to your region",
+    "not available for delivery") is `UNKNOWN` whatever LLM 2 proposes. Generic unavailability
+    ("currently unavailable", "not available for purchase") is `OUT_OF_STOCK` only when the page shows
+    no restriction anywhere; explicit stock wording ("Out of stock", "Sold out", "Not in stock") stays
+    `OUT_OF_STOCK` even when LLM 2 proposes only `UNKNOWN` (a contrary proposal still gives `UNKNOWN`).
+    Matching keeps using the status stored at extraction time.
+-   **P-5 refinement (6.3.1) approved by the user (20 Nov 2026).**
+-   **SB-028 identity (6.3.2), DECIDED (user, 20 Nov 2026):** SB-028 is the Epiphone Les Paul
+    Standard '60s **Figured** Left-Handed, Iced Tea Burst. The catalogue record is unchanged (it does
+    not say "Figured"). Figured is a model designation, not a finish alias:
+    `attributes.APPROVED_DESIGNATIONS` (SB-028 only) and `matcher.check_designation` (critical,
+    `CONFIRM_REQUIRED`, not cosmetic). "Figured" as a whole word in a title, URL or extracted
+    model/SKU, or a listed Figured SKU (EIGLP6ITNHRL, EIGLP6ITNH1L), confirms it; the plain-top SKU
+    (EILS6ITNH1) is a CONFLICT (`SIMILAR_MATCH`); silence or contradiction is `REVIEW_REQUIRED`;
+    specifications never count. Task A receives `model_designation`. The temporary hold
+    (`IDENTITY_DECISION_PENDING`) was removed. Stored Stage 6.2 proposals (made without the
+    designation) still hold the two Figured pages at `REVIEW_REQUIRED` (U-4 unchanged).
+-   **SB-028 price baseline: NOT CONFIRMED.** The catalogue £579 was recorded as a sale price ("was
+    £599", 10 Nov 2026). The catalogue price is unchanged and used as for every product; £599 is not
+    used and no regular price is assumed. It is not independently verified and awaits the user.
+-   **UK evidence in Live Runs (6.3.3):** `components/UkEvidence.tsx` (shared with Domain Review);
+    a "Discovered domains and UK evidence" section (`RunDomains.DiscoveredDomainsTable`, from the run
+    result) and a UK status pill on each `competitor_discovered` feed item (`ukRelevance.ukEventStatus`).
+-   **Phone layout fix (6.3.6):** `.stack > *, .stack-sm > *, .new-run > * { min-width: 0 }`; wide
+    tables widened Live Runs at 390 px.
+-   **Workflow test:** `tests/test_workflow_integration.py` (discover, review via API, re-run, extract,
+    match, stream; temporary database, fakes only).

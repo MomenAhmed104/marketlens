@@ -33,6 +33,7 @@ Identity evidence is read from three **independent groups**:
 | Status | Meaning |
 |---|---|
 | `EXACT_MATCH` | Same product identity and required variants. Can be compared if the price, condition and benchmark checks also pass |
+| `EQUIVALENT_VARIANT` | Otherwise the same product; the only difference is the cosmetic finish or colour (decision U-1). Its price is an alternative-product price: never a benchmark, no difference |
 | `SIMILAR_MATCH` | Related alternative, not the same product or offer: a sibling model, a different generation, a conflicting variant, a bundle, or a used/refurbished item |
 | `REVIEW_REQUIRED` | Possible match with unresolved evidence. `review_reasons` lists what a person must check |
 | `NO_MATCH` | The evidence does not support a match |
@@ -48,9 +49,14 @@ Identity evidence is read from three **independent groups**:
    aliases of each other.
 3. **Model found** (exact identifier, flexible separators and word
    boundaries, so `RC-5` matches `rc5` but not `RC-500`):
-   - Any critical variant **conflict**: `SIMILAR_MATCH`.
+   - Any critical variant **conflict** other than finish: `SIMILAR_MATCH`.
+     Handedness, size, configuration, strings, wattage, bundle, generation and
+     edition never qualify as equivalent (U-1).
    - Condition used or refurbished: `SIMILAR_MATCH`.
-   - Otherwise `REVIEW_REQUIRED` if any of the following holds, else `EXACT_MATCH`:
+   - Otherwise `REVIEW_REQUIRED` if any of the following holds, else
+     `EXACT_MATCH`, or `EQUIVALENT_VARIANT` when the finish is the only
+     conflict (a finish-only conflict with an open review reason is
+     `REVIEW_REQUIRED`, with "equivalent variant not established"):
      - a required variant is unconfirmed (handedness, finish, generation, edition, configuration);
      - the brand was not found;
      - the model was found in **only one evidence group** (title similarity
@@ -70,10 +76,32 @@ Identity evidence is read from three **independent groups**:
      page: `SIMILAR_MATCH`.
    - Otherwise `NO_MATCH`. Without LLM 2 such pages are usually category pages.
 
+### LLM 2 evidence after the decision (`matcher.reconcile`, decisions P-4, U-4)
+
+Python decides first. LLM 2's verified evidence is then applied, and it can only
+add uncertainty:
+
+- A **verified** LLM 2 issue (`AMBIGUOUS_VARIANT` or `CONFLICTING_INFORMATION`)
+  on an identity field (model, finish, handedness, specifications...) turns
+  `EXACT_MATCH` or `EQUIVALENT_VARIANT` into `REVIEW_REQUIRED`.
+- A **verified** Task A proposal (status `COMPLETED`) is compared with Python's
+  status through the P-3 mapping (`SIMILAR_ALTERNATIVE` = `SIMILAR_MATCH`,
+  `NOT_A_MATCH` = `NO_MATCH`). When Python says `EXACT_MATCH` or
+  `EQUIVALENT_VARIANT` and the proposal is more cautious, or names a verified
+  non-cosmetic differing attribute, the result is `REVIEW_REQUIRED`, with the
+  proposal's reason and quote in `review_reasons`.
+- Nothing else changes a status. LLM 2 never upgrades, downgrades or replaces a
+  classification: `REVIEW_REQUIRED` is the only consequence. Python being stricter
+  (for example Python `EQUIVALENT_VARIANT`, proposal `EXACT_MATCH`) is recorded as
+  `PYTHON_STRICTER` and kept.
+- `UNSUPPORTED` (no verified quote), `FAILED` and skipped proposals, and
+  unverified issues, are ignored. `proposal_agreement` records `AGREES`,
+  `PYTHON_STRICTER`, `LLM_STRICTER` or `NOT_AVAILABLE`.
+
 ### Match confidence
 
-- `HIGH`: `EXACT_MATCH` with the model confirmed by an LLM 2 field plus title or URL.
-- `MEDIUM`: `EXACT_MATCH` from page title and URL only (no-LLM mode).
+- `HIGH`: `EXACT_MATCH` or `EQUIVALENT_VARIANT` with the model confirmed by an LLM 2 field plus title or URL.
+- `MEDIUM`: the same from page title and URL only (no-LLM mode).
 - `LOW`: every other status.
 
 This is a rule-based label, not a calibrated probability.
@@ -94,6 +122,56 @@ Variants are profiled from the catalogue row
 | bundle | "bundle/pack/kit/+" | A bundle offer for a single product | n/a |
 | generation | II, Mk.II/MKII, V2, Gen 2 (normalised to numbers) | A different generation, or one shown for a product without one | REVIEW |
 | edition | "10th Edition", "Reissue", "Limited Edition" | An edition the Stompbox product lacks | REVIEW |
+| pickups | Layout codes HSS, SSS, HH, HSH, SSH in the name, model or specifications, in any letter case ("hss", "Hss"), as whole tokens only, normalised to upper case | A different layout in the title, URL, extracted fields or a verified pickups spec | Stated layout not shown: REVIEW (unless the exact model contains it). Catalogue silent but the competitor **title or URL** names a layout: REVIEW. A layout only in specs, catalogue silent: not compared |
+| electronics | "active"/"passive" next to pickups/electronics/EQ/preamp/bass, or bare in specifications | The other mode in the title or a verified electronics spec | Stated mode not shown: REVIEW. Catalogue silent but the title names one: REVIEW |
+| electro_acoustic | Subcategory or name "Electro-acoustic" (electro); an "Acoustic guitar" subcategory without electro wording (no electronics) | Electro product: the competitor states "no pickup", "non-electro", "acoustic only" or an electronics spec of "None". Acoustic product: the competitor lists an electro-acoustic version | Electro product, competitor silent: REVIEW, unless an exact code-like model implies it (`BAA2CE`) |
+
+The electronics checks (audit fix, 19 Nov 2026) read only verified Task B
+specifications categorised as `electronics` or `pickup_configuration`
+(`app/services/specs.py`, Stage 6.1; `EvidenceSource.EXTRACTED_SPEC`):
+
+- Pickup layout comes from `pickup_configuration` specs only.
+- Active/passive comes from `electronics` and `pickup_configuration` specs.
+- Electro-acoustic confirmation comes from `electronics` specs only.
+
+Controls, power-supply and output-power specs never take part. Older records
+without a stored category get it derived the same way. These specs never count
+as model evidence. No difference is inferred from silence: a plain "Acoustic
+Guitar" title is not evidence that the guitar has no electronics.
+
+**Finish aliases (Stage 6.1).** `attributes.FINISH_ALIASES` is a controlled
+list of verified alternative spellings: currently `"iced tea burst": ("ice
+tea",)`, seen on Gear4music in the Stage 6 run. `finish_in` matches the
+catalogue finish or an alias as a whole phrase, ignoring case, spacing and
+punctuation. There is no fuzzy matching:
+
+- "Iced Tea", "Spice Tea" and "Ice" are not Iced Tea Burst.
+- Black against White stays a conflict.
+- Cherry Sunburst against Vintage Sunburst stays unconfirmed (review), never a
+  match.
+
+Add aliases only with evidence.
+
+**Stage 6.1.1 hardening:**
+
+- **Mixed finishes.** If the text names the catalogue finish (or an alias) and
+  also another finish ("Ice Tea / Ebony"), the finish check is `UNVERIFIED`
+  ("Mixed finish evidence"), and in option-price matching the option is
+  `UNKNOWN`. A mixed label therefore can't authorise a variant price. Part
+  colours ("Gold Hardware", "Cream Binding") and sheen words ("Satin", "Gloss")
+  are ignored.
+- **Specification categories** are always re-derived from name and value.
+  Stored or client-submitted categories are never trusted; a disagreement is
+  listed in `spec_category_mismatches` and as an uncertainty. Pickup selector,
+  switch, toggle, blend and knob specs are controls.
+- **Electro-acoustic confirmation.** An electronics spec confirms an
+  electro-acoustic only when it names a device, type or maker
+  (`specs.is_meaningful_electronics`: preamp, piezo, pickup, active/passive,
+  EQ, Fishman, LR Baggs ...). "Electronics: Volume, Tone" stays unknown.
+- **Delivery prices.** `validate_price` rejects a delivery-charge quote
+  (`INVALID`) and an amount listed as a delivery charge (`AMBIGUOUS`),
+  re-derived from the raw ignored-price texts. This also applies to older run
+  files and to runs submitted to `POST /api/matching/evaluate`.
 
 Colour words that belong to the identity ("White Light", "Gold Foil") and
 "Black Friday" / "Cyber Monday" are never read as finishes. Speaker-layout
@@ -157,6 +235,33 @@ The current displayed price is used, and no discount is computed.
 Then `difference_gbp` = competitor − Stompbox. No percentages, savings or
 historical figures are computed. Otherwise `reasons` lists every failed condition.
 
+
+## Alternative-product prices (decisions D-28, D-32)
+
+`EQUIVALENT_VARIANT` and `SIMILAR_MATCH` candidates get `alternative_price`:
+
+- Shown only with the same price validation as a direct price (`VALID` and
+  `VERIFIED`).
+- No benchmark flag is needed, but the competitor must be a search-approved
+  target (configured, reviewer-approved or auto-approved in this run).
+- Used and refurbished items are shown with an explicit `condition_label`.
+- No difference is calculated, `benchmark_eligible` is always false, and they are
+  never counted in `comparable_prices` (counted in `alternative_prices`).
+
+`price_kind` is `DIRECT` (eligible exact match), `ALTERNATIVE` (shown alternative
+price) or `NONE`.
+
+## Task C view (`matching/view.py`)
+
+`CandidateMatch.intelligence` (`ProductIntelligenceView`) answers the four
+questions per candidate from validated data only: seller (domain, type, approval,
+benchmark flag), match (final status, proposal, agreement, reasons), price (kind,
+validation, quote, source, retrieval time; a difference for `DIRECT` only) and
+availability (status, verified text, reason). `uncertainties` lists every
+unsupported, ambiguous or conflicting field, verified LLM 2 issue, unknown
+availability, review reason and proposal disagreement. Missing values stay
+missing.
+
 ## Interfaces
 
 - **API:** `POST /api/matching/evaluate` with a Phase 5 `IntelligenceRunResult` as the body.
@@ -168,12 +273,13 @@ historical figures are computed. Otherwise `reasons` lists every failed conditio
   Phase 5 status rename (`SKIPPED_LLM_DISABLED`) are rejected with a clear
   message.
   - Like the API, it never trusts the file for who a competitor is: every
-    candidate's competitor (benchmark flag, approval, type, UK gate decision) is
+    candidate's competitor (benchmark flag, approval, type) is
     rebuilt from the catalogue and the review database (`REVIEW_DB_PATH` or
     `--review-db`), opened read-only (`app/services/matching/trusted.py`).
   - If that database is missing, unreadable, at an unsupported version or holds
-    invalid records, matching still runs but fails closed: nothing passes the UK
-    gate, so no price is compared, and a warning says why. `--out-dir` changes
+    invalid records, matching still runs but fails closed: no candidate (configured
+    competitors included) is a price benchmark, so no price is compared, and a
+    warning says why. `--out-dir` changes
     the output directory.
 - **Combined run:** running Phase 5 and Phase 6 in one step is Phase 7
   (orchestration).
@@ -207,5 +313,54 @@ saved as `tests/fixtures/phase5_no_llm_run.json` with snippets removed:
 - **Required editions are strict:** products whose catalogue name carries an
   edition ("10th Edition") need it stated for `EXACT_MATCH`.
 - **SB-028's catalogue price may be a sale price:** the catalogue stores the
-  Stompbox snapshot £579, while the Stompbox page showed "was £599". This
-  needs a business decision before SB-028 is used as a comparison baseline.
+  Stompbox snapshot £579, while the Stompbox page showed "was £599". The price
+  baseline still awaits confirmation; the catalogue price is used unchanged.
+- **SB-028 is the approved Figured model (20 November 2026):** see "Approved
+  identity decisions" below.
+
+## Approved identity decisions (Stage 6.3, 20 November 2026)
+
+`attributes.APPROVED_DESIGNATIONS` lists catalogue products whose model
+designation is part of the product identity but is not written in the catalogue
+record. Each entry is a user decision; the catalogue workbook is unchanged. The
+profile carries it as `ProductProfile.designation`, and `matcher.check_designation`
+adds a critical `designation` variant check (in `CONFIRM_REQUIRED`, never
+cosmetic):
+
+| Evidence (titles, URL, extracted model/SKU only) | Result | Effect |
+|---|---|---|
+| The designation as a whole word ("Figured"), or a listed SKU of the designated model | `MATCH` | can be `EXACT_MATCH` if every other check passes |
+| A listed SKU of the model without the designation | `CONFLICT` | `SIMILAR_MATCH` (a model difference, never `EQUIVALENT_VARIANT`) |
+| Both of the above | `UNVERIFIED` (contradictory) | `REVIEW_REQUIRED` |
+| Neither | `UNVERIFIED` | `REVIEW_REQUIRED`: a page that does not name the designation is never accepted as the designated model |
+
+Specifications never count ("Highly Figured Maple Veneer" in a spec is not
+identity evidence: flame maple tops are often described as figured). SKUs are
+compared as whole tokens with case and `-`/`_`/`.` ignored; no fuzzy matching and
+no generic model aliases. Products without an entry get no `designation` check.
+Handedness, finish, edition, condition, LLM 2 reconciliation (U-4) and every
+other rule are unchanged. Task A (LLM 2) receives the designation as
+`model_designation` in the catalogue product, so future proposals compare against
+the approved identity; proposals stored in earlier run files were made without it.
+
+Only SB-028 is listed: the **Epiphone Les Paul Standard '60s Figured
+Left-Handed**, Iced Tea Burst (user decision, 20 November 2026). Figured SKUs:
+EIGLP6ITNHRL (Andertons), EIGLP6ITNH1L (Gear4music); plain-top SKU: EILS6ITNH1
+(Gear4music secondhand). All three come from the Stage 6 and 6.2 run records.
+The temporary Stage 6.3.2 hold (`IDENTITY_DECISION_PENDING`) was removed.
+
+Recomputed offline from the saved run files with the current code:
+
+| Run | Page | Designation | Status |
+|---|---|---|---|
+| Stage 6 | Andertons Custom 1960 Les Paul Standard Reissue LH | `UNVERIFIED` | `SIMILAR_MATCH` (reissue edition) |
+| Stage 6 | Gear4music LP Standard 60s Ice Tea, secondhand (EILS6ITNH1) | `CONFLICT` | `SIMILAR_MATCH` |
+| Stage 6.2 | Andertons LP Standard '60s Figured LH Iced Tea | `MATCH` | `REVIEW_REQUIRED` (stored LLM 2 proposal, made without the designation, is stricter) |
+| Stage 6.2 | Gear4music LP Standard 60s Figured LH Iced Tea | `MATCH` | `REVIEW_REQUIRED` (same) |
+
+**SB-028 price baseline: still unconfirmed.** The catalogue stores £579, which the
+Stompbox page recorded on 10 November 2026 showed as the current price with
+"was £599". The catalogue price is unchanged, £599 is not used, and no regular
+price is assumed. A direct SB-028 comparison (only on an `EXACT_MATCH`) uses the
+catalogue £579 exactly as for every other product; that baseline is not
+independently verified and awaits the user's confirmation.

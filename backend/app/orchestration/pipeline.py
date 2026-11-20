@@ -36,7 +36,6 @@ from app.agents.discovery import CompetitorDiscoveryAgent, build_discovery_agent
 from app.agents.discovery.schemas import SearchTarget
 from app.agents.intelligence import (
     ProductIntelligenceAgent,
-    apply_uk_gate,
     build_intelligence_agent,
     eligible_search_targets,
 )
@@ -64,15 +63,13 @@ from app.services.catalogue import Catalogue
 from app.services.domains import registrable_domain
 from app.services.matching import evaluate_product
 from app.services.review_store import ReviewStore
-from app.services.uk_gate import UkGateState
 from app.services.search import configured_providers
 
 log = logging.getLogger(__name__)
 MAX_ERROR_CHARS = 300
 
-DiscoveryFactory = Callable[[list[DomainDecisionRecord], UkGateState], Awaitable[CompetitorDiscoveryAgent]]
-IntelligenceFactory = Callable[[list[SearchTarget], list[SkippedTarget], UkGateState],
-                               Awaitable[ProductIntelligenceAgent]]
+DiscoveryFactory = Callable[[list[DomainDecisionRecord]], Awaitable[CompetitorDiscoveryAgent]]
+IntelligenceFactory = Callable[[list[SearchTarget], list[SkippedTarget]], Awaitable[ProductIntelligenceAgent]]
 
 
 def _now() -> datetime:
@@ -105,9 +102,8 @@ class PipelineDeps:
     def default(cls, settings: Settings, catalogue: Catalogue, review_store: ReviewStore) -> PipelineDeps:
         return cls(
             settings, catalogue, review_store,
-            discovery_factory=lambda decisions, uk: build_discovery_agent(settings, catalogue, review_decisions=decisions,
-                                                                          uk_state=uk),
-            intelligence_factory=lambda targets, skipped, uk: build_intelligence_agent(settings, targets, skipped, uk),
+            discovery_factory=lambda decisions: build_discovery_agent(settings, catalogue, review_decisions=decisions),
+            intelligence_factory=lambda targets, skipped: build_intelligence_agent(settings, targets, skipped),
         )  # fmt: skip
 
 
@@ -120,14 +116,6 @@ class PipelineRun:
         self.run, self.result, self.products, self.store, self.d = run, result, products, store, deps
         self.s = deps.settings
         self._stages = {st.name: st for st in run.stages}
-        self._uk_state: UkGateState | None = None
-
-    @property
-    def uk_state(self) -> UkGateState:
-        """One UK gate snapshot per run, so every stage applies the same decisions."""
-        if self._uk_state is None:
-            self._uk_state = self.d.review_store.uk_gate_state()
-        return self._uk_state
 
     # ------------------------------------------------------------------ helpers
 
@@ -180,7 +168,7 @@ class PipelineRun:
         self.start_stage(StageName.DISCOVERY, total=len(self.products), message="Discovering UK competitors")
         agent = None
         try:
-            agent = await self.d.discovery_factory(self.d.review_store.list_decisions(), self.uk_state)
+            agent = await self.d.discovery_factory(self.d.review_store.list_decisions())
             disc = await asyncio.wait_for(agent.run(self.products), self.s.pipeline_discovery_timeout_seconds)
         except TimeoutError:
             self._discovery_failed(f"Discovery timed out after {self.s.pipeline_discovery_timeout_seconds:.0f} s")
@@ -203,7 +191,13 @@ class PipelineRun:
                            # Final class after the code safeguards, and LLM 1's raw proposal (null if none).
                            competitor_class=c.competitor_class and c.competitor_class.value,
                            proposed_competitor_class=c.proposed_competitor_class and c.proposed_competitor_class.value,
-                           reviewed=c.review_decision is not None)  # fmt: skip
+                           reviewed=c.review_decision is not None,
+                           # UK relevance evidence view (additive; same values as the review API).
+                           uk_assessed=c.uk_review.assessed if c.uk_review else False,
+                           uk_evidence_sufficient=c.uk_review.sufficient if c.uk_review else False,
+                           uk_evidence_contradicted=c.uk_review.contradicted if c.uk_review else False,
+                           uk_mixed_location=c.uk_review.mixed_location if c.uk_review else False,
+                           uk_independent_sources=c.uk_review.independent_sources if c.uk_review else 0)  # fmt: skip
             self.emit("competitor_discovered", f"Discovered {c.domain} ({c.approval_status.value})",
                       stage=StageName.DISCOVERY, **payload)  # fmt: skip
             if c.approval_status is DomainApprovalStatus.AUTO_APPROVED:
@@ -248,32 +242,28 @@ class PipelineRun:
     def _targets(self) -> list[SearchTarget]:
         self.start_stage(StageName.TARGETS)
         targets, skipped = eligible_search_targets(self.d.catalogue.competitors, self.d.review_store.list_decisions(),
-                                                   self.uk_state, self.s)  # fmt: skip
+                                                   self.s)  # fmt: skip
         known = {t.domain for t in targets} | {k.domain for k in skipped}
         auto = 0
         disc = self.result.discovery
         if disc and self.s.pipeline_search_auto_approved:
             excluded = set(self.s.intelligence_excluded_company_types)
-            # Run-scoped LLM 1 auto-approval; a reviewer decision (applied by discovery) always wins.
+            # Run-scoped LLM 1 auto-approval (which already needs sufficient, uncontradicted verified
+            # UK evidence and never grants benchmark permission); a reviewer decision always wins.
             auto_targets = [c.as_search_target() for c in disc.candidates
                             if c.approval_status is DomainApprovalStatus.AUTO_APPROVED and c.domain not in known
                             and not (c.company_type and c.company_type.value in excluded)]  # fmt: skip
-            # Auto-approval never bypasses the UK gate: an unassessed domain is INSUFFICIENT_EVIDENCE.
-            allowed, blocked = apply_uk_gate(auto_targets, self.uk_state)
-            targets += allowed
-            skipped += blocked
-            auto = len(allowed)
+            targets += auto_targets
+            auto = len(auto_targets)
         if self.run.request.domains:
             wanted = {registrable_domain(d) for d in self.run.request.domains}
             targets = [t for t in targets if t.domain in wanted]
         self.result.search_targets, self.result.skipped_targets = targets, skipped
         configured = sum(t.approval_status is DomainApprovalStatus.PRECONFIGURED for t in targets)
         approved = sum(t.approval_status is DomainApprovalStatus.APPROVED for t in targets)
-        uk_blocked = sum(k.uk_gate is not None for k in skipped)
         self.emit("known_domains_loaded", f"{len(targets)} domain(s) to search", stage=StageName.TARGETS,
-                  configured=configured, approved=approved, auto_approved=auto, uk_blocked=uk_blocked,
+                  configured=configured, approved=approved, auto_approved=auto,
                   domains=[t.domain for t in targets],
-                  uk_exceptions=[t.domain for t in targets if t.uk_gate and t.uk_gate.search_basis == "EXCEPTION"],
                   skipped=[{"domain": s.domain, "reason": s.reason} for s in skipped],
                   pending_not_searched=self.result.new_pending_domains)  # fmt: skip
         st = self.stage(StageName.TARGETS)
@@ -282,14 +272,14 @@ class PipelineRun:
             self.warn("No eligible search targets: nothing will be searched")
         self.end_stage(StageName.TARGETS, StageStatus.COMPLETED,
                        f"{configured} configured, {approved} reviewer-approved, {auto} auto-approved this run; "
-                       f"{len(skipped)} skipped ({uk_blocked} by the UK gate)")  # fmt: skip
+                       f"{len(skipped)} skipped")  # fmt: skip
         return targets
 
     async def _products(self, targets: list[SearchTarget]) -> None:
         n = len(self.products)
         self.start_stage(StageName.PRODUCT_SEARCH, total=n, message=f"Searching {len(targets)} domain(s)")
         try:
-            agent = await self.d.intelligence_factory(targets, self.result.skipped_targets, self.uk_state)
+            agent = await self.d.intelligence_factory(targets, self.result.skipped_targets)
         except Exception as e:
             msg = f"Product search could not start: {_err(e)}"
             self.stage(StageName.PRODUCT_SEARCH).errors.append(msg)
@@ -343,19 +333,25 @@ class PipelineRun:
             self.emit("match_validated", f"{m.competitor.domain}: {m.match_status.value}", product_id=p.product_id,
                       stage=StageName.MATCHING, candidate_id=m.candidate_id, domain=m.competitor.domain,
                       url=m.product_url, match_status=m.match_status.value,
-                      confidence=m.match_confidence.value)  # fmt: skip
+                      confidence=m.match_confidence.value,
+                      proposed_match=m.proposed_match.value if m.proposed_match else None,
+                      proposal_agreement=m.proposal_agreement.value,
+                      availability_status=m.availability.status.value if m.availability else None)  # fmt: skip
             self.emit("price_validated", f"{m.competitor.domain}: price {m.price.status.value}",
                       product_id=p.product_id, stage=StageName.MATCHING, candidate_id=m.candidate_id,
                       price_status=m.price.status.value, comparison_eligible=m.comparison.eligible,
                       difference_gbp=str(m.comparison.difference_gbp) if m.comparison.difference_gbp is not None
-                      else None)  # fmt: skip
+                      else None, price_kind=m.price_kind.value,
+                      alternative_price=str(m.alternative_price.price)
+                      if m.alternative_price and m.alternative_price.price is not None else None)  # fmt: skip
         self.stage(StageName.MATCHING).done += 1
         pr.status = ProductRunStatus.COMPLETED
         self._update_summary()
         self.emit("product_completed", f"{p.product_id}: {len(intel.candidates)} candidate(s), "
                                        f"{summary.counts[MatchStatus.EXACT_MATCH]} exact match(es)",
                   product_id=p.product_id, counts={k.value: v for k, v in summary.counts.items()},
-                  comparable_prices=summary.comparable_prices)  # fmt: skip
+                  comparable_prices=summary.comparable_prices,
+                  alternative_prices=summary.alternative_prices)  # fmt: skip
         self.save()
 
     def _emit_intelligence(self, p: StompboxProduct, intel: ProductIntelligence) -> None:
@@ -375,7 +371,10 @@ class PipelineRun:
                 self.emit("competitor_product_extracted", f"{c.competitor.domain}: extracted",
                           product_id=p.product_id, stage=StageName.EXTRACTION, candidate_id=c.candidate_id,
                           url=c.product_url, price=str(c.price) if c.price is not None else None,
-                          currency=c.currency)  # fmt: skip
+                          currency=c.currency, availability_status=c.availability_status.value,
+                          match_proposal_status=c.match_proposal_status.value if c.match_proposal_status else None,
+                          proposed_match=c.match_proposal.classification.value if c.match_proposal else None,
+                          issues=sum(i.verified for i in c.extraction_issues))  # fmt: skip
         skipped = statuses.count(ExtractionStatus.SKIPPED_NO_LLM)
         if skipped:
             self.emit("extraction_skipped", f"{p.product_id}: {skipped} page(s) SKIPPED_NO_LLM",
@@ -406,12 +405,15 @@ class PipelineRun:
                        "page(s) retrieved")  # fmt: skip
         if not no_llm:
             ext = self.stage(StageName.EXTRACTION)
-            if u.llm_failures:
-                ext.errors.append(f"{u.llm_failures} page(s) failed extraction")
+            if u.llm_failures - u.llm_match_failures:
+                ext.errors.append(f"{u.llm_failures - u.llm_match_failures} page(s) failed extraction")
+            if u.llm_match_failures:
+                ext.errors.append(f"{u.llm_match_failures} match proposal(s) failed")
             ext_status = (StageStatus.FAILED if u.llm_calls and u.llm_failures >= u.llm_calls else
                           StageStatus.PARTIAL if u.llm_failures else StageStatus.COMPLETED)  # fmt: skip
             self.end_stage(StageName.EXTRACTION, ext_status,
-                           f"{u.llm_calls} LLM 2 call(s), {u.llm_failures} failed")  # fmt: skip
+                           f"{u.llm_calls} LLM 2 call(s) ({u.llm_match_calls} match proposal), "
+                           f"{u.llm_failures} failed")  # fmt: skip
         self.end_stage(StageName.MATCHING, StageStatus.COMPLETED if done == n else
                        StageStatus.PARTIAL if done else StageStatus.FAILED,
                        f"{done}/{n} product(s) matched")  # fmt: skip
@@ -425,6 +427,8 @@ class PipelineRun:
         ms = [p.matching for p in prs if p.matching]
         s.candidates = sum(len(m.candidates) for m in ms)
         s.exact_matches = sum(m.counts[MatchStatus.EXACT_MATCH] for m in ms)
+        s.equivalent_variants = sum(m.counts[MatchStatus.EQUIVALENT_VARIANT] for m in ms)
+        s.alternative_prices = sum(m.alternative_prices for m in ms)
         s.similar_matches = sum(m.counts[MatchStatus.SIMILAR_MATCH] for m in ms)
         s.review_required = sum(m.counts[MatchStatus.REVIEW_REQUIRED] for m in ms)
         s.no_match = sum(m.counts[MatchStatus.NO_MATCH] for m in ms)
@@ -536,15 +540,12 @@ class RunManager:
                 wanted = {registrable_domain(d) for d in req.domains}
             except ValueError:
                 raise RunRequestError(422, "Invalid domain in 'domains'") from None
-            targets, skipped = eligible_search_targets(self.d.catalogue.competitors,
-                                                       self.d.review_store.list_decisions(),
-                                                       self.d.review_store.uk_gate_state(), s)  # fmt: skip
+            targets, _ = eligible_search_targets(self.d.catalogue.competitors,
+                                                 self.d.review_store.list_decisions(), s)  # fmt: skip
             not_allowed = sorted(wanted - {t.domain for t in targets})
             if not_allowed:
-                uk = {k.domain: k.reason for k in skipped if k.uk_gate is not None and k.domain in not_allowed}
-                raise RunRequestError(422, {"message": "Only configured or reviewer-approved domains that pass the "
-                                                       "UK gate can be searched",
-                                            "not_allowed": not_allowed, "uk_blocked": uk})  # fmt: skip
+                raise RunRequestError(422, {"message": "Only configured or reviewer-approved domains can be searched",
+                                            "not_allowed": not_allowed})  # fmt: skip
         active = sum(r.status not in TERMINAL for r in self.store.list_runs())
         if active >= s.pipeline_max_active_runs:
             raise RunRequestError(429, f"{active} run(s) already active (limit {s.pipeline_max_active_runs})")

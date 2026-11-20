@@ -8,7 +8,6 @@ from app.schemas.review import DomainDecisionRecord
 from app.services.catalogue import Catalogue
 from app.services.llm import LLMClient, build_llm1
 from app.services.search import get_configured_provider
-from app.services.uk_gate import UkGateState
 
 
 def llm1_disabled_reason(settings: Settings) -> str | None:
@@ -23,7 +22,6 @@ def llm1_disabled_reason(settings: Settings) -> str | None:
 
 async def build_discovery_agent(
     settings: Settings, catalogue: Catalogue, review_decisions: list[DomainDecisionRecord] | None = None,
-    *, uk_state: UkGateState,
 ) -> CompetitorDiscoveryAgent:
     """Agent wired to the configured search provider and, when configured, LLM 1.
 
@@ -43,7 +41,7 @@ async def build_discovery_agent(
     return CompetitorDiscoveryAgent(
         search, llm, settings, catalogue.competitors,
         allowed_categories=[p.category for p in catalogue.products.values()],
-        llm_disabled_reason=reason, review_decisions=review_decisions, uk_state=uk_state,
+        llm_disabled_reason=reason, review_decisions=review_decisions,
     )  # fmt: skip
 
 

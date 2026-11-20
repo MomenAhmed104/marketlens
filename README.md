@@ -3,14 +3,20 @@
 Live AI-assisted competitor intelligence demo for Stompbox. See [CLAUDE.md](CLAUDE.md)
 for the full plan, rules and phase breakdown.
 
-**Status:** Phases 1–6 complete (catalogue, search, competitor discovery with
+**Status:** Phases 1–7 complete (catalogue, search, competitor discovery with
 LLM 1, competitor domain review, product intelligence with LLM 2, deterministic
-matching and price validation) and Phase 7 (end-to-end pipeline runs with progress
-events and cancellation). Phase 8 (live dashboard) is implemented and awaiting
-review; see [docs/dashboard.md](docs/dashboard.md). Every stage runs
-without OpenRouter credentials (no-LLM mode); LLM 1/LLM 2 activate when
-`OPENROUTER_API_KEY` and `LLM1_MODEL`/`LLM2_MODEL` are set (accuracy and cost not
-yet evaluated). Search and retrieval provider: **Exa** (Tavily
+matching and price validation, end-to-end pipeline runs with progress events and
+cancellation). Phase 8 (live dashboard) is implemented. UK relevance uses verified
+evidence quotes (Option B; the separate UK eligibility gate is retired). The
+three-task Product Intelligence Agent was evaluated live twice on 19 Nov 2026
+(Stage 6 and 6.2, two products on two retailers), and Stage 6.3 pre-demo hardening
+(20 Nov 2026) is awaiting review before the next checkpoint. Phase 9 (testing and
+demo preparation) has not started. Every stage runs without OpenRouter credentials
+(no-LLM mode); LLM 1/LLM 2 activate when `OPENROUTER_API_KEY` and
+`LLM1_MODEL`/`LLM2_MODEL` are set (accuracy and cost at scale not yet evaluated).
+SB-028 is the approved Les Paul Standard '60s Figured LH; its price baseline
+(£579, recorded as a sale price) still awaits confirmation (see
+[docs/product-matching.md](docs/product-matching.md)). Search and retrieval provider: **Exa** (Tavily
 optional, no automatic fallback; Brave disabled). See
 [docs/search-provider-evaluation.md](docs/search-provider-evaluation.md) and
 [docs/competitor-discovery.md](docs/competitor-discovery.md),

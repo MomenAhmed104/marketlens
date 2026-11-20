@@ -6,6 +6,8 @@ import StatusPill from './components/StatusPill'
 import CompetitorClassPill from './components/CompetitorClassPill'
 import { effectiveCompanyType, resolveCompetitorClass } from './competitorClass'
 import { useReviewer } from './reviewer'
+import { UkDetails, UkSummary } from './components/UkEvidence'
+import { ukReviewOf } from './ukRelevance'
 import {
   approveCandidate,
   BENCHMARK_ELIGIBLE_TYPES,
@@ -194,6 +196,7 @@ export function CandidateCard(props: {
   const shownType = effectiveCompanyType(c)
   // Backend class (source of truth); a provisional fallback only for unclassified older records.
   const { cls, source: clsSource } = resolveCompetitorClass(c)
+  const uk = ukReviewOf(c)
   const domainLink = (className: string) => (
     <a href={c.homepage_url} target="_blank" rel="noreferrer noopener" className={className}>{c.domain}</a>
   )
@@ -236,6 +239,8 @@ export function CandidateCard(props: {
         )}
       </div>
 
+      <UkSummary review={uk} />
+
       <div className="domain-actions">
         {c.review_status === 'PENDING' ? (
           <>
@@ -263,6 +268,7 @@ export function CandidateCard(props: {
         />
       )}
       {error && <p role="alert" className="error">{error}</p>}
+      {open && <UkDetails review={uk} />}
       {open && detail && <Details detail={detail} />}
       {open && !detail && !error && <p className="muted">Loading evidence…</p>}
     </li>
@@ -286,6 +292,7 @@ function DecisionForm(props: {
   const [name, setName] = useState(d?.company_name ?? (c.name_verified ? (c.proposed_company_name ?? '') : ''))
   const [benchmark, setBenchmark] = useState(d?.benchmark_eligible ?? false)
   const [notes, setNotes] = useState(d?.notes ?? '')
+  const uk = ukReviewOf(c)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -362,6 +369,17 @@ function DecisionForm(props: {
           {!canBenchmark && <span className="muted"> (retailer or manufacturer types only)</span>}
         </label>
       )}
+      {approving && (uk.contradicted || !uk.sufficient) && (
+        <p className="small warn-text">
+          {uk.contradicted
+            ? 'The verified evidence includes a statement that the UK is not served. You can still approve; the contradiction stays on record.'
+            : 'There is no sufficient verified UK evidence. You can still approve; say why in the notes.'}
+        </p>
+      )}
+      <p className="small muted">
+        UK evidence is separate from approval and from benchmark permission: the evidence is never changed by
+        your decision, and approving never makes a domain a price benchmark.
+      </p>
       <label className="field">
         Notes (optional)
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />

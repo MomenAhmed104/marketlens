@@ -180,7 +180,9 @@ describe('Domain Review page', () => {
     const card = (await screen.findByRole('link', { name: 'direct.example' })).closest('li')!
     expect(card).toHaveTextContent('Shop direct.example')
     expect(card).toHaveTextContent('Pending review')
-    for (const hidden of [/relevance/i, /confidence/i, /0\.93/, /0\.97/, /rationale/i, /benchmark/i, /targeted searches/i]) {
+    // LLM 1's numeric relevance/confidence scores stay hidden. (Since Phase B the card does show the
+    // separate, Python-verified UK relevance and its confidence; see DomainReviewUk.test.tsx.)
+    for (const hidden of [/relevance 0\./i, /confidence 0\./i, /0\.93/, /0\.97/, /rationale/i, /benchmark/i, /targeted searches/i]) {
       expect(card).not.toHaveTextContent(hidden)
     }
     await user.click(within(card).getByRole('button', { name: 'Show evidence (2)' }))

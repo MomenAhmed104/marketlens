@@ -53,11 +53,14 @@ SAMPLE: tuple[BenchmarkProduct, ...] = (
         required_variants=(LEFT_HANDED, r"iced[\s-]?tea|\bITB\b"),
         # Stompbox's own product page describes it as the "Les Paul Standard 60s
         # Figured" (retrieved 2026-11-10); the catalogue name omits "Figured".
+        # Approved identity (user decision, 2026-11-20): the Figured LH model, as in
+        # matching (attributes.APPROVED_DESIGNATIONS). Pages without it stay REVIEW.
         review_if_missing=(r"\bfig(?:ured)?\b|\bF\b",),
         query_extra="Left Handed Iced Tea",
         rationale="Left-handed AND finish variant (Iced Tea Burst); Figured model",
         catalogue_source=("product_name: 'Left-Handed ... Iced Tea Burst'; model 'Les Paul Standard '60s LH'; "
-                          "Stompbox page text: 'Les Paul Standard 60s Figured'"),
+                          "Stompbox page text: 'Les Paul Standard 60s Figured'; Figured identity approved "
+                          "2026-11-20"),
         tags=("left-handed", "finish"),
     ),
     BenchmarkProduct(

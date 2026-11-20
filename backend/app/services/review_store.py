@@ -9,21 +9,13 @@ Three tables:
   primary key, so duplicate records are impossible.
 - `decision_history`: append-only; every version of every decision.
 
-Schema version 2 adds UK eligibility (separate from approval, class and benchmark):
-- `uk_eligibility` / `uk_eligibility_history`: the reviewer's UK evidence status
-  per domain (configured or discovered), versioned, append-only history.
-- `uk_gate_exceptions` / `uk_gate_exception_history`: explicit user-approved
-  search/benchmark exceptions, versioned, append-only history.
-- `uk_eligibility_proposals`: audit suggestions; never used by the gate.
-UK rows are keyed by the canonical registrable domain (`canonical_domain`, enforced by
-the models), the same key the gate looks up. An exception can only be granted while the
-domain is INSUFFICIENT_EVIDENCE, and a status change revokes an active exception in the
-same transaction (audited as a new exception version).
-
-A new (empty) database is created at version 2. An existing version-1 database
-is opened without any write: UK reads return nothing (every domain is then
-INSUFFICIENT_EVIDENCE and blocked) and UK writes raise MigrationRequiredError
-until `python -m app.services.review_migration --apply` has migrated it.
+Schema versions. Version 1 is exactly the three tables above. Version 2 (checkpoint
+a6d5a15) added five tables for a separate UK eligibility gate, which has been retired
+(Option B, 19 Nov 2026): UK relevance is now verified evidence on each candidate record.
+Both versions are opened read/write for the three core tables, and a version-2 file's
+UK tables are left exactly as they are: never read, written or dropped. No file's
+version is ever changed here, and nothing is migrated. A brand-new (empty) database is
+created at version 1 with only the three core tables.
 
 Every row is stored as validated Pydantic JSON and re-validated on read.
 Each operation opens its own connection, so the store is safe to use from
@@ -47,20 +39,16 @@ from app.agents.discovery.schemas import (
     DiscoveryRunResult,
 )
 from app.schemas.review import DomainDecisionRecord, ReviewDecision
-from app.schemas.uk_eligibility import (
-    UkEligibilityProposal,
-    UkEligibilityRecord,
-    UkEligibilityStatus,
-    UkGateException,
-)
-from app.services.domains import canonical_domain, registrable_domain
-from app.services.uk_gate import UkGateState
+from app.services.domains import registrable_domain
 
-SCHEMA_VERSION = 2
+# New databases are created at version 1 (the three core tables only). Version 2 files
+# from the retired UK gate stay supported; their extra tables are ignored.
+SCHEMA_VERSION = 1
 SUPPORTED_SCHEMA_VERSIONS = (1, 2)
-V1_TABLES = ("review_candidates", "domain_decisions", "decision_history")
-UK_TABLES = ("uk_eligibility", "uk_eligibility_history", "uk_gate_exceptions", "uk_gate_exception_history",
-             "uk_eligibility_proposals")  # fmt: skip
+CORE_TABLES = ("review_candidates", "domain_decisions", "decision_history")
+# Tables of the retired UK eligibility gate (schema version 2). Never read, written or dropped.
+LEGACY_UK_TABLES = ("uk_eligibility", "uk_eligibility_history", "uk_gate_exceptions", "uk_gate_exception_history",
+                    "uk_eligibility_proposals")  # fmt: skip
 MAX_EVIDENCE_PER_CANDIDATE = 200
 
 _SCHEMA = """
@@ -87,43 +75,6 @@ CREATE TABLE IF NOT EXISTS decision_history (
 );
 """
 
-# Version 2 additions. Applied to new databases directly and by the explicit 1 -> 2 migration.
-_SCHEMA_V2 = """
-CREATE TABLE IF NOT EXISTS uk_eligibility (
-    domain TEXT PRIMARY KEY,
-    status TEXT NOT NULL CHECK (status IN ('UK_ELIGIBLE', 'INSUFFICIENT_EVIDENCE', 'NOT_UK_ELIGIBLE')),
-    version INTEGER NOT NULL CHECK (version >= 1),
-    record TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS uk_eligibility_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    domain TEXT NOT NULL,
-    version INTEGER NOT NULL,
-    record TEXT NOT NULL,
-    UNIQUE (domain, version)
-);
-CREATE TABLE IF NOT EXISTS uk_gate_exceptions (
-    domain TEXT PRIMARY KEY,
-    allow_search INTEGER NOT NULL CHECK (allow_search IN (0, 1)),
-    allow_benchmark INTEGER NOT NULL CHECK (allow_benchmark IN (0, 1)),
-    version INTEGER NOT NULL CHECK (version >= 1),
-    record TEXT NOT NULL,
-    CHECK (allow_search = 1 OR allow_benchmark = 0)
-);
-CREATE TABLE IF NOT EXISTS uk_gate_exception_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    domain TEXT NOT NULL,
-    version INTEGER NOT NULL,
-    record TEXT NOT NULL,
-    UNIQUE (domain, version)
-);
-CREATE TABLE IF NOT EXISTS uk_eligibility_proposals (
-    domain TEXT PRIMARY KEY,
-    record TEXT NOT NULL
-);
-"""
-
-
 class StoredCandidate(BaseModel):
     """A discovered domain awaiting or past review, with its merged evidence."""
 
@@ -143,27 +94,6 @@ class DecisionConflictError(Exception):
 
 class DecisionNotFoundError(Exception):
     pass
-
-
-class ExceptionNotAllowedError(Exception):
-    """A UK gate exception can only be granted while the domain is INSUFFICIENT_EVIDENCE."""
-
-    def __init__(self, domain: str, status: UkEligibilityStatus):
-        super().__init__(f"{domain} is {status.value}: UK gate exceptions are only allowed for "
-                         "INSUFFICIENT_EVIDENCE domains")  # fmt: skip
-        self.domain, self.status = domain, status
-
-
-class MigrationRequiredError(RuntimeError):
-    """The database is at schema version 1; UK eligibility needs the explicit 1 -> 2 migration."""
-
-
-class VersionConflictError(Exception):
-    """The stored record changed since the caller read it (expected_version mismatch)."""
-
-    def __init__(self, domain: str, current: int | None):
-        super().__init__(f"{domain}: current version is {current}")
-        self.domain, self.current = domain, current
 
 
 CLASS_FIELDS = ("proposed_competitor_class", "competitor_class", "competitor_class_reasons",
@@ -188,7 +118,10 @@ def merge_candidate(old: DiscoveredCompetitor, new: DiscoveredCompetitor) -> Dis
     - an LLM-backed competitor class (e.g. backfilled) is never replaced by one from
       a run without a completed LLM classification: the five class fields are kept
       together.
-    A new completed LLM classification replaces both."""
+    A new completed LLM classification replaces both.
+    The UK assessment (`uk_assessment`) follows the same rule, and in addition a stored
+    assessment is never replaced by none: a run without the LLM, a failed or missing
+    classification, or a classification without a UK answer keeps the stored one."""
     merged = new.model_copy(deep=True)
     seen = {(e.canonical_url, e.product_id, e.kind) for e in new.evidence}
     extra = [e for e in old.evidence if (e.canonical_url, e.product_id, e.kind) not in seen]
@@ -200,11 +133,14 @@ def merge_candidate(old: DiscoveredCompetitor, new: DiscoveredCompetitor) -> Dis
             and new.classification_status is not ClassificationStatus.COMPLETED):  # fmt: skip
         for field in ("classification_status", "company_name", "company_type", "relevant_categories", "uk_seller",
                       "sells_new_musical_instruments", "relevance", "confidence", "rationale",
-                      "cited_evidence_urls", "name_verified", "validation_notes", *CLASS_FIELDS):  # fmt: skip
+                      "cited_evidence_urls", "name_verified", "validation_notes", "uk_assessment",
+                      *CLASS_FIELDS):  # fmt: skip
             setattr(merged, field, getattr(old, field))
     elif new.classification_status is not ClassificationStatus.COMPLETED and has_llm_competitor_class(old):
         for field in CLASS_FIELDS:
             setattr(merged, field, getattr(old, field))
+    if merged.uk_assessment is None and old.uk_assessment is not None:
+        merged.uk_assessment = old.uk_assessment
     merged.discovered_at = min(old.discovered_at, new.discovered_at)
     return merged
 
@@ -220,24 +156,14 @@ class ReviewStore:
             if current not in (0, *SUPPORTED_SCHEMA_VERSIONS):
                 raise RuntimeError(f"Review database {self.path} has unsupported schema version {current}")
             if current == 0:
-                # New database: every table at the current version. executescript commits on
+                # New database: the three core tables at version 1. executescript commits on
                 # its own; every statement is idempotent.
-                conn.executescript(_SCHEMA + _SCHEMA_V2)
+                conn.executescript(_SCHEMA)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 conn.commit()
                 current = SCHEMA_VERSION
-            # An existing database is never written here: no silent migration.
+            # An existing database (version 1 or 2) is never written here: no migration.
         self.schema_version = current
-
-    @property
-    def uk_supported(self) -> bool:
-        return self.schema_version >= 2
-
-    def _require_uk(self) -> None:
-        if not self.uk_supported:
-            raise MigrationRequiredError(
-                f"Review database {self.path.name} is at schema version {self.schema_version}; UK eligibility "
-                "needs the explicit migration (python -m app.services.review_migration --apply)")  # fmt: skip
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:
@@ -266,8 +192,9 @@ class ReviewStore:
         with self._tx() as conn:
             for c in written:
                 row = conn.execute("SELECT record FROM review_candidates WHERE domain = ?", (c.domain,)).fetchone()
-                # Never persist run-scoped review state: decisions live in their own table.
-                fresh = c.model_copy(update={"review_decision": None})
+                # Never persist run-scoped review state: decisions live in their own table, and
+                # the UK review view is derived from the assessment and the decision when shown.
+                fresh = c.model_copy(update={"review_decision": None, "uk_review": None})
                 if row:
                     old = StoredCandidate.model_validate_json(row[0])
                     keep_mode = (old.candidate.classification_status is ClassificationStatus.COMPLETED
@@ -351,142 +278,3 @@ class ReviewStore:
     def _append_history(conn: sqlite3.Connection, record: DomainDecisionRecord) -> None:
         conn.execute("INSERT INTO decision_history (domain, version, record) VALUES (?, ?, ?)",
                      (record.domain, record.version, record.model_dump_json()))  # fmt: skip
-
-    # ------------------------------------------------------------------ UK eligibility (schema v2)
-
-    def uk_gate_state(self) -> UkGateState:
-        """A consistent snapshot of UK records and exceptions. Empty (all blocked) on a version-1 database."""
-        if not self.uk_supported:
-            return UkGateState.empty()
-        with self._read() as conn:
-            records = [UkEligibilityRecord.model_validate_json(r[0])
-                       for r in conn.execute("SELECT record FROM uk_eligibility ORDER BY domain")]  # fmt: skip
-            exceptions = [UkGateException.model_validate_json(r[0])
-                          for r in conn.execute("SELECT record FROM uk_gate_exceptions ORDER BY domain")]  # fmt: skip
-        return UkGateState.of(records, exceptions)
-
-    def get_uk_eligibility(self, domain: str) -> UkEligibilityRecord | None:
-        return self._get_uk("uk_eligibility", UkEligibilityRecord, domain)
-
-    def list_uk_eligibility(self) -> list[UkEligibilityRecord]:
-        return list(self.uk_gate_state().eligibility.values())
-
-    def uk_eligibility_history(self, domain: str) -> list[UkEligibilityRecord]:
-        return self._history("uk_eligibility_history", UkEligibilityRecord, domain)
-
-    def put_uk_eligibility(self, record: UkEligibilityRecord,
-                           expected_version: int | None = None) -> UkEligibilityRecord:  # fmt: skip
-        """Create (version 1) or update (version + 1) a domain's UK record; history is append-only.
-        `expected_version` is the version the caller saw (0 = none yet); a mismatch raises VersionConflictError.
-
-        If the evidence status changes (an unassessed domain counts as INSUFFICIENT_EVIDENCE),
-        an active exception is revoked in the same transaction: a new exception version with
-        both scopes false and `revoked_by_status_change`, by this record's reviewer and time.
-        A later return to INSUFFICIENT_EVIDENCE therefore never revives it; a new exception
-        needs a new explicit approval."""
-        self._require_uk()
-        with self._tx() as conn:
-            row = conn.execute("SELECT status FROM uk_eligibility WHERE domain = ?", (record.domain,)).fetchone()
-            before = UkEligibilityStatus(row[0]) if row else UkEligibilityStatus.INSUFFICIENT_EVIDENCE
-            record = self._write(conn, "uk_eligibility", "uk_eligibility_history", record, expected_version,
-                                 {"status": record.status.value})  # fmt: skip
-            if record.status is not before:
-                current = self._current_exception(conn, record.domain)
-                if current is not None and current.active:
-                    revocation = UkGateException(
-                        domain=record.domain, allow_search=False, allow_benchmark=False,
-                        reason=f"Automatically revoked: UK eligibility changed from {before.value} to "
-                               f"{record.status.value} (eligibility record v{record.version}). A new exception "
-                               "needs a new explicit approval.",
-                        reviewer=record.reviewer, decided_at=record.decided_at, revoked_by_status_change=True,
-                    )  # fmt: skip
-                    self._write(conn, "uk_gate_exceptions", "uk_gate_exception_history", revocation, None,
-                                {"allow_search": 0, "allow_benchmark": 0})  # fmt: skip
-        return record
-
-    def get_uk_exception(self, domain: str) -> UkGateException | None:
-        return self._get_uk("uk_gate_exceptions", UkGateException, domain)
-
-    def list_uk_exceptions(self) -> list[UkGateException]:
-        return list(self.uk_gate_state().exceptions.values())
-
-    def uk_exception_history(self, domain: str) -> list[UkGateException]:
-        return self._history("uk_gate_exception_history", UkGateException, domain)
-
-    def put_uk_exception(self, record: UkGateException, expected_version: int | None = None) -> UkGateException:
-        """Grant, change or revoke a domain's exception (versioned, append-only history).
-
-        Granting (search and/or benchmark allowed) is refused with ExceptionNotAllowedError
-        unless the domain's current evidence status, read in the same transaction, is
-        INSUFFICIENT_EVIDENCE (an unassessed domain counts as INSUFFICIENT_EVIDENCE).
-        A revocation (both scopes false) is always allowed."""
-        self._require_uk()
-        with self._tx() as conn:
-            if record.active:
-                row = conn.execute("SELECT status FROM uk_eligibility WHERE domain = ?", (record.domain,)).fetchone()
-                status = UkEligibilityStatus(row[0]) if row else UkEligibilityStatus.INSUFFICIENT_EVIDENCE
-                if status is not UkEligibilityStatus.INSUFFICIENT_EVIDENCE:
-                    raise ExceptionNotAllowedError(record.domain, status)
-            return self._write(conn, "uk_gate_exceptions", "uk_gate_exception_history", record, expected_version,
-                               {"allow_search": int(record.allow_search),
-                                "allow_benchmark": int(record.allow_benchmark)})  # fmt: skip
-
-    @staticmethod
-    def _current_exception(conn: sqlite3.Connection, domain: str) -> UkGateException | None:
-        row = conn.execute("SELECT record FROM uk_gate_exceptions WHERE domain = ?", (domain,)).fetchone()
-        return UkGateException.model_validate_json(row[0]) if row else None
-
-    def list_uk_proposals(self) -> list[UkEligibilityProposal]:
-        if not self.uk_supported:
-            return []
-        with self._read() as conn:
-            rows = conn.execute("SELECT record FROM uk_eligibility_proposals ORDER BY domain").fetchall()
-        return [UkEligibilityProposal.model_validate_json(r[0]) for r in rows]
-
-    def get_uk_proposal(self, domain: str) -> UkEligibilityProposal | None:
-        return self._get_uk("uk_eligibility_proposals", UkEligibilityProposal, domain)
-
-    def put_uk_proposals(self, proposals: list[UkEligibilityProposal]) -> int:
-        """Store audit proposals (replacing earlier proposals for the same domains). Never a decision."""
-        self._require_uk()
-        with self._tx() as conn:
-            for p in proposals:
-                conn.execute("INSERT INTO uk_eligibility_proposals (domain, record) VALUES (?, ?) "
-                             "ON CONFLICT(domain) DO UPDATE SET record = excluded.record",
-                             (p.domain, p.model_dump_json()))  # fmt: skip
-        return len(proposals)
-
-    def _get_uk(self, table: str, model: type[BaseModel], domain: str):
-        """`domain` is canonicalised like stored keys ('WWW.X.co.uk' finds 'x.co.uk'); invalid raises ValueError."""
-        domain = canonical_domain(domain)
-        if not self.uk_supported:
-            return None
-        with self._read() as conn:
-            row = conn.execute(f"SELECT record FROM {table} WHERE domain = ?", (domain,)).fetchone()
-        return model.model_validate_json(row[0]) if row else None
-
-    def _history(self, table: str, model: type[BaseModel], domain: str) -> list:
-        domain = canonical_domain(domain)
-        if not self.uk_supported:
-            return []
-        with self._read() as conn:
-            rows = conn.execute(f"SELECT record FROM {table} WHERE domain = ? ORDER BY version", (domain,)).fetchall()
-        return [model.model_validate_json(r[0]) for r in rows]
-
-    @staticmethod
-    def _write(conn: sqlite3.Connection, table: str, history: str, record, expected_version: int | None,
-               columns: dict):  # fmt: skip
-        """Upsert the current version and append it to history, inside the caller's transaction.
-        `record.domain` is already canonical (model validation), so it is the one stored key."""
-        row = conn.execute(f"SELECT version FROM {table} WHERE domain = ?", (record.domain,)).fetchone()
-        current = row[0] if row else None
-        if expected_version is not None and expected_version != (current or 0):
-            raise VersionConflictError(record.domain, current)
-        record = record.model_copy(update={"version": (current or 0) + 1})
-        cols = {**columns, "version": record.version, "record": record.model_dump_json()}
-        updates = ", ".join(f"{c} = excluded.{c}" for c in cols)
-        conn.execute(f"INSERT INTO {table} (domain, {', '.join(cols)}) VALUES (?{', ?' * len(cols)}) "
-                     f"ON CONFLICT(domain) DO UPDATE SET {updates}", (record.domain, *cols.values()))  # fmt: skip
-        conn.execute(f"INSERT INTO {history} (domain, version, record) VALUES (?, ?, ?)",
-                     (record.domain, record.version, record.model_dump_json()))  # fmt: skip
-        return record

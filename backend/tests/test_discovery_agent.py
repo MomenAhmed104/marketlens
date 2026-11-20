@@ -13,6 +13,8 @@ from app.agents.discovery.schemas import (
     EvidenceKind,
     ProductQueryPlan,
     QuerySource,
+    UkRelevanceEvidenceKind as UK,
+    UkRelevanceQuote,
     UkSeller,
 )
 from app.schemas.common import DomainApprovalStatus as S
@@ -21,7 +23,6 @@ from app.schemas.search import SearchScope
 from app.services.search.base import RawHit
 from tests.discovery_fakes import FakeLLM, FakeSearch, llm_failure
 from tests.search_fakes import make_settings
-from tests.uk_fakes import all_eligible
 
 GLOBAL_HITS = {
     "SB-001": [
@@ -42,7 +43,9 @@ GLOBAL_HITS = {
 }  # fmt: skip
 PROFILE_HITS = {
     "beckettsmusic.co.uk": [RawHit("https://beckettsmusic.co.uk/pages/about", "About Beckett's Music",
-                                   "Independent music shop in Bedford, MK40 1AB. UK delivery.")],
+                                   "Independent music shop in Bedford, MK40 1AB. UK delivery."),
+                            RawHit("https://beckettsmusic.co.uk/pages/delivery", "Delivery - Beckett's Music",
+                                   "We deliver to all UK mainland addresses within 2 working days.")],
 }  # fmt: skip
 
 PLAN = DiscoveryPlan(products=[
@@ -55,15 +58,24 @@ PLAN = DiscoveryPlan(products=[
 ])  # fmt: skip
 
 
-def c(domain, name, ctype, rel, conf, urls, uk=UkSeller.YES):
+def c(domain, name, ctype, rel, conf, urls, uk=UkSeller.YES, uk_evidence=()):
     return CompanyClassification(domain=domain, company_name=name, company_type=ctype, relevant_categories=["Effects", "Guitars"],
                                  uk_seller=uk, sells_new_musical_instruments=True, relevance=rel, confidence=conf,
-                                 rationale="From evidence.", evidence_urls=urls)  # fmt: skip
+                                 rationale="From evidence.", evidence_urls=urls,
+                                 uk_evidence=[UkRelevanceQuote(url=u, quote=q, kind=k) for u, q, k in uk_evidence])  # fmt: skip
+
+
+# Verified UK evidence for Beckett's from two different pages (an address and a delivery statement).
+BECKETTS_UK = [
+    ("https://beckettsmusic.co.uk/pages/about", "Independent music shop in Bedford, MK40 1AB", UK.UK_ADDRESS),
+    ("https://beckettsmusic.co.uk/pages/delivery", "We deliver to all UK mainland addresses", UK.UK_DELIVERY),
+]
 
 
 CLASSIFICATIONS = ClassificationBatch(companies=[
     c("beckettsmusic.co.uk", "Beckett's Music", T.SPECIALIST_RETAILER, 0.9, 0.92,
-      ["https://beckettsmusic.co.uk/products/boss-rc-5", "https://beckettsmusic.co.uk/pages/about"]),
+      ["https://beckettsmusic.co.uk/products/boss-rc-5", "https://beckettsmusic.co.uk/pages/about"],
+      uk_evidence=BECKETTS_UK),
     c("ebay.co.uk", "eBay", T.MARKETPLACE, 0.6, 0.9, ["https://www.ebay.co.uk/itm/123"]),
     c("guitarworld.com", "Guitar World", T.OTHER, 0.1, 0.9, ["https://www.guitarworld.com/reviews/boss-rc-5"],
       uk=UkSeller.UNKNOWN),
@@ -78,8 +90,7 @@ def make_agent(catalogue, plan=PLAN, classifications=CLASSIFICATIONS, fail_texts
     llm = FakeLLM(plan, classifications)
     s = make_settings(**settings)
     agent = CompetitorDiscoveryAgent(search, llm, s, catalogue.competitors,
-                                     allowed_categories=[p.category for p in catalogue.products.values()],
-                                     uk_state=all_eligible())  # fmt: skip (explicit UK seeding)
+                                     allowed_categories=[p.category for p in catalogue.products.values()])
     return agent, search, llm
 
 
@@ -124,7 +135,7 @@ def test_decisions(outcome):
     result, _, _ = outcome
     cands = by_domain(result)
     beck = cands["beckettsmusic.co.uk"]
-    assert beck.approval_status is S.AUTO_APPROVED and beck.price_benchmark is True
+    assert beck.approval_status is S.AUTO_APPROVED and beck.price_benchmark is False  # never automatic
     assert beck.name_verified and beck.company_name == "Beckett's Music"
     assert beck.products_matched == ["SB-001", "SB-028"]
     assert set(beck.uk_signals) >= {"uk_domain", "gbp_price", "uk_postcode"}

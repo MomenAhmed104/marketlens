@@ -4,7 +4,7 @@
 import type { MatchStatus } from '../api'
 import { statusMeta } from '../status'
 
-const ORDER: MatchStatus[] = ['EXACT_MATCH', 'REVIEW_REQUIRED', 'SIMILAR_MATCH', 'NO_MATCH']
+const ORDER: MatchStatus[] = ['EXACT_MATCH', 'EQUIVALENT_VARIANT', 'REVIEW_REQUIRED', 'SIMILAR_MATCH', 'NO_MATCH']
 
 interface Props {
   counts: Record<MatchStatus, number>
