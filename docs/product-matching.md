@@ -141,11 +141,16 @@ Guitar" title is not evidence that the guitar has no electronics.
 
 **Finish aliases (Stage 6.1).** `attributes.FINISH_ALIASES` is a controlled
 list of verified alternative spellings: currently `"iced tea burst": ("ice
-tea",)`, seen on Gear4music in the Stage 6 run. `finish_in` matches the
+tea", "iced tea")`: "ice tea" seen on Gear4music in the Stage 6 run, "iced tea"
+seen on Wildwire in Stage 7 (user-approved 20 November 2026). `finish_in` matches the
 catalogue finish or an alias as a whole phrase, ignoring case, spacing and
 punctuation. There is no fuzzy matching:
 
-- "Iced Tea", "Spice Tea" and "Ice" are not Iced Tea Burst.
+- "Tea Burst", "Spice Tea", "Iced" and "Ice" are not Iced Tea Burst.
+- "Iced Tea" together with another colour ("Iced Tea / Ebony", "Iced Tea
+  Sunburst") is mixed evidence (`UNVERIFIED`, review), never a match.
+- An alias only confirms the finish attribute; a stricter LLM 2 proposal still
+  gives `REVIEW_REQUIRED` (U-4).
 - Black against White stays a conflict.
 - Cherry Sunburst against Vintage Sunburst stays unconfirmed (review), never a
   match.

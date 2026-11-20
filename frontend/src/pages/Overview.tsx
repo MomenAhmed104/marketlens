@@ -3,6 +3,7 @@
 import type { MatchStatus, PipelineResult, StompboxProduct } from '../api'
 import { href } from '../app/router'
 import { useRunContext } from '../app/runContext'
+import BaselineWarning from '../components/BaselineWarning'
 import DistributionBar from '../components/DistributionBar'
 import EmptyState from '../components/EmptyState'
 import { ExternalIcon, PriceIcon } from '../components/icons'
@@ -208,6 +209,7 @@ export default function Overview() {
                       <span className="fig-note">{diffDirection(c.comparison.difference_gbp!)}</span>
                     </div>
                   </div>
+                  <BaselineWarning productId={productId} />
                   <a href={c.product_url} target="_blank" rel="noreferrer noopener" className="source-link">
                     Source page <ExternalIcon />
                   </a>

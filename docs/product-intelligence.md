@@ -358,3 +358,21 @@ delivery-price exclusion (seen live in Stage 6 only), delivery discounts,
 genuine sale wording, the Ice Tea alias, mixed finishes, option prices and
 spec-category tampering. Extraction accuracy at scale, latency and cost per full
 pipeline run are not measured yet.
+
+## Current price also listed as ignored (post-Stage 7, 20 November 2026)
+
+Stage 7 Run 1 (Andertons, SB-028 Figured): LLM 2 returned "£599.00" as the current price and also
+listed "£599.00" (with "£0.00" and "£17.97") as ignored prices, with no wording. It used to be
+excluded as `EXCLUDED_SALE_PRICE` "crossed-out/RRP", which nothing on the page supported. Now the
+deterministic category of the ignored text decides the status; the amount is never used:
+
+| Ignored text naming the same amount | Price status |
+|---|---|
+| was / RRP / original / saving wording | `EXCLUDED_SALE_PRICE` |
+| finance / deposit / per-month wording | `AMBIGUOUS` |
+| a bare amount (category "other") | `CONFLICT` (LLM 2 contradicted itself; the page does not settle it) |
+
+Sale wording in the price quote itself still gives `EXCLUDED_SALE_PRICE`. Matching relabels an older
+stored `EXCLUDED_SALE_PRICE` without sale wording as `CONFLICT` (`matching.price.validate_price`),
+so saved run files show the right reason without being rewritten. Tests:
+`tests/test_price_ignored_conflict.py`.

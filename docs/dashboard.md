@@ -286,3 +286,14 @@ page tests render the whole app against `mockAppApi`.
   UK evidence column of the discovered-domains table needs a sideways scroll on
   a phone. Not checked: a real phone, other browsers, touch interaction, a live
   run streaming real data.
+
+## Post-Stage 7 additions (20 November 2026)
+
+- **Unconfirmed price baseline:** `priceBaseline.ts` / `components/BaselineWarning.tsx` show a warning note
+  for SB-028 (£579 recorded as a sale price, "was £599") in the product header (width-capped in the price
+  column), the evidence drawer's Price tab (both the compared and not-compared branches) and the Overview
+  price cards. Display only. Tests: `components/BaselineWarning.test.tsx`, `pages/BaselineWarningPages.test.tsx`.
+- **Comparison table:** the Evidence column (`.col-action`) is sticky on the right edge with a separating
+  shadow, and long "not compared" reasons in the price columns wrap. Checked with headless Chrome against the
+  saved Stage 7 runs at 1440 (no horizontal scroll), 1024 and 390 px (the table scrolls inside its container,
+  the Evidence button stays visible).

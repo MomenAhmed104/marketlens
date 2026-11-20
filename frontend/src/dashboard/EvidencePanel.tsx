@@ -2,6 +2,7 @@
 // LLM 2's match proposal is shown next to Python's final status; it never replaces it.
 import { useState } from 'react'
 import type { AttributeCheck, CandidateMatch, CompetitorProduct, IgnoredPriceCategory } from '../api'
+import BaselineWarning from '../components/BaselineWarning'
 import Drawer from '../components/Drawer'
 import { ExternalIcon } from '../components/icons'
 import StatusPill from '../components/StatusPill'
@@ -157,11 +158,14 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
               ))}
             </div>
           ) : m.comparison.eligible && m.comparison.difference_gbp !== null ? (
-            <p className="equation">
-              Competitor {money(m.comparison.competitor_price, 'GBP')} − Stompbox{' '}
-              {money(m.comparison.stompbox_price, m.comparison.stompbox_currency)} ={' '}
-              <strong>{signedGbp(m.comparison.difference_gbp)}</strong> (calculated by the backend).
-            </p>
+            <>
+              <p className="equation">
+                Competitor {money(m.comparison.competitor_price, 'GBP')} − Stompbox{' '}
+                {money(m.comparison.stompbox_price, m.comparison.stompbox_currency)} ={' '}
+                <strong>{signedGbp(m.comparison.difference_gbp)}</strong> (calculated by the backend).
+              </p>
+              <BaselineWarning productId={m.stompbox_product_id} />
+            </>
           ) : (
             <>
               <p className="hint">
@@ -174,6 +178,7 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
                   <li key={r}>Not compared: {r}</li>
                 ))}
               </ul>
+              {stompboxPrice !== null && <BaselineWarning productId={m.stompbox_product_id} />}
             </>
           )}
         </TabPanel>

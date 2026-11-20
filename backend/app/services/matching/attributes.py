@@ -322,7 +322,9 @@ def sku_in(skus: tuple[str, ...], text: str | None) -> set[str]:
 # pages. Matching is exact on the normalised phrase (case, spacing and punctuation ignored); there is no
 # fuzzy matching. Add an alias only with evidence, and note where it was seen.
 FINISH_ALIASES: dict[str, tuple[str, ...]] = {
-    "iced tea burst": ("ice tea",),  # Gear4music "Epiphone Les Paul Standard 60s, Ice Tea" (Stage 6, 19 Nov 2026)
+    # "ice tea": Gear4music "Epiphone Les Paul Standard 60s, Ice Tea" (Stage 6, 19 Nov 2026).
+    # "iced tea": Wildwire "... Figured Left-Handed in Iced Tea with Gig Bag" (Stage 7, 20 Nov 2026; user-approved).
+    "iced tea burst": ("ice tea", "iced tea"),
 }
 
 

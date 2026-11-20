@@ -4,6 +4,7 @@ import DistributionBar from '../components/DistributionBar'
 import EmptyState from '../components/EmptyState'
 import { ExternalIcon } from '../components/icons'
 import StatusPill from '../components/StatusPill'
+import BaselineWarning from '../components/BaselineWarning'
 import ComparisonTable from '../dashboard/ComparisonTable'
 import { money, plural } from '../format'
 
@@ -96,6 +97,7 @@ export default function ProductIntelligence({ productId }: { productId: string |
               </a>
             </span>
           )}
+          {stompboxPrice !== null && <BaselineWarning productId={pr.product_id} />}
         </div>
       </section>
 

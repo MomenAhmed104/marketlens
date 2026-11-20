@@ -465,7 +465,14 @@ def decide(candidate: DiscoveredCompetitor, t: Thresholds, marketplace_labels: t
     if not c.products_matched:
         unmet.append("no page mentioning a selected product's model")
     if len(discovery_urls) < t.auto_approve_min_evidence_urls:
-        unmet.append(f"{len(discovery_urls)} evidence URL(s) < {t.auto_approve_min_evidence_urls}")
+        # Counts distinct pages the domain appeared on in the GLOBAL product searches (a relevance
+        # signal). Domain-profile pages (about/contact/terms, found by the domain-restricted profile
+        # search) supply UK evidence and count for `independent_sources`, never here (post-Stage 7
+        # diagnostic; the rule itself is unchanged).
+        profile_urls = {e.url for e in c.evidence if e.kind is EvidenceKind.DOMAIN_PROFILE} - discovery_urls
+        unmet.append(f"{len(discovery_urls)} discovery evidence URL(s) < {t.auto_approve_min_evidence_urls}: the "
+                     f"domain appeared on {len(discovery_urls)} distinct page(s) in the global product searches; "
+                     f"its {len(profile_urls)} domain-profile page(s) (used for UK evidence) do not count here")  # fmt: skip
     if not c.cited_evidence_urls:
         unmet.append("classification cited no valid evidence URL")
     if c.sells_new_musical_instruments is False:

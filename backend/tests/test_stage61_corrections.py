@@ -214,12 +214,13 @@ def test_active_passive_needs_an_electronics_spec_not_a_controls_spec(catalogue)
 
 
 @pytest.mark.parametrize("text", ["Ice Tea", "ICE TEA", "ice-tea", "Epiphone Les Paul Standard 60s, Ice Tea - Secondhand",
-                                  "Iced Tea Burst", "iced  tea  burst"])  # fmt: skip
+                                  "Iced Tea Burst", "iced  tea  burst",
+                                  "Iced Tea", "in Iced Tea with Gig Bag"])  # fmt: skip  # "iced tea": approved 20 Nov 2026
 def test_iced_tea_burst_and_its_controlled_alias(text):
     assert A.finish_in("Iced Tea Burst", text)
 
 
-@pytest.mark.parametrize("text", ["Iced Tea", "Tea", "Spice Tea", "Ice", "Bourbon Burst", ""])
+@pytest.mark.parametrize("text", ["Iced", "Tea", "Spice Tea", "Ice", "Bourbon Burst", "Tea Burst", "Icedtea", ""])
 def test_unregistered_or_ambiguous_names_are_not_the_finish(text):
     assert not A.finish_in("Iced Tea Burst", text)
 
@@ -272,6 +273,6 @@ def test_alias_is_used_for_variant_price_association(catalogue):
 
 
 def test_alias_registry_is_controlled():
-    assert A.FINISH_ALIASES == {"iced tea burst": ("ice tea",)}
-    assert A.finish_names("Iced Tea Burst") == ["iced tea burst", "ice tea"]
+    assert A.FINISH_ALIASES == {"iced tea burst": ("ice tea", "iced tea")}  # "iced tea" approved 20 Nov 2026
+    assert A.finish_names("Iced Tea Burst") == ["iced tea burst", "ice tea", "iced tea"]
     assert A.finish_names("Vintage Sunburst") == ["vintage sunburst"]  # no implicit aliases

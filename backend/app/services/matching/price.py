@@ -49,6 +49,19 @@ def _delivery_amounts(c: CompetitorProduct) -> set:
     return {m.amount for t in c.ignored_prices if ignored_price_category(t) == "delivery" for m in find_prices(t)}
 
 
+def _sale_exclusion_supported(c: CompetitorProduct, value: str | None, quote: str | None) -> bool:
+    """Whether a stored EXCLUDED_SALE_PRICE is backed by sale wording: in the price quote, or in one
+    of LLM 2's ignored texts naming the same amount (categories re-derived, never trusted)."""
+    parsed = parse_single_price(value)
+    if parsed is None:
+        return True  # nothing to re-check against: keep the stored exclusion as recorded
+    in_quote = [m for m in find_prices(quote or "") if m.amount == parsed.amount]
+    if in_quote and all(is_sale_context(quote or "", m) for m in in_quote):
+        return True
+    return any(ignored_price_category(t) == "sale" and any(m.amount == parsed.amount for m in find_prices(t))
+               for t in c.ignored_prices)  # fmt: skip
+
+
 def validate_price(c: CompetitorProduct, now: datetime, max_age_hours: int) -> PriceValidation:
     ev = next((e for e in c.field_evidence if e.field is ExtractedField.PRICE), None)
     base = dict(source_url=c.product_url, retrieved_at=c.page.retrieved_at, sale_indicated=c.sale_indicated,
@@ -60,6 +73,13 @@ def validate_price(c: CompetitorProduct, now: datetime, max_age_hours: int) -> P
     if ev is None:
         return PriceValidation(status=PriceStatus.INVALID, evidence_status=EvidenceStatus.UNVERIFIED,
                                reasons=["No price evidence record"], **base)  # fmt: skip
+    if ev.status is FieldStatus.EXCLUDED_SALE_PRICE and not _sale_exclusion_supported(c, ev.value, ev.quote):
+        # Records made before the post-Stage 7 fix: the amount was excluded only because LLM 2 also listed
+        # it as an ignored price. Still never used, but labelled for what the evidence shows (a conflict).
+        return PriceValidation(status=PriceStatus.CONFLICT, evidence_status=EvidenceStatus.CONFLICT, reasons=[
+            "Recorded as an excluded sale price, but neither its quote nor LLM 2's ignored texts show was/RRP/"
+            "original/saving wording: LLM 2 gave this amount as the current price and also as an ignored price. "
+            "Not used; the page evidence does not settle whether it is the current price"], **base)  # fmt: skip
     if ev.status is not FieldStatus.EXTRACTED:
         status, evidence = _FROM_FIELD[ev.status]
         return PriceValidation(status=status, evidence_status=evidence,

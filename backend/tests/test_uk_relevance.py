@@ -437,3 +437,17 @@ def test_mislabelled_quotes_never_make_the_evidence_sufficient():
               q(SHIP, "Visit our online store", K.UK_PHYSICAL_STORE)]  # fmt: skip
     a = assess_uk_evidence(quotes, MIXED)
     assert not a.sufficient and a.contradicted  # UK delivery alone (no operator) is not sufficient
+
+
+def test_foreign_operator_alone_is_not_a_contradiction_stage7_muziker_shape():
+    """Stage 7 muziker.co.uk: a verified Slovak operator address and nothing about UK delivery. That is
+    'based abroad, UK service not yet shown': insufficient, but neither contradicted nor mixed; only
+    NO_UK_SERVICE contradicts. The review view asks for the missing UK delivery statement."""
+    from app.agents.discovery.rules import _missing_evidence  # noqa: PLC0415
+
+    url = "https://www.muziker.co.uk/imprint-legal-information"
+    quote = "Official address Muziker, a.s. Lozorno 1102 900 55 Lozorno Slovakia"
+    a = assess_uk_evidence([q(url, quote, K.NON_UK_OPERATOR)], [ev(url, "Imprint legal information", quote)])
+    assert a.evidence[0].verified and a.evidence[0].supports
+    assert (a.sufficient, a.contradicted, a.mixed_location, a.independent_sources) == (False, False, False, 1)
+    assert any("delivers or ships to the UK" in m for m in _missing_evidence(a))

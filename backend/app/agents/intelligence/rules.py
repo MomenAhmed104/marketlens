@@ -133,12 +133,20 @@ class _Amount:
     currency: str | None = None
 
 
-def _verify_amount(value: str | None, quote: str | None, page: str, ignored: set[Decimal],
-                   conditional: bool, delivery: set[Decimal] = frozenset()) -> _Amount:  # fmt: skip
+def _verify_amount(value: str | None, quote: str | None, page: str,
+                   ignored: dict[Decimal, set[IgnoredPriceCategory]], conditional: bool,
+                   delivery: set[Decimal] = frozenset()) -> _Amount:  # fmt: skip
     """The shared price checks, in order. EXTRACTED carries the amount and currency.
 
-    `ignored`: amounts LLM 2 listed as was/RRP/finance/other prices; `delivery`: amounts it
-    listed as delivery charges. A delivery charge never becomes a product price.
+    `ignored`: amounts LLM 2 listed as ignored prices, with the deterministic category of each
+    ignored text (sale / finance / other); `delivery`: amounts it listed as delivery charges. A
+    delivery charge never becomes a product price.
+
+    An amount given as the current price AND listed as ignored is never used, but the reason must
+    match the evidence (post-Stage 7): EXCLUDED_SALE_PRICE only when the ignored text itself carries
+    was/RRP/original/saving wording; AMBIGUOUS for a finance/conditional text; otherwise (a bare
+    amount, category "other") CONFLICT: LLM 2 contradicted itself and nothing on the page says which
+    reading is right.
     """
     if value is None:
         return _Amount(FieldStatus.NOT_FOUND)
@@ -156,9 +164,18 @@ def _verify_amount(value: str | None, quote: str | None, page: str, ignored: set
         return _Amount(FieldStatus.INVALID, "amount is a delivery/shipping charge, not a product price")
     if all(is_sale_context(quote, m) for m in in_quote):
         return _Amount(FieldStatus.EXCLUDED_SALE_PRICE, "amount is shown as a was/RRP/original/saving figure")
-    if parsed.amount in ignored:
+    cats = ignored.get(parsed.amount, set())
+    if IgnoredPriceCategory.SALE in cats:
         return _Amount(FieldStatus.EXCLUDED_SALE_PRICE,
-                       "LLM 2 also listed this amount as an ignored (crossed-out/RRP) price")  # fmt: skip
+                       "LLM 2 also listed this amount as an ignored price with was/RRP/original/saving wording")  # fmt: skip
+    if IgnoredPriceCategory.FINANCE in cats:
+        return _Amount(FieldStatus.AMBIGUOUS,
+                       "LLM 2 also listed this amount as an ignored finance/conditional price")  # fmt: skip
+    if cats:
+        return _Amount(FieldStatus.CONFLICT,
+                       "LLM 2 gave this amount as the current price and also listed it as an ignored price, with no "
+                       "was/RRP, finance or delivery wording to say why; not used (the page evidence does not settle "
+                       "whether it is the current price)")  # fmt: skip
     if parsed.amount in delivery:
         return _Amount(FieldStatus.AMBIGUOUS, "the same amount is listed as a delivery charge on the page")
     if conditional or any(is_conditional_context(quote, m) for m in in_quote):
@@ -178,10 +195,15 @@ def ignored_price_details(ext: PageExtraction) -> list[IgnoredPriceRecord]:
             for t in ext.ignored_prices[:10] if t.strip()]  # fmt: skip
 
 
-def _ignored_amounts(ext: PageExtraction) -> set[Decimal]:
-    """Amounts LLM 2 ignored as was/RRP/finance/other prices (delivery charges excluded)."""
-    return {m.amount for r in ignored_price_details(ext) if r.category is not IgnoredPriceCategory.DELIVERY
-            for m in find_prices(r.text)}  # fmt: skip
+def _ignored_amounts(ext: PageExtraction) -> dict[Decimal, set[IgnoredPriceCategory]]:
+    """Amounts LLM 2 ignored as was/RRP/finance/other prices (delivery charges excluded), each with the
+    categories of the ignored texts it appears in."""
+    out: dict[Decimal, set[IgnoredPriceCategory]] = {}
+    for r in ignored_price_details(ext):
+        if r.category is not IgnoredPriceCategory.DELIVERY:
+            for m in find_prices(r.text):
+                out.setdefault(m.amount, set()).add(r.category)
+    return out
 
 
 def _delivery_amounts(ext: PageExtraction) -> set[Decimal]:

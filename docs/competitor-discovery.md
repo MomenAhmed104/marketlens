@@ -333,3 +333,19 @@ the reviewer's `benchmark_eligible`). None is derived from another.
   evaluated in that run.
 - Known competitors have no category-relevance data in the workbook. Relevance
   is recorded only as evidence (`known_competitor_evidence`), never assumed.
+
+## Evidence URLs versus UK evidence pages (post-Stage 7, 20 November 2026)
+
+Two different counts feed auto-approval, and both still need 2:
+
+- **Discovery evidence URLs** (`DISCOVERY_AUTO_APPROVE_MIN_EVIDENCE_URLS=2`): distinct URLs of
+  `DISCOVERY_RESULT` evidence, i.e. pages on which the domain appeared in the global product searches.
+  A relevance signal. Domain-profile pages are not counted.
+- **Independent UK evidence pages** (`AUTO_APPROVE_MIN_UK_SOURCES=2`): distinct pages behind verified,
+  supporting UK quotes, from discovery results or profile pages.
+
+In Stage 7, Wildwire, Spears, Mann's, Promenade and Roland Store London had 2-3 UK evidence pages
+(mostly about/contact/terms profile pages) but appeared on only 1 page in the global searches, so they
+needed review. That is the intended rule, not a counting bug. The reason now reads "1 discovery evidence
+URL(s) < 2: the domain appeared on 1 distinct page(s) in the global product searches; its N
+domain-profile page(s) (used for UK evidence) do not count here". Thresholds unchanged.

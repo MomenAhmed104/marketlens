@@ -141,7 +141,7 @@ function GroupTable({
                 Difference (competitor − Stompbox)
               </th>
             )}
-            <th scope="col">
+            <th scope="col" className="col-action">
               <span className="sr-only">Evidence</span>
             </th>
           </tr>
@@ -218,7 +218,7 @@ function GroupTable({
                     </td>
                   </>
                 )}
-                <td>
+                <td className="col-action">
                   <button
                     type="button"
                     className="btn small-btn"

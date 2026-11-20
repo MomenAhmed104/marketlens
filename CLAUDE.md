@@ -1210,3 +1210,31 @@ page text is not stored, only verified quotes and metadata.
     tables widened Live Runs at 390 px.
 -   **Workflow test:** `tests/test_workflow_integration.py` (discover, review via API, re-run, extract,
     match, stream; temporary database, fakes only).
+
+### Stage 7 live demo and post-demo fixes (20 Nov 2026, uncommitted)
+
+-   **Live demo (user-authorized, $2.00 ceiling):** two dashboard-pipeline runs on a demo review database
+    (`data/review/demo-20261120.sqlite3`, a copy; the real database was not touched), SB-001 and SB-028.
+    Run 1 `run-20261120T202714Z-28317c80` (LLM 1 discovery + Andertons and Gear4music) and Run 2
+    `run-20261120T203804Z-3f13cfde` (reviewer-approved `wildwireguitars.com` only, benchmark off;
+    `idealo.co.uk` rejected). Saved as `data/intelligence_runs/pipeline-<run>.json|.events.json|.run.json`
+    (git-ignored, never edited). Reported spend: Exa $0.229, OpenRouter $0.0167.
+-   **SB-028 baseline warning:** `frontend/src/priceBaseline.ts` and `components/BaselineWarning.tsx` label the
+    £579 Stompbox price as an unconfirmed baseline (SB-028 only) in the product header, the evidence drawer and
+    the Overview price cards. Display only; extraction, matching, differences and benchmark rules unchanged.
+-   **Price: current AND ignored amount:** `rules._verify_amount` now uses the deterministic category of
+    the ignored text: sale wording gives `EXCLUDED_SALE_PRICE`, finance wording `AMBIGUOUS`, a bare amount
+    (category "other") `CONFLICT`. The amount is never used in any case. `matching.price.validate_price`
+    relabels an older stored `EXCLUDED_SALE_PRICE` with no sale wording (quote or ignored texts) as
+    `CONFLICT`; saved run files are not rewritten. (Stage 7 Andertons £599 for SB-028.)
+-   **Auto-approval evidence URLs:** the rule is unchanged (2 distinct `DISCOVERY_RESULT` URLs from the
+    global product searches). Domain-profile pages (about/contact/terms) carry UK evidence and count for
+    `independent_sources` only. The reason now says so (`N discovery evidence URL(s) < 2: ...`).
+-   **Finish alias (user-approved 20 Nov 2026):** `FINISH_ALIASES["iced tea burst"] = ("ice tea", "iced tea")`.
+    Exact whole-phrase match only; mixed finishes ("Iced Tea / Ebony", "Iced Tea Sunburst") stay review; the
+    alias confirms the finish only and never overrides a stricter LLM 2 proposal.
+-   **Investigated, unchanged:** muziker.co.uk (a verified non-UK operator alone is insufficient, not a
+    contradiction; a UK delivery quote is missing).
+-   **Known follow-up:** at 390 px the product-switcher chips on Product Intelligence overflow the right edge.
+-   **Comparison table:** the Evidence column is pinned to the right edge (`.col-action`, sticky) and long
+    "not compared" reasons wrap; tables still scroll sideways on narrow screens.

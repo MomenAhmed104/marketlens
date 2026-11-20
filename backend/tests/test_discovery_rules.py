@@ -192,3 +192,47 @@ def test_unclassified_and_unevidenced_candidates():
     profile_only = candidate(evidence=[ev("https://beckettsmusic.co.uk/about", "About", kind=EvidenceKind.DOMAIN_PROFILE)])
     decide(profile_only, TH)
     assert profile_only.approval_status is S.REJECTED
+
+
+# --------------------------------------------------------------------------- post-Stage 7: evidence-URL count
+
+
+def test_profile_pages_with_uk_evidence_do_not_count_as_discovery_evidence_urls():
+    """Stage 7 Wildwire shape: one global discovery page plus profile pages holding verified UK evidence
+    from 2+ independent pages. The 2-discovery-URL criterion is unchanged and still blocks auto-approval;
+    the reason now says exactly what is counted and what is missing."""
+    one_discovery = candidate(evidence=[
+        ev("https://beckettsmusic.co.uk/boss-rc-5", "Boss RC-5 Loop Station - Beckett's Music", "£189.99 In stock"),
+        *uk_pages()])  # fmt: skip
+    c = decided(cand=one_discovery)
+    assert c.uk_assessment.independent_sources >= 2 and c.uk_assessment.sufficient  # UK evidence is fine
+    assert c.approval_status is S.APPROVAL_REQUIRED and c.price_benchmark is False
+    reason = next(r for r in c.decision_reasons if "discovery evidence URL" in r)
+    assert reason.startswith("Needs approval: 1 discovery evidence URL(s) < 2")
+    assert "global product searches" in reason and "2 domain-profile page(s)" in reason
+    assert not any("independent page(s) <" in r for r in c.decision_reasons)  # the UK criterion is met
+
+
+def test_two_distinct_discovery_pages_still_satisfy_the_rule():
+    c = decided()  # two discovery-result pages (RC-5, RC-1) plus two profile pages
+    assert c.approval_status is S.AUTO_APPROVED
+    assert not any("discovery evidence URL" in r for r in c.decision_reasons)
+
+
+def test_repeated_records_of_one_discovery_url_count_once():
+    dup = candidate(evidence=[
+        ev("https://beckettsmusic.co.uk/boss-rc-5", "Boss RC-5 - Beckett's Music", "£189.99"),
+        ev("https://beckettsmusic.co.uk/boss-rc-5", "Boss RC-5 - Beckett's Music", "£189.99"),
+        *uk_pages()])  # fmt: skip
+    c = decided(cand=dup)
+    assert c.approval_status is S.APPROVAL_REQUIRED
+    assert any(r.startswith("Needs approval: 1 discovery evidence URL(s) < 2") for r in c.decision_reasons)
+
+
+def test_thresholds_are_unchanged():
+    from app.core.config import Settings  # noqa: PLC0415
+
+    f = Settings.model_fields
+    assert f["discovery_auto_approve_min_evidence_urls"].default == 2
+    assert f["discovery_auto_approve_min_confidence"].default == 0.85
+    assert f["discovery_auto_approve_min_relevance"].default == 0.75

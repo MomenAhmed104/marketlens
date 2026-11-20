@@ -1,5 +1,6 @@
 """Phase 6 matching rules on controlled synthetic candidates (real catalogue products, no LLM/key)."""
 
+import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -283,7 +284,10 @@ def test_phase5_field_statuses_map_to_price_statuses(run):
     }
     for fs, (ps, es) in cases.items():
         price = None if fs is FieldStatus.NOT_FOUND else "219.00"
-        m = run("SB-001", candidate(AND_RC5, "Boss RC-5", llm=True, model="RC-5", price=price, price_status=fs))
+        # A sale exclusion is kept only with sale wording in its quote (post-Stage 7; otherwise CONFLICT).
+        quote = "Was £219.00 Now £189.00" if fs is FieldStatus.EXCLUDED_SALE_PRICE else None
+        m = run("SB-001", candidate(AND_RC5, "Boss RC-5", llm=True, model="RC-5", price=price, price_status=fs,
+                                    quote=quote))  # fmt: skip
         assert (m.price.status, m.price.evidence_status) == (ps, es), fs
         assert m.price.price is None and not m.comparison.eligible
         assert m.match_status is M.EXACT_MATCH  # price validity never changes the match
@@ -383,3 +387,57 @@ def test_designations_are_controlled_and_only_for_sb028(run, catalogue):
     p = catalogue.products["SB-028"]
     assert "figured" not in f"{p.product_name} {p.manufacturer_model}".casefold()
     assert p.displayed_price == Decimal("579.00")
+
+
+# --------------------------------------------------------------------------- SB-028 finish aliases (Stage 7)
+
+_LP = "Epiphone Les Paul Standard '60s Figured Left-Handed"
+
+
+def _slug(text):
+    return "-".join(re.findall(r"[a-z0-9]+", text.casefold()))
+
+
+@pytest.mark.parametrize("finish,finish_result,status", [
+    (", Iced Tea Burst", CheckResult.MATCH, M.EXACT_MATCH),  # exact catalogue finish
+    (", Ice Tea", CheckResult.MATCH, M.EXACT_MATCH),  # existing alias
+    (" in Iced Tea", CheckResult.MATCH, M.EXACT_MATCH),  # alias approved 20 Nov 2026
+    (" in Iced Tea with Gig Bag", CheckResult.MATCH, M.EXACT_MATCH),  # Wildwire title shape
+    (", Iced Tea / Ebony", CheckResult.UNVERIFIED, M.REVIEW_REQUIRED),  # mixed finish stays protected
+    (", Iced Tea Sunburst", CheckResult.UNVERIFIED, M.REVIEW_REQUIRED),  # never exact
+    (", Bourbon Burst", CheckResult.UNVERIFIED, M.REVIEW_REQUIRED),  # different finish sharing "burst"
+    (", Tea Burst", CheckResult.UNVERIFIED, M.REVIEW_REQUIRED),  # not an alias
+    ("", CheckResult.UNVERIFIED, M.REVIEW_REQUIRED),  # missing finish stays unconfirmed
+    (", Ebony", CheckResult.CONFLICT, M.EQUIVALENT_VARIANT),  # a different finish (cosmetic only, U-1)
+])  # fmt: skip
+def test_sb028_finish_alias_matrix(run, finish, finish_result, status):
+    title = _LP + finish
+    url = "https://www.andertons.co.uk/" + _slug(title)
+    m = run("SB-028", candidate(url, title))
+    assert variant(m, "finish").result is finish_result, (title, variant(m, "finish"))
+    assert m.match_status is status
+
+
+def test_iced_tea_alias_never_overrides_a_stricter_llm2_proposal(run):
+    """Stage 7 Wildwire SB-028: the alias confirms the finish only. LLM 2 proposed SIMILAR_ALTERNATIVE,
+    so the final status stays REVIEW_REQUIRED (U-4); the alias never forces EXACT_MATCH."""
+    from app.agents.intelligence.schemas import (  # noqa: PLC0415
+        PROPOSAL_STATUS, MatchProposalRecord, ProposalStatus, ProposedMatch, VerifiedReason)
+    from app.schemas.common import DomainApprovalStatus  # noqa: PLC0415
+    from app.services.matching.schemas import ProposalAgreement  # noqa: PLC0415
+
+    title = "Epiphone Les Paul Standard 60s Figured Left-Handed in Iced Tea with Gig Bag #25071530488"
+    url = "https://wildwireguitars.com/epiphone-les-paul-standard-60s-figured-left-handed-in-iced-tea-with-gig-bag-250715"
+    c = candidate(url, title, llm=True, product_title=title, model="Les Paul Standard 60s Figured", price="599.00",
+                  quote="£599.00", competitor=target("wildwireguitars.com", T.SPECIALIST_RETAILER, benchmark=False,
+                                                    status=DomainApprovalStatus.APPROVED))  # fmt: skip
+    assert run("SB-028", c).match_status is M.EXACT_MATCH  # Python alone: finish now confirmed
+    c.match_proposal = MatchProposalRecord(
+        classification=ProposedMatch.SIMILAR_ALTERNATIVE,
+        corresponding_status=PROPOSAL_STATUS[ProposedMatch.SIMILAR_ALTERNATIVE],
+        reasons=[VerifiedReason(text="individual serial-numbered instrument", quote=title, verified=True)])
+    c.match_proposal_status = ProposalStatus.COMPLETED
+    m = run("SB-028", c)
+    assert variant(m, "finish").result is CheckResult.MATCH
+    assert m.match_status is M.REVIEW_REQUIRED and m.proposal_agreement is ProposalAgreement.LLM_STRICTER
+    assert not m.comparison.eligible  # and Wildwire has no benchmark permission anyway
