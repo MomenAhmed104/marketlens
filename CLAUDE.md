@@ -8,12 +8,13 @@
 (deterministic matching and price validation) is complete (commit 2118cec).
 Phase 7 (pipeline orchestration) is complete (commit e295c17). Phase 8 (live
 dashboard) and the classification work are in the WIP checkpoint `970c7be` on
-branch `wip/uk-gate-2026-11-17`, awaiting review; see `docs/dashboard.md`. UK
-relevance follows the approved Option B simplification (19 Nov 2026, uncommitted):
-verified UK evidence in discovery and review, no four-category assessment, and no
-separate UK eligibility gate (retired). See "UK relevance evidence, Option B" below and
+branch `wip/uk-gate-2026-11-17`, awaiting review; see `docs/dashboard.md`. Competitor
+discovery follows the **Stage 8.1 simplification (22 Nov 2026, uncommitted, awaiting review)**:
+LLM 1 searches for UK-serving retailers, there is no UK verification or UK gate, and retailer
+domains that pass basic checks are automatically searchable (persisting across runs, capped per
+run, never benchmarks). It replaced Option B (19 Nov 2026). See "Stage 8.1" below and
 `docs/stompbox_uk_competitor_intelligence_implementation_plan.md` (the authoritative
-baseline). LLM 2 is now the three-task Product Intelligence Agent (plan §8.6
+baseline). Last commit: `34354f5` (Stage 7 post-demo fixes). LLM 2 is now the three-task Product Intelligence Agent (plan §8.6
 stages 1-5 implemented 19 Nov 2026, uncommitted). Stage 6 controlled live evaluation was
 authorized and run twice on 19 Nov 2026 (Stage 6 and Stage 6.2: SB-001 and SB-028 on Andertons
 and Gear4music, about $0.04 each); Stages 6.1, 6.1.1 and 6.3 corrected what they found, offline
@@ -1022,9 +1023,64 @@ or provide its path.
     always Related, never Direct, even if LLM 1 proposed "retailer". Unnamed
     domains are titled by the domain, and a missing company type is not shown.
 
-### UK relevance evidence, Option B (18-19 Nov 2026, uncommitted)
+### Stage 8.1: simplified competitor discovery (22 Nov 2026, uncommitted, awaiting review)
 
--   **Authoritative baseline:** `docs/stompbox_uk_competitor_intelligence_implementation_plan.md`.
+-   **Replaces Option B** (below, kept as history). Authority: user decisions of 22 Nov 2026 (plan §9.0a,
+    D-35 to D-40). Design and rules: `docs/competitor-discovery.md` ("Stage 8.1").
+-   LLM 1 searches specifically for retailers selling to UK customers (planning prompt: UK musical
+    instrument retailers, UK guitar shops, UK music equipment retailers, shops delivering to the UK, UK
+    stockists; shops abroad are valid). It returns name, type, categories, cited URLs, informational
+    relevance/confidence and an informational `serves_uk_customers` (yes/no/unknown) with
+    `serves_uk_customers_note`. No UK evidence quotes. `CLASSIFICATION_VERSION = 3` is stored on every
+    new classification (`classification_version`; 3 since `sells_new_musical_instruments` became
+    true/false/null, where false = used only).
+-   **Automatic search eligibility** (`rules.is_search_eligible`): completed LLM 1 classification at the
+    current version; retailer or specialist retailer; company name in the evidence; a cited URL in the
+    evidence; valid normalised domain; not excluded (own site, platforms, PMT); not a known marketplace or
+    directory; no human rejection; not confirmed used-only (`sells_new_musical_instruments=false`;
+    unknown never blocks; a reviewer can still approve it, without benchmark permission). Never: `serves_uk_customers` (even "no"), relevance, confidence,
+    `.uk`, GBP or UK address. `decide` gives `AUTO_APPROVED` (= eligible) / `APPROVAL_REQUIRED`, and
+    `REJECTED` only without discovery evidence (no score-based rejection). Never `price_benchmark`.
+-   **Persistence:** recomputed from the stored record + current decision every time
+    (`eligible_search_targets(..., candidates=..., product_ids=..., only_domains=...)` in the pipeline
+    targets stage and the intelligence API/config; the review API `search_basis`). No decision rows are
+    written. The pipeline merges this run's candidates onto stored records with `merge_candidate`, so a
+    no-LLM rerun keeps a stored eligible classification. Old pending records (no version) are never
+    activated: they need rediscovery. The backfill never writes the version.
+-   **Cap:** `MAX_AUTO_SEARCH_TARGETS` (default 5) automatic domains per run, ranked by `auto_target_rank`
+    (selected products with the model on the domain, selected products whose searches returned it, all
+    products, discovery pages, domain); over-cap domains go to `skipped_targets` with the reason.
+    Configured and approved domains do not count. `PIPELINE_SEARCH_AUTO_APPROVED=false` (it is **false in
+    the local `.env`**) switches automatic targets off everywhere, so they are not searched there until the
+    user changes it.
+-   **Benchmarks unchanged:** `services/matching/trusted.py` is unchanged and calls
+    `eligible_search_targets` without candidates, so automatic domains are never trusted benchmarks.
+-   **Removed:** UK quote verification and assessment (`verify_uk_quotes`, `assess_uk_evidence`,
+    `uk_assessment_from`, `reconcile_uk_seller`, `uk_review`, `uk_signals`), the schemas
+    (`UkRelevanceEvidenceKind`, `UkRelevanceQuote`, `VerifiedUkQuote`, `UkEvidenceAssessment`,
+    `UkReview`, `_isolate_uk_fields`), the UK conditions in `decide` and `classify_competitor` (including
+    the `.uk`/GBP/postcode Direct safeguard), the UK profile-page scoring, `Thresholds` /
+    `DiscoveryThresholds` and the four `DISCOVERY_AUTO_APPROVE_*` / `DISCOVERY_REJECT_MAX_RELEVANCE`
+    settings, the `uk_*` SSE flags, `uk_review`/`uk_seller`/`uk_signals` in the review API, and the
+    frontend `UkEvidence.tsx` / `ukRelevance.ts`. `uk_seller` in old records loads as
+    `serves_uk_customers`; `uk_assessment`/`uk_signals` keys load and are ignored.
+-   **Added API/UI:** review candidates carry `search_basis` (`MANUAL_APPROVAL`/`AUTOMATIC`/`NOT_SEARCHED`),
+    `auto_search_eligible`, `search_eligibility_reasons`, `serves_uk_customers(_note)`,
+    `classification_version`; discovery config carries `auto_search_enabled`, `max_auto_search_targets`;
+    `competitor_discovered` carries `auto_search_eligible`, `serves_uk_customers`. Dashboard:
+    `searchEligibility.ts`, `components/SearchStatus.tsx`; Live Runs "Why" column and
+    "Automatically searchable" feed pill. Status label `AUTO_APPROVED` = "Automatically searchable".
+-   **Real database (read-only checks on copies, 22 Nov 2026):** version 1, 9 decisions unchanged
+    (7 approved, 2 rejected; `billybowmanmusic.co.uk` is the only reviewed benchmark). Before Stage 8.1:
+    69 candidates, none automatically eligible. Afterwards a discovery run outside this work
+    (`discovery-20261122T142946Z-226a39`, 14:29 UTC, through the dev server restarted at 16:28 local,
+    which loads the new code) wrote 15 version-3 candidates: 80 candidates, 14 automatically eligible.
+    They are not searched locally because `.env` has `PIPELINE_SEARCH_AUTO_APPROVED=false`.
+-   The 14:29 UTC run is the only real use of the Stage 8.1 prompt so far; its relevance is not yet reviewed.
+
+### UK relevance evidence, Option B (18-19 Nov 2026) — SUPERSEDED by Stage 8.1 (history only)
+
+-   **Authoritative baseline (at the time):** `docs/stompbox_uk_competitor_intelligence_implementation_plan.md`.
     The user selected the simplified UK relevance approach (Option B) on 19 Nov 2026. Design
     and rules: `docs/competitor-discovery.md` ("UK relevance evidence").
 -   LLM 1 discovers UK-focused competitors (UK-based shops and shops abroad that serve UK
@@ -1078,11 +1134,8 @@ or provide its path.
     7 approved, 2 rejected; 10 classified by LLM 1 on 14 Nov, 38 from no-LLM runs). None has a
     `uk_assessment`, so all show "UK evidence not assessed" until a domain is rediscovered with
     LLM 1. They are deliberately not backfilled (D9).
--   **Auto-approval thresholds:** `DISCOVERY_AUTO_APPROVE_MIN_CONFIDENCE=0.85`,
-    `DISCOVERY_AUTO_APPROVE_MIN_RELEVANCE=0.75`, `DISCOVERY_AUTO_APPROVE_MIN_EVIDENCE_URLS=2`,
-    `DISCOVERY_REJECT_MAX_RELEVANCE=0.3` (settings defaults; not overridden in `.env`). They are
-    uncalibrated starting values: no labelled evaluation set exists yet. Calibrate them in Phase 9
-    before relying on auto-approval; do not change them without that evidence.
+-   **Auto-approval thresholds:** removed in Stage 8.1 (they were uncalibrated starting values
+    `0.85` / `0.75` / 2 URLs / reject at `0.3`).
 
 ### Product Intelligence Agent, stages 1-5 (19 Nov 2026, uncommitted)
 
@@ -1203,9 +1256,8 @@ page text is not stored, only verified quotes and metadata.
 -   **SB-028 price baseline: NOT CONFIRMED.** The catalogue £579 was recorded as a sale price ("was
     £599", 10 Nov 2026). The catalogue price is unchanged and used as for every product; £599 is not
     used and no regular price is assumed. It is not independently verified and awaits the user.
--   **UK evidence in Live Runs (6.3.3):** `components/UkEvidence.tsx` (shared with Domain Review);
-    a "Discovered domains and UK evidence" section (`RunDomains.DiscoveredDomainsTable`, from the run
-    result) and a UK status pill on each `competitor_discovered` feed item (`ukRelevance.ukEventStatus`).
+-   **UK evidence in Live Runs (6.3.3):** removed in Stage 8.1; the discovered-domains table now has a
+    "Why" column and the feed an "Automatically searchable" pill.
 -   **Phone layout fix (6.3.6):** `.stack > *, .stack-sm > *, .new-run > * { min-width: 0 }`; wide
     tables widened Live Runs at 390 px.
 -   **Workflow test:** `tests/test_workflow_integration.py` (discover, review via API, re-run, extract,
@@ -1227,14 +1279,11 @@ page text is not stored, only verified quotes and metadata.
     (category "other") `CONFLICT`. The amount is never used in any case. `matching.price.validate_price`
     relabels an older stored `EXCLUDED_SALE_PRICE` with no sale wording (quote or ignored texts) as
     `CONFLICT`; saved run files are not rewritten. (Stage 7 Andertons £599 for SB-028.)
--   **Auto-approval evidence URLs:** the rule is unchanged (2 distinct `DISCOVERY_RESULT` URLs from the
-    global product searches). Domain-profile pages (about/contact/terms) carry UK evidence and count for
-    `independent_sources` only. The reason now says so (`N discovery evidence URL(s) < 2: ...`).
+-   **Auto-approval evidence URLs:** (superseded by Stage 8.1: the 2-URL and 2-UK-page rules are gone.)
 -   **Finish alias (user-approved 20 Nov 2026):** `FINISH_ALIASES["iced tea burst"] = ("ice tea", "iced tea")`.
     Exact whole-phrase match only; mixed finishes ("Iced Tea / Ebony", "Iced Tea Sunburst") stay review; the
     alias confirms the finish only and never overrides a stricter LLM 2 proposal.
--   **Investigated, unchanged:** muziker.co.uk (a verified non-UK operator alone is insufficient, not a
-    contradiction; a UK delivery quote is missing).
+-   **Investigated, unchanged:** muziker.co.uk (under Option B; moot since Stage 8.1).
 -   **Known follow-up:** at 390 px the product-switcher chips on Product Intelligence overflow the right edge.
 -   **Comparison table:** the Evidence column is pinned to the right edge (`.col-action`, sticky) and long
     "not compared" reasons wrap; tables still scroll sideways on narrow screens.

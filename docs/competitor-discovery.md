@@ -1,22 +1,24 @@
 # Competitor discovery (LLM 1)
 
 Implemented in Phase 3, in `backend/app/agents/discovery/`. LLM 1 proposes;
-deterministic Python validates and decides.
+deterministic Python validates and decides. Simplified in **Stage 8.1 (22 Nov 2026,
+user-approved)**: LLM 1 searches specifically for retailers serving UK customers, and there
+is no UK verification, UK evidence scoring or UK approval gate. See "Stage 8.1" below.
 
 ## Execution modes
 
 The mode is chosen at run time and recorded on every result (`mode`, plus
 `llm_disabled_reason` when disabled). `GET /api/discovery/config` reports the
-mode a run would use.
+mode a run would use, whether automatic search is on and the per-run cap.
 
 | | `LLM_ENABLED` | `LLM_DISABLED` |
 |---|---|---|
 | When | `OPENROUTER_API_KEY` and `LLM1_MODEL` set, and `DISCOVERY_USE_LLM=true` (default) | Either is missing, or `DISCOVERY_USE_LLM=false` |
-| Global queries | Baseline + validated LLM 1 queries | Baseline `"<brand> <model> buy UK"` only |
-| Exa searches, grouping, dedup, exclusions, profile evidence, UK signals | Yes | Yes (identical) |
-| Company name, type, categories, relevance, confidence, UK selling | Proposed by LLM 1, then validated | **Left null/unknown**; never filled in |
-| New-company decision | Rules below (can auto-approve) | Always `APPROVAL_REQUIRED` ("LLM classification skipped (LLM disabled)") |
-| Targeted queries | Known + auto-approved domains; baseline + validated variants | Known competitors only; baseline query only |
+| Global queries | Baseline + validated UK-focused LLM 1 queries | Baseline `"<brand> <model> buy UK"` only |
+| Exa searches, grouping, dedup, exclusions, profile evidence | Yes | Yes (identical) |
+| Company name, type, categories, relevance, confidence, `serves_uk_customers` | Proposed by LLM 1, then validated | **Left null/unknown**; never filled in |
+| New-company decision | `AUTO_APPROVED` when `is_search_eligible`, otherwise `APPROVAL_REQUIRED` | Always `APPROVAL_REQUIRED` ("LLM classification skipped (LLM disabled)") |
+| Targeted queries | Known + reviewer-approved + this run's automatically eligible domains | Known + reviewer-approved domains |
 | Warnings | Only for actual problems | "LLM query planning skipped (…)" and "LLM classification skipped (…)" |
 
 Missing LLM configuration is never an error: the app starts, known competitors
@@ -25,8 +27,10 @@ search provider or key makes discovery unavailable (HTTP 503 / CLI exit 3).
 
 Each candidate also carries `classification_status`: `COMPLETED`,
 `SKIPPED_LLM_DISABLED`, `FAILED` (the call failed or its output was unusable)
-or `MISSING` (the LLM returned nothing for that domain). Only `COMPLETED`
-candidates can be auto-approved.
+or `MISSING` (the LLM returned nothing for that domain), and `classification_version`
+(`CLASSIFICATION_VERSION = 3` since the used-only refinement; 2 was the first Stage 8.1 prompt, never
+used by a real run; null for older ones). Only a
+`COMPLETED` classification at the current version can make a domain automatically searchable.
 
 ## Flow
 
@@ -34,8 +38,11 @@ candidates can be auto-approved.
    `PRECONFIGURED` and never re-decided. Gibson stays a manufacturer reference
    with `price_benchmark=false`. Its targeted queries carry that flag, so later
    phases never mix its prices into the retailer benchmark.
-2. **Planning (LLM 1).** For each selected product, LLM 1 proposes up to N
-   global queries and up to M targeted query variants. Code then:
+2. **Planning (LLM 1).** For each selected product, LLM 1 proposes up to N global queries
+   aimed at retailers selling to UK customers (UK musical instrument retailers, UK guitar
+   shops, UK music equipment retailers, shops delivering to the UK, UK stockists of the brand
+   or product; a shop abroad that sells to UK customers is valid) and up to M targeted query
+   variants. Code then:
    - always adds a baseline global query `"<brand> <model> buy UK"` and a
      baseline targeted query `"<brand> <model>"`;
    - drops queries containing `site:`, queries over 200 characters, duplicates,
@@ -50,60 +57,118 @@ candidates can be auto-approved.
 4. **Grouping and deduplication.** Evidence is grouped by registrable domain
    (`blog.andertons.co.uk` becomes `andertons.co.uk`).
    - Own site (`OWN_DOMAINS`): excluded.
+   - Removed competitors (`DISCOVERY_EXCLUDED_COMPETITOR_DOMAINS`, PMT): excluded.
    - Known competitors: their hits are kept as *evidence* (which selected
      products they list), never as new candidates.
    - Non-shop platforms (YouTube, Reddit, …): excluded.
    - The rest are ranked by evidence (distinct products matched, model
      mentions, hits). The top `DISCOVERY_MAX_CANDIDATES` are evaluated; the
      others are recorded as "not evaluated".
-5. **Profile evidence.** One search restricted to each candidate's domain
-   ("about us / contact / delivery") collects evidence about the business itself.
-6. **UK signals (deterministic).**
-   - Strong signals: `uk_domain` (.uk), `gbp_price` (a £ amount in titles or
-     snippets) and `uk_postcode`.
-   - Weak signal: `uk_mention`.
-7. **Classification (LLM 1).** Evidence is sent as delimited, untrusted JSON.
-   The model returns the company name *as written in the evidence*, company
-   type, categories, UK selling (yes, no or unknown), whether it sells new
-   instruments, relevance, confidence, a rationale and the cited evidence URLs.
-8. **Validation (deterministic).**
+5. **Profile evidence.** One search restricted to each candidate's domain ("about us /
+   contact / delivery / shipping") collects evidence about the business itself, for LLM 1's
+   classification only.
+6. **Classification (LLM 1).** Evidence is sent as delimited, untrusted JSON (at most 8 items
+   per domain, up to 3 of them profile pages in the order found; profile snippets up to 400
+   characters, discovery snippets up to 280). The model returns the company name *as written
+   in the evidence*, company type, categories, `serves_uk_customers` (yes/no/unknown) with a
+   short `serves_uk_customers_note`, whether it sells new instruments, relevance, confidence,
+   a rationale, the cited evidence URLs and a `competitor_class` proposal. It is not asked for
+   UK evidence quotes.
+7. **Validation (deterministic, `rules.apply_classification`).**
    - Cited URLs not present in the evidence are discarded.
    - Categories outside the catalogue are discarded.
    - The company name is *verified* only if it appears in a title or snippet
      from that domain; a lookalike hostname is never enough.
-   - The rationale is trimmed.
-9. **Decision (deterministic, `rules.decide`).** The outcomes are
-   `AUTO_APPROVED`, `APPROVAL_REQUIRED` or `REJECTED`; the table below gives the
-   rules.
-10. **Reviewer decisions (Phase 4).** Persisted decisions override step 9:
-    a rejected domain is never searched, and an approved domain is searched
-    with its reviewed benchmark flag. See [competitor-review.md](competitor-review.md).
-11. **Targeted queries** are generated only for search targets: preconfigured
-    competitors, reviewer-approved domains (even if not rediscovered) and
-    domains auto-approved in this run. Each product gets its baseline
-    query plus up to M validated LLM variants, restricted to the domain.
-    Pending and rejected domains get none.
+   - The rationale (600) and the UK note (300 characters) are trimmed.
+   - `classification_version` is set to the current version.
+8. **Decision (deterministic, `rules.decide`).** `REJECTED` (no discovery evidence),
+   `AUTO_APPROVED` (automatically search-eligible, below) or `APPROVAL_REQUIRED`
+   (everything else; the reasons list every unmet criterion). Never a benchmark.
+9. **Reviewer decisions (Phase 4).** Persisted decisions override step 8:
+   a rejected domain is never searched, and an approved domain is searched
+   with its reviewed benchmark flag. See [competitor-review.md](competitor-review.md).
+10. **Targeted queries** are generated only for search targets: preconfigured
+    competitors, reviewer-approved domains (even if not rediscovered) and this run's
+    automatically search-eligible domains. Each product gets its baseline query plus up to M
+    validated LLM variants, restricted to the domain. The pipeline and the intelligence API
+    also search stored eligible domains from earlier runs (see "Persistence and cap").
 
-| Outcome | Rule |
-|---|---|
-| `REJECTED` | No discovery evidence. Type `other` with relevance ≤ 0.3. LLM says it doesn't sell to the UK *and* no strong UK signal. Relevance ≤ 0.3 *and* no selected product found on the domain |
-| `AUTO_APPROVED` | **All** of: type retailer or specialist retailer; confidence ≥ 0.85; relevance ≥ 0.75; company name verified in the evidence; at least one strong UK signal; UK selling = yes; at least one page mentioning a selected product's model; at least 2 discovery evidence URLs; at least one valid cited URL; not stated to sell only used goods |
-| `APPROVAL_REQUIRED` | Everything else, including **all marketplaces, directories and manufacturers**, any domain on the known-marketplace list (`MARKETPLACE_DOMAIN_LABELS`) whatever its classified type, conflicting evidence, and any candidate whose classification failed. The decision reasons list each unmet criterion |
+## Stage 8.1: UK-focused discovery without UK verification (22 Nov 2026)
 
-The thresholds are configurable (`DISCOVERY_*`) and are **starting values, not
-calibrated**. `DiscoveryRunResult.thresholds.calibrated` is `false` until they
-have been evaluated against labelled runs.
+**Why it replaced Option B.** Option B (19 Nov 2026) asked LLM 1 for UK evidence quotes and had
+Python verify them, judge their sufficiency and require two independent evidence pages before
+auto-approval. Very few domains met it (in Stage 7, Wildwire, Spears, Mann's, Promenade and
+Roland Store London all needed review), it was a second approval system to maintain, and the
+user decided that UK relevance should come from LLM 1's search strategy instead. Option B's
+components were removed; nothing replaces them under another name.
 
-## Competitor classification (15 Nov 2026)
+### Automatic search eligibility (`rules.is_search_eligible`)
+
+A discovered domain may be searched for products without a person approving it when **all**
+of these hold:
+
+1. LLM 1 completed its classification, at the current `CLASSIFICATION_VERSION`;
+2. the company type is `retailer` or `specialist_retailer`;
+3. the company name is written in the domain's discovery evidence (`name_verified`);
+4. at least one URL LLM 1 cited is in the domain's discovery evidence;
+5. the domain is a valid, normalised registrable domain (`domains.canonical_domain`);
+6. it is not excluded (own site, non-shop platforms, removed competitors such as PMT);
+7. it is not a known marketplace (`MARKETPLACE_DOMAIN_LABELS`) or a directory;
+8. no person has rejected it;
+9. it is not confirmed to sell only used instruments (`sells_new_musical_instruments` is `false`).
+
+`sells_new_musical_instruments` is LLM 1's tri-state answer since version 3: `true` sells new
+instruments (with or without used ones), `false` the evidence shows it sells only used, second-hand
+or vintage instruments, `null` unclear. Only `false` blocks automatic search; unknown never does. A
+used-only retailer stays pending and can be approved by a reviewer, which never grants benchmark
+permission on its own (only the explicit `benchmark_eligible` flag does).
+
+Never used: `serves_uk_customers` (even "no"), relevance, confidence,
+a `.uk` domain, GBP prices or a UK address. A business abroad
+that sells to UK customers qualifies on the same terms. Manufacturers, marketplaces,
+directories, `other` and unknown types, and every no-LLM candidate, stay pending for a reviewer.
+`decide` rejects only a candidate with no discovery evidence; low relevance never rejects.
+
+### Persistence and cap
+
+- Eligibility is **recomputed** from the stored candidate record and the current human decision
+  every time it is needed (pipeline targets stage, `POST /api/intelligence/runs` and its config,
+  the review API). Nothing is written for it: the decisions table holds human decisions only.
+- An eligible domain stays searchable across runs, including runs without LLM 1, because
+  `merge_candidate` keeps a completed classification (with its version) when a later run has none.
+- A human rejection always wins, even when LLM 1 rediscovers the domain as eligible.
+- **Existing records** classified before Stage 8.1 have no `classification_version`, so they
+  are never activated from their old classification; they need rediscovery under the new prompt
+  (user decision, 22 Nov 2026). The classification backfill never writes the version.
+- **Cap:** at most `MAX_AUTO_SEARCH_TARGETS` (default 5) automatic domains per run
+  (`eligible_search_targets`). Configured and reviewer-approved domains do not count. Ranking
+  (`auto_target_rank`) uses discovery results only: selected products whose model was on a page
+  of the domain, then selected products whose global searches returned it, then all products
+  seen, then distinct discovery pages, then the domain name. Domains over the cap are listed in
+  `skipped_targets` with their rank and the reason.
+- `PIPELINE_SEARCH_AUTO_APPROVED=false` switches automatic search off everywhere (the name
+  predates Stage 8.1).
+- **Cost:** each automatic domain adds one Exa domain search per selected product (about
+  $0.007-0.008 in Stages 6-7), its page retrievals (about $0.001 each) and, with LLM 2, up to
+  two LLM 2 calls per retrieved page (about $0.0006 each in Stage 6). With the default cap of 5
+  and 2 products, that is roughly $0.10-0.15 extra per run (estimate from earlier runs, not
+  measured for this change).
+- **Benchmark permission is independent:** automatic targets always have
+  `price_benchmark=false`. Only the workbook flag or a reviewer's explicit `benchmark_eligible`
+  grants it, and `services/matching/trusted.py` (unchanged) rebuilds benchmark flags from the
+  configured competitors and the decisions only, so an automatic domain is never a direct price
+  comparison.
+
+## Competitor classification (15 Nov 2026; Stage 8.1 update)
 
 Separate from approval and price-benchmark eligibility: it never changes
 `approval_status`, `price_benchmark` or a reviewer decision, and they never change it.
 
 - **LLM 1** returns `competitor_class` in the existing classification call (no extra
-  call): `DIRECT_COMPETITOR` (a UK retailer with meaningful overlap with the searched
-  products or catalogue categories), `RELATED_RETAILER` (a retailer of adjacent music
-  products, or a marketplace) or `NEEDS_REVIEW` (manufacturer, directory, other, or
-  insufficient evidence or uncertain UK selling). `rationale` explains it.
+  call): `DIRECT_COMPETITOR` (a retailer selling to UK customers with meaningful overlap with
+  the searched products or catalogue categories), `RELATED_RETAILER` (a retailer of adjacent
+  music products, or a marketplace) or `NEEDS_REVIEW` (manufacturer, directory, other, or
+  insufficient evidence). `rationale` explains it.
 - **Marketplace override (first, 15 Nov 2026):** a known marketplace domain
   (`MARKETPLACE_DOMAIN_LABELS`: Amazon, eBay, Reverb, Etsy, Gumtree) is always
   `RELATED_RETAILER`, whatever LLM 1 proposed and even without an LLM classification.
@@ -112,20 +177,19 @@ Separate from approval and price-benchmark eligibility: it never changes
   upgrade, and record a reason for every downgrade in `competitor_class_reasons`:
   - another domain typed `marketplace` and proposed as Direct becomes Related Retailer;
   - manufacturer, directory and other types become Needs Review;
-  - a retailer needs UK selling `yes`, otherwise Needs Review;
-  - Direct also needs a strong UK signal (uk domain, GBP price or UK postcode) and a
-    selected product found on the domain or a supported catalogue category;
+  - Direct needs a selected product found on the domain or a supported catalogue category;
   - any class other than Needs Review needs at least one valid cited evidence URL;
   - no completed LLM 1 classification (no-LLM mode, failed, missing) gives Needs Review.
-- Direct does not use relevance, confidence or the auto-approval thresholds.
+- Removed in Stage 8.1: the "UK selling must be yes" downgrade and the "Direct needs a `.uk`
+  domain, GBP price or UK postcode" downgrade (it treated UK location as UK relevance).
+- Direct does not use relevance or confidence.
 - **Stored** on the candidate record (JSON; no SQL migration): `proposed_competitor_class`
   (LLM 1's answer), `competitor_class` (final), `competitor_class_reasons`,
-  `classified_at` and `classification_model`. Records stored before this change have
-  these empty. A later run without a completed LLM classification never erases
-  a completed or backfilled classification (see "Rediscovery keeps the class" below).
-- **API:** `GET /api/review/candidates` adds `competitor_class` and
-  `proposed_competitor_class`; the detail endpoint also adds the reasons, timestamp and
-  model. All additive and optional. The frontend does not use them yet.
+  `classified_at` and `classification_model`. A later run without a completed LLM
+  classification never erases a completed or backfilled classification (see "Rediscovery
+  keeps the class" below).
+- **API:** `GET /api/review/candidates` includes `competitor_class` and
+  `proposed_competitor_class`; the detail endpoint also adds the reasons, timestamp and model.
 - The 13 configured competitors are never classified. PMT (`pmtonline.co.uk`,
   `DISCOVERY_EXCLUDED_COMPETITOR_DOMAINS`) is excluded before classification and the
   review store refuses to write it.
@@ -181,113 +245,23 @@ writes a JSON report (default `data/backfill_reports/`, git-ignored). Code:
   the no-LLM rules (no proposal) is replaced by the newer run, as before. Tests:
   `tests/test_review_merge.py`.
 
-## UK relevance evidence (Option B, 19 Nov 2026)
+## History: retired UK relevance designs
 
-LLM 1 discovers UK-focused competitors (UK-based shops and shops abroad that serve UK
-customers) and cites the evidence for how each relates to the UK market. **There is no UK
-category and no UK confidence:** Python verifies the quotes and decides whether the
-evidence is sufficient. The result is stored on the candidate as `uk_assessment`
-(`UkEvidenceAssessment`) and shown in review with its uncertainty. There is no separate UK
-eligibility gate (retired the same day; see "Retired" below).
-
-Three concepts stay separate and are stored separately: **UK relevance evidence**,
-**domain approval** (Phase 4 decisions) and **benchmark permission** (the workbook flag or
-the reviewer's `benchmark_eligible`). None is derived from another.
-
-- **LLM output** (`CompanyClassification.uk_evidence`): up to 5 items (`url`, exact
-  `quote`, `kind`), with no verdict. Kinds: `UK_PHYSICAL_STORE`, `UK_ADDRESS`,
-  `UK_COMPANY_REGISTRATION`, `UK_DELIVERY`, `NON_UK_OPERATOR`, `NO_UK_SERVICE`,
-  `WEAK_SIGNAL`. Required by the strict output schema. A malformed UK answer never fails
-  the classification or the batch: malformed quotes are dropped and each one is recorded
-  (`_isolate_uk_fields`). Legacy `uk_relevance` / `uk_confidence` keys are ignored.
-  Core-field errors fail exactly as before (repair retry, then `LLMOutputError`).
-- **Quote verification** (`rules.verify_uk_quotes`, unchanged from Phase A): a quote
-  counts only if it is verbatim (whitespace and case aside) in the stored title or
-  snippet of the cited URL (`text_match.quote_in_evidence`), and its text fits its kind:
-  a UK postcode for an address, "registered" plus a number for a company, positive UK
-  delivery wording (no negation; `sell` counts) for delivery, an explicit "does not ship
-  to the UK" for no UK service, and a visitable shop (not an online store) for a physical
-  store. "No delivery charge to the UK" is not a no-UK-service statement. GBP prices, a
-  `.uk` domain or "UK" alone never count.
-- **Evidence result** (`rules.assess_uk_evidence`, `summarise_uk_evidence`):
-  - `sufficient`: a supporting UK shop, UK address or UK company registration quote; or a
-    supporting based-abroad (`NON_UK_OPERATOR`) quote together with a supporting UK
-    delivery quote.
-  - `contradicted`: a supporting quote says the UK is not delivered to or served.
-  - `mixed_location`: UK-presence evidence and a based-abroad quote at the same time.
-  - `independent_sources`: distinct evidence pages (canonical URLs) among the quotes that
-    support UK relevance. Several quotes from one page count as one source.
-  - `evidence` holds the supporting quotes; `unverified_claims` holds the others (context
-    only, never presented as verified). Both are clipped to 500 characters after
-    verification. `reasons` says what was discarded or cleaned.
-  - Every completed LLM 1 classification is assessed. No quotes means insufficient
-    evidence, never "assumed UK". With LLM 1 disabled nothing is assessed
-    (`uk_assessment = null`) and every new domain stays pending.
-- **Approval (`decide`):**
-  - a verified contradiction → `APPROVAL_REQUIRED` with the reason, never rejected
-    automatically (decision D4);
-  - auto-approval needs sufficient verified UK evidence, no contradiction, no mixed
-    location, and supporting quotes from **at least two different evidence pages**
-    (`AUTO_APPROVE_MIN_UK_SOURCES = 2`, user decision 19 Nov 2026), plus every other
-    existing criterion (type, confidence, relevance, verified name, product match,
-    evidence URLs, not a marketplace). `.uk` domain, GBP price and UK postcode signals are
-    **not** an auto-approval requirement, so an overseas retailer that demonstrably serves
-    the UK is not disadvantaged. They are still recorded (`uk_signals`) and still used by
-    the Direct Competitor class safeguard (unchanged).
-  - **Auto-approval never grants benchmark permission:** `decide` always sets
-    `price_benchmark=false`. Only a reviewer's explicit `benchmark_eligible` (type rules
-    apply) or the workbook flag for configured competitors makes a domain a benchmark.
-- **`uk_seller` follows the verified evidence** (`rules.reconcile_uk_seller`, with a
-  validation note when it changes): yes only when the evidence is sufficient, not
-  contradicted, and LLM 1 also said yes; no only for a verified contradiction with no
-  sufficient UK evidence; otherwise unknown. An unverified "no" never rejects.
-- **Review view** (`rules.uk_review`, deterministic, never stored): sufficiency,
-  contradiction, mixed location and sources are recomputed from the stored supporting
-  quotes, so a stored flag is never trusted on its own. The view (`UkReview`) has
-  `assessed`, `sufficient`, `contradicted`, `mixed_location`, `independent_sources`, a
-  plain-English `summary`, `reasons`, `missing_evidence`, `verified_evidence` and
-  `unverified_claims`. If a reviewer approves despite a contradiction or without
-  sufficient evidence, the summary says so; the evidence and the contradiction stay
-  visible and unchanged.
-- **Reviewer decisions:** approve or reject explicitly, with optional free-text `notes`
-  (kept in the append-only decision history). There is no UK override; requests that
-  still send `uk_relevance_override` get 422. A reviewer-approved domain is searched even
-  with contradictory evidence (user decision 19 Nov 2026).
-- **API and events:** `GET /api/review/candidates` and `/candidates/{domain}` return
-  `uk_review` for every candidate (`assessed: false` for older records). Discovery API
-  candidates carry `uk_assessment` and the same `uk_review`. `competitor_discovered`
-  events carry `uk_assessed`, `uk_evidence_sufficient`, `uk_evidence_contradicted` and
-  `uk_independent_sources`.
-- **Evidence for LLM 1 and search** (unchanged from Phase A): at most 8 items per domain,
-  with up to 3 slots kept for profile pages; profile snippets up to 400 characters,
-  discovery snippets up to 280. The planning prompt asks for UK shops and shops abroad
-  that deliver to the UK. One profile search per candidate looks for about/contact pages,
-  addresses, showrooms, company registration and delivery terms.
-- **Persistence:** `uk_assessment` is part of the stored candidate JSON (no migration).
-  `merge_candidate` keeps it when a later run has no completed classification, and a
-  stored assessment is never replaced by none. Records stored with the retired category
-  fields load (the extra keys are ignored and never trusted) and are never rewritten.
-- **Dashboard:** each Domain Review card shows what the verified evidence says ("Verified
-  UK evidence", "Contradictory UK evidence", "Insufficient UK evidence", "UK evidence:
-  check location" or "not assessed") and from how many independent pages; "Show evidence"
-  adds the verified UK evidence (kind, quote, link), what is missing, and the unverified
-  claims in their own section. Approving a contradicted or insufficient domain shows a
-  warning but is not blocked.
-- Tests: `tests/test_uk_relevance.py`, `tests/test_uk_classification_schema.py`,
-  `tests/test_uk_discovery_integration.py`, `tests/test_uk_review.py`,
-  `tests/test_search_targets.py`, `frontend/src/pages/DomainReviewUk.test.tsx`.
-
-### Retired (Option B, 19 Nov 2026)
-
-- The formal four-category assessment (`UK_BASED`, `SERVES_UK_FROM_ABROAD`,
-  `NOT_SERVING_UK`, `UNKNOWN`), its confidence, the review recommendation and the
-  reviewer's UK relevance override.
-- The separate UK eligibility gate (`uk_gate.py`), its records, exceptions, review API
-  (`/api/review/uk-eligibility`) and migration CLI (`review_migration`). Product searches
-  use the configured competitors, reviewer-approved domains and (LLM enabled) this run's
-  auto-approved domains; benchmark comparisons use only the benchmark flag. Version-2
-  review databases still open; their UK tables are left untouched and never read. See
-  `docs/competitor-review.md` ("Storage versions").
+- **Option B (19 to 22 Nov 2026), retired in Stage 8.1:** LLM 1 UK evidence quotes
+  (`uk_evidence`, kinds such as `UK_ADDRESS` and `UK_DELIVERY`), Python quote verification
+  (`verify_uk_quotes`, `assess_uk_evidence`), the stored `uk_assessment`, the `uk_review` view,
+  `reconcile_uk_seller`, the deterministic `uk_signals`, the auto-approval conditions
+  (sufficient, uncontradicted, not mixed, 2 independent UK evidence pages, UK selling = yes,
+  2 discovery evidence URLs, a selected product on the domain), the score thresholds
+  (`DISCOVERY_AUTO_APPROVE_MIN_CONFIDENCE` / `_RELEVANCE` / `_EVIDENCE_URLS`,
+  `DISCOVERY_REJECT_MAX_RELEVANCE`), the automatic low-relevance rejection, the UK SSE flags and
+  the UK review UI. Old stored records with `uk_assessment`, `uk_signals` or `uk_seller` keys
+  still load: the first two are ignored, `uk_seller` is read as `serves_uk_customers`.
+- **Four-category assessment and UK eligibility gate (to 19 Nov 2026), retired with Option B:**
+  `UK_BASED` / `SERVES_UK_FROM_ABROAD` / `NOT_SERVING_UK` / `UNKNOWN`, UK confidence, the
+  reviewer UK override, `uk_gate.py`, `/api/review/uk-eligibility` and the migration CLI.
+  Version-2 review databases still open; their UK tables are left untouched and never read.
+  See `docs/competitor-review.md` ("Storage versions").
 
 ## Failure behaviour
 
@@ -317,7 +291,8 @@ the reviewer's `benchmark_eligible`). None is derived from another.
   review queue. It returns 503 only if the search provider is
   not configured; the message names the missing variable, never its value.
 - **Mode:** `GET /api/discovery/config` returns the mode, the reason when
-  disabled, the LLM 1 model when enabled, and the thresholds.
+  disabled, the LLM 1 model when enabled, `auto_search_enabled` and
+  `max_auto_search_targets`.
 - **CLI:** `python -m app.agents.discovery.cli SB-001 SB-044`. It prints a
   summary and writes the full result to `data/discovery_runs/` (git-ignored,
   because it holds third-party snippets).
@@ -328,24 +303,11 @@ the reviewer's `benchmark_eligible`). None is derived from another.
   Exact product identity is Phase 6.
 - `registrable_domain` uses a small built-in list of two-label suffixes
   (co.uk, com.au, …), not the full public suffix list.
-- The UK postcode regex can, rarely, match a product code.
 - The candidate limit means lower-ranked domains are recorded but not
   evaluated in that run.
 - Known competitors have no category-relevance data in the workbook. Relevance
   is recorded only as evidence (`known_competitor_evidence`), never assumed.
-
-## Evidence URLs versus UK evidence pages (post-Stage 7, 20 November 2026)
-
-Two different counts feed auto-approval, and both still need 2:
-
-- **Discovery evidence URLs** (`DISCOVERY_AUTO_APPROVE_MIN_EVIDENCE_URLS=2`): distinct URLs of
-  `DISCOVERY_RESULT` evidence, i.e. pages on which the domain appeared in the global product searches.
-  A relevance signal. Domain-profile pages are not counted.
-- **Independent UK evidence pages** (`AUTO_APPROVE_MIN_UK_SOURCES=2`): distinct pages behind verified,
-  supporting UK quotes, from discovery results or profile pages.
-
-In Stage 7, Wildwire, Spears, Mann's, Promenade and Roland Store London had 2-3 UK evidence pages
-(mostly about/contact/terms profile pages) but appeared on only 1 page in the global searches, so they
-needed review. That is the intended rule, not a counting bug. The reason now reads "1 discovery evidence
-URL(s) < 2: the domain appeared on 1 distinct page(s) in the global product searches; its N
-domain-profile page(s) (used for UK evidence) do not count here". Thresholds unchanged.
+- Automatic eligibility trusts LLM 1's company type. A wrong "retailer" costs search spend and
+  adds alternative-product rows (never benchmark prices); reject the domain to stop it.
+- The Stage 8.1 prompt has not run against the real model yet (no paid run since); discovery
+  relevance under it is unmeasured.

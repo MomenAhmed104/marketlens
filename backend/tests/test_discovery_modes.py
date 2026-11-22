@@ -77,7 +77,8 @@ def test_disabled_mode_never_invents_classification(disabled):
         assert c.approval_status is S.APPROVAL_REQUIRED and c.price_benchmark is False
         assert c.company_name is None and c.company_type is None
         assert c.relevance is None and c.confidence is None and c.rationale is None
-        assert c.uk_seller is UkSeller.UNKNOWN and c.sells_new_musical_instruments is None
+        assert c.serves_uk_customers is UkSeller.UNKNOWN and c.sells_new_musical_instruments is None
+        assert c.classification_version is None
         assert c.relevant_categories == [] and c.cited_evidence_urls == [] and not c.name_verified
         assert c.decision_reasons[0].startswith("LLM classification skipped (LLM disabled)")
     assert not any(c.approval_status is S.AUTO_APPROVED for c in result.candidates)
@@ -86,8 +87,8 @@ def test_disabled_mode_never_invents_classification(disabled):
 def test_disabled_mode_still_records_evidence_and_deterministic_signals(disabled):
     result, _ = disabled
     cands = {c.domain: c for c in result.candidates}
-    beck = cands["beckettsmusic.co.uk"]  # would be auto-approved with the LLM; strong evidence alone is not enough
-    assert set(beck.uk_signals) >= {"uk_domain", "gbp_price", "uk_postcode"}
+    beck = cands["beckettsmusic.co.uk"]  # searchable automatically with the LLM; never without it
+    assert beck.approval_status is S.APPROVAL_REQUIRED
     assert beck.products_matched == ["SB-001", "SB-028"]
     assert {e.kind for e in beck.evidence} == {EvidenceKind.DISCOVERY_RESULT, EvidenceKind.DOMAIN_PROFILE}
     first = beck.evidence[0]
@@ -181,7 +182,8 @@ def test_app_starts_without_openrouter_key_and_reports_mode():
         cfg = client.get("/api/discovery/config").json()
     assert cfg["mode"] == "LLM_DISABLED" and cfg["llm1_model"] is None
     assert cfg["llm_disabled_reason"] == "OPENROUTER_API_KEY and LLM1_MODEL not set"
-    assert cfg["thresholds"]["auto_approve_min_confidence"] == 0.85
+    assert "thresholds" not in cfg  # Stage 8.1: no score thresholds
+    assert cfg["auto_search_enabled"] is True and cfg["max_auto_search_targets"] == 5
 
     app = create_app(make_settings(search_provider="exa", exa_api_key="exa-k",
                                    openrouter_api_key=SECRET, llm1_model="vendor/model"))  # fmt: skip

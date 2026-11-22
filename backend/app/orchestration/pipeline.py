@@ -4,9 +4,11 @@ One run, for 1..N selected Stompbox products, executes these stages:
 
   validate       product ids, run limits, search-provider configuration (before the run exists)
   discovery      Phase 3 agent (LLM 1 when configured, otherwise no-LLM baseline)
-  review_queue   Phase 4: newly discovered candidates saved as PENDING (never auto-searched)
-  targets        13 configured + reviewer-APPROVED eligible domains (+ this run's LLM 1
-                 auto-approvals, when enabled); pending/rejected/directory domains excluded
+  review_queue   Phase 4: newly discovered candidates saved (PENDING unless a reviewer decided)
+  targets        13 configured + reviewer-APPROVED domains + automatically search-eligible
+                 domains (this run's and stored ones, Stage 8.1; capped by
+                 MAX_AUTO_SEARCH_TARGETS; when PIPELINE_SEARCH_AUTO_APPROVED is on);
+                 ineligible pending, rejected and directory domains are never searched
   product_search Phase 5 domain-restricted search + page retrieval, product by product
   extraction     Phase 5 LLM 2, or SKIPPED (SKIPPED_NO_LLM on every retrieved page)
   matching       Phase 6 matching + price validation, right after each product's search
@@ -62,7 +64,7 @@ from app.schemas.search import RetrievalStatus
 from app.services.catalogue import Catalogue
 from app.services.domains import registrable_domain
 from app.services.matching import evaluate_product
-from app.services.review_store import ReviewStore
+from app.services.review_store import ReviewStore, merge_candidate
 from app.services.search import configured_providers
 
 log = logging.getLogger(__name__)
@@ -192,16 +194,13 @@ class PipelineRun:
                            competitor_class=c.competitor_class and c.competitor_class.value,
                            proposed_competitor_class=c.proposed_competitor_class and c.proposed_competitor_class.value,
                            reviewed=c.review_decision is not None,
-                           # UK relevance evidence view (additive; same values as the review API).
-                           uk_assessed=c.uk_review.assessed if c.uk_review else False,
-                           uk_evidence_sufficient=c.uk_review.sufficient if c.uk_review else False,
-                           uk_evidence_contradicted=c.uk_review.contradicted if c.uk_review else False,
-                           uk_mixed_location=c.uk_review.mixed_location if c.uk_review else False,
-                           uk_independent_sources=c.uk_review.independent_sources if c.uk_review else 0)  # fmt: skip
+                           # Automatic search eligibility (Stage 8.1); informational UK answer.
+                           auto_search_eligible=c.approval_status is DomainApprovalStatus.AUTO_APPROVED,
+                           serves_uk_customers=c.serves_uk_customers.value)  # fmt: skip
             self.emit("competitor_discovered", f"Discovered {c.domain} ({c.approval_status.value})",
                       stage=StageName.DISCOVERY, **payload)  # fmt: skip
             if c.approval_status is DomainApprovalStatus.AUTO_APPROVED:
-                self.emit("domain_auto_approved", f"{c.domain} auto-approved for this run only",
+                self.emit("domain_auto_approved", f"{c.domain} is automatically searchable",
                           stage=StageName.DISCOVERY, domain=c.domain)  # fmt: skip
         for w in disc.warnings:
             self.warn(f"discovery: {w}")
@@ -236,28 +235,35 @@ class PipelineRun:
                       stage=StageName.REVIEW_QUEUE, domain=d)  # fmt: skip
         self.stage(StageName.REVIEW_QUEUE).done = written
         self.end_stage(StageName.REVIEW_QUEUE, StageStatus.COMPLETED,
-                       f"{written} candidate(s) saved to the review queue; {len(pending)} pending approval "
-                       "(not searched in this run)")  # fmt: skip
+                       f"{written} candidate(s) saved to the review queue; {len(pending)} need review "
+                       "(not searched until approved)")  # fmt: skip
 
     def _targets(self) -> list[SearchTarget]:
         self.start_stage(StageName.TARGETS)
-        targets, skipped = eligible_search_targets(self.d.catalogue.competitors, self.d.review_store.list_decisions(),
-                                                   self.s)  # fmt: skip
-        known = {t.domain for t in targets} | {k.domain for k in skipped}
-        auto = 0
         disc = self.result.discovery
-        if disc and self.s.pipeline_search_auto_approved:
-            excluded = set(self.s.intelligence_excluded_company_types)
-            # Run-scoped LLM 1 auto-approval (which already needs sufficient, uncontradicted verified
-            # UK evidence and never grants benchmark permission); a reviewer decision always wins.
-            auto_targets = [c.as_search_target() for c in disc.candidates
-                            if c.approval_status is DomainApprovalStatus.AUTO_APPROVED and c.domain not in known
-                            and not (c.company_type and c.company_type.value in excluded)]  # fmt: skip
-            targets += auto_targets
-            auto = len(auto_targets)
-        if self.run.request.domains:
-            wanted = {registrable_domain(d) for d in self.run.request.domains}
+        # Automatic search eligibility is recomputed from the stored records (earlier runs) and
+        # this run's candidates; it never grants benchmark permission and a reviewer decision
+        # always wins (`eligible_search_targets`). A store read failure leaves this run's only.
+        try:
+            stored = [s.candidate for s in self.d.review_store.list_candidates()]
+        except Exception as e:  # sqlite failure must not lose the run
+            self.warn(f"Could not read stored candidates; automatic targets from this run only: {_err(e)}")
+            stored = []
+        # This run's candidates merged onto their stored records exactly as the review queue does
+        # (`merge_candidate`), so a run without LLM 1 never hides a stored classification.
+        by_domain = {c.domain: c for c in stored}
+        for c in (disc.candidates if disc else []):
+            fresh = c.model_copy(update={"review_decision": None})
+            by_domain[c.domain] = merge_candidate(by_domain[c.domain], fresh) if c.domain in by_domain else fresh
+        candidates = list(by_domain.values())
+        wanted = {registrable_domain(d) for d in self.run.request.domains} if self.run.request.domains else None
+        targets, skipped = eligible_search_targets(self.d.catalogue.competitors, self.d.review_store.list_decisions(),
+                                                   self.s, candidates=candidates,
+                                                   product_ids=[p.product_id for p in self.products],
+                                                   only_domains=wanted)  # fmt: skip
+        if wanted is not None:
             targets = [t for t in targets if t.domain in wanted]
+        auto = sum(t.approval_status is DomainApprovalStatus.AUTO_APPROVED for t in targets)
         self.result.search_targets, self.result.skipped_targets = targets, skipped
         configured = sum(t.approval_status is DomainApprovalStatus.PRECONFIGURED for t in targets)
         approved = sum(t.approval_status is DomainApprovalStatus.APPROVED for t in targets)
@@ -271,7 +277,7 @@ class PipelineRun:
         if not targets:
             self.warn("No eligible search targets: nothing will be searched")
         self.end_stage(StageName.TARGETS, StageStatus.COMPLETED,
-                       f"{configured} configured, {approved} reviewer-approved, {auto} auto-approved this run; "
+                       f"{configured} configured, {approved} reviewer-approved, {auto} automatically searchable; "
                        f"{len(skipped)} skipped")  # fmt: skip
         return targets
 
@@ -540,11 +546,15 @@ class RunManager:
                 wanted = {registrable_domain(d) for d in req.domains}
             except ValueError:
                 raise RunRequestError(422, "Invalid domain in 'domains'") from None
+            # Stored automatically eligible domains count (this run's discoveries are not known yet).
             targets, _ = eligible_search_targets(self.d.catalogue.competitors,
-                                                 self.d.review_store.list_decisions(), s)  # fmt: skip
+                                                 self.d.review_store.list_decisions(), s,
+                                                 candidates=[c.candidate for c in self.d.review_store.list_candidates()],
+                                                 product_ids=ids, only_domains=wanted)  # fmt: skip
             not_allowed = sorted(wanted - {t.domain for t in targets})
             if not_allowed:
-                raise RunRequestError(422, {"message": "Only configured or reviewer-approved domains can be searched",
+                raise RunRequestError(422, {"message": "Only configured, reviewer-approved or automatically "
+                                                       "search-eligible domains can be searched",
                                             "not_allowed": not_allowed})  # fmt: skip
         active = sum(r.status not in TERMINAL for r in self.store.list_runs())
         if active >= s.pipeline_max_active_runs:

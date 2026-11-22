@@ -6,7 +6,6 @@ import CompetitorClassPill from '../components/CompetitorClassPill'
 import { fromBackendClass } from '../competitorClass'
 import { plural, timeOnly } from '../format'
 import { TONE_ICON } from '../status'
-import { ukEventStatus } from '../ukRelevance'
 
 type Group = 'lifecycle' | 'discovery' | 'search' | 'matching' | 'other'
 
@@ -157,22 +156,19 @@ export default function EventTimeline({ events }: { events: ExecutionEvent[] }) 
   )
 }
 
-/** A discovered domain's backend classification and UK evidence status, shown as soon as its event arrives. */
+/** A discovered domain's backend classification and automatic search status, shown as soon as its event arrives. */
 function DiscoveredClass({ event }: { event: ExecutionEvent }) {
   if (event.type !== 'competitor_discovered') return null
   const p = event.payload as Partial<CompetitorDiscoveredPayload>
   const cls = fromBackendClass(p.competitor_class)
-  const uk = ukEventStatus(p) // older events carry no class or UK fields: show nothing for them
-  if (!cls && !uk) return null
+  const auto = p.auto_search_eligible === true // older events carry no such field: show nothing
+  if (!cls && !auto) return null
   return (
     <div className="fi-tags">
       {cls && <CompetitorClassPill cls={cls} />}
-      {uk && (
-        <span className="fi-uk" data-testid="uk-evidence">
-          <span className={`pill tone-${uk.tone}`}>
-            <span className="pill-icon" aria-hidden="true">{TONE_ICON[uk.tone]}</span> {uk.label}
-          </span>{' '}
-          <span className="small">{uk.line}</span>
+      {auto && (
+        <span className="pill tone-success" data-testid="auto-searchable">
+          <span className="pill-icon" aria-hidden="true">{TONE_ICON.success}</span> Automatically searchable
         </span>
       )}
     </div>

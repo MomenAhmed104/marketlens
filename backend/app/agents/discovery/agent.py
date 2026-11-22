@@ -8,14 +8,14 @@ Flow for a set of selected products:
   4. Results are grouped by registrable domain. Own site, known competitors and
      non-shop platforms are separated out deterministically.
   5. Each new candidate gets one domain-restricted "profile" search for more
-     evidence about the business (about/contact, address, registration, delivery).
-  6. LLM 1 classifies candidates from that evidence only, including UK relevance
-     evidence: exact quotes with their kind (no UK verdict). Python verifies the quotes
-     and decides whether they are sufficient (`uk_assessment`, rules.uk_assessment_from).
+     evidence about the business (about/contact, delivery).
+  6. LLM 1 classifies candidates from that evidence only. Its UK focus comes from the
+     search strategy (Stage 8.1): there is no UK verification, and its
+     `serves_uk_customers` answer is informational only.
   7. Python validates the classification against the evidence and decides:
-     AUTO_APPROVED, APPROVAL_REQUIRED or REJECTED. Auto-approval needs sufficient,
-     uncontradicted verified UK evidence from at least two evidence pages; it never
-     grants benchmark permission.
+     AUTO_APPROVED (automatically search-eligible, `rules.is_search_eligible`),
+     APPROVAL_REQUIRED or REJECTED (no discovery evidence). It never grants benchmark
+     permission.
   8. Persisted reviewer decisions (Phase 4) override step 7: REJECTED domains
      are never searched; APPROVED ones are searched even if not rediscovered.
   9. Targeted queries are generated for search targets only: preconfigured
@@ -26,8 +26,8 @@ Two modes:
 - LLM_ENABLED: steps 2 and 6 use LLM 1 (OpenRouter).
 - LLM_DISABLED (no LLM client): step 2 uses the deterministic baseline query
   only and step 6 is skipped. Every new candidate is then APPROVAL_REQUIRED
-  with its evidence and UK signals recorded, and no company name, type,
-  relevance, confidence or UK-selling claim is filled in.
+  with its evidence recorded, and no company name, type, relevance, confidence
+  or UK-selling answer is filled in.
 
 Run state is returned, not persisted (temporary execution state).
 """
@@ -42,13 +42,11 @@ from decimal import Decimal
 
 from app.agents.discovery import prompts
 from app.agents.discovery.rules import (
-    Thresholds,
     apply_classification,
     apply_review_decision,
     classify_competitor,
     decide,
-    uk_review,
-    uk_signals,
+    policy_from_settings,
 )
 from app.agents.discovery.schemas import (
     ClassificationBatch,
@@ -57,7 +55,6 @@ from app.agents.discovery.schemas import (
     DiscoveryMode,
     DiscoveryPlan,
     DiscoveryRunResult,
-    DiscoveryThresholds,
     DiscoveryUsage,
     EvidenceItem,
     EvidenceKind,
@@ -81,10 +78,10 @@ from app.services.search.http import ProviderError
 from app.services.text_match import mentions_model, url_text
 
 MAX_QUERY_CHARS = 200
-# One profile search per candidate (cost control). Aimed at the pages that show UK relevance:
-# about/contact, a shop or showroom address, company registration, and delivery terms
-# (including any statement that the UK is not served).
-PROFILE_QUERY = "music shop about us contact address showroom company registered delivery shipping to UK"
+# One profile search per candidate (cost control). Aimed at the pages that say what the
+# business is and whom it sells to: about/contact and delivery terms. It feeds LLM 1's
+# classification only; nothing UK-specific is checked in code (Stage 8.1).
+PROFILE_QUERY = "music shop about us contact delivery shipping"
 APPROVED_FOR_SEARCH = (DomainApprovalStatus.PRECONFIGURED, DomainApprovalStatus.AUTO_APPROVED,
                        DomainApprovalStatus.APPROVED)  # fmt: skip
 
@@ -133,12 +130,7 @@ class CompetitorDiscoveryAgent:
         known_domains = {registrable_domain(c.domain) for c in known_competitors}
         self.review_decisions = {d.domain: d for d in review_decisions or [] if d.domain not in known_domains}
         self.allowed_categories = sorted(set(allowed_categories))
-        self.thresholds = Thresholds(
-            settings.discovery_auto_approve_min_confidence,
-            settings.discovery_auto_approve_min_relevance,
-            settings.discovery_auto_approve_min_evidence_urls,
-            settings.discovery_reject_max_relevance,
-        )
+        self.policy = policy_from_settings(settings)
         self.usage = DiscoveryUsage(llm_model=llm.model if llm else None)
         self.warnings: list[str] = []
         self._sem = asyncio.Semaphore(settings.discovery_search_concurrency)
@@ -340,7 +332,9 @@ class CompetitorDiscoveryAgent:
 
     def search_targets(self, candidates: list[DiscoveredCompetitor]) -> list[SearchTarget]:
         """Domains allowed into targeted searches: preconfigured competitors (as configured),
-        this run's auto-approved and reviewer-approved domains. Pending and rejected never are."""
+        this run's automatically search-eligible and reviewer-approved domains. Pending and
+        rejected never are. (The pipeline also adds stored eligible domains from earlier runs,
+        capped: `app.agents.intelligence.eligible_search_targets`.)"""
         targets = [SearchTarget.from_known(c) for c in self.known]
         seen = {t.domain for t in targets}
         for c in candidates:
@@ -388,7 +382,6 @@ class CompetitorDiscoveryAgent:
                 domain=domain, hostnames=hostnames, homepage_url=f"https://{hostnames[0]}/",
                 evidence=items, discovered_at=_now(),
                 products_matched=sorted({e.product_id for e in items if e.mentions_product_model and e.product_id}),
-                uk_signals=[],
             ))  # fmt: skip
 
         if self.s.discovery_profile_results:
@@ -398,16 +391,13 @@ class CompetitorDiscoveryAgent:
             for c, resp in zip(candidates, profiles):
                 if resp is not None:
                     c.evidence += self._evidence(resp, EvidenceKind.DOMAIN_PROFILE, None)
-        for c in candidates:
-            c.uk_signals = uk_signals(c.domain, c.evidence)
 
         await self.classify(candidates, products)
         for c in candidates:
-            decide(c, self.thresholds, self.s.marketplace_domain_labels)
+            decide(c, self.policy)
             classify_competitor(c, self.s.marketplace_domain_labels)  # independent of approval
             if decision := self.review_decisions.get(c.domain):
                 apply_review_decision(c, decision)
-            c.uk_review = uk_review(c.uk_assessment, c.review_decision)  # same view as the review API
 
         known_evidence = [
             KnownCompetitorEvidence(
@@ -428,6 +418,6 @@ class CompetitorDiscoveryAgent:
             known_competitor_evidence=known_evidence, global_queries=planned, candidates=candidates,
             excluded=sorted(excluded, key=lambda x: x.domain),
             search_targets=targets, targeted_queries=self.targeted_queries(products, variants, targets),
-            thresholds=DiscoveryThresholds(**self.thresholds.__dict__), usage=self.usage,
+            usage=self.usage,
             warnings=self.warnings,
         )  # fmt: skip

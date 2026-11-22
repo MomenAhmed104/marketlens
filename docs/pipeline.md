@@ -22,13 +22,21 @@ failures, tracks progress and emits events. No phase logic is duplicated.
 - **Searched:**
   - the 13 configured competitors;
   - reviewer-`APPROVED` domains (Phase 4);
-  - domains LLM 1 auto-approved **in this run** (LLM_ENABLED only). These are never persisted, and `PIPELINE_SEARCH_AUTO_APPROVED=false` turns them off.
+  - automatically search-eligible domains (Stage 8.1, `rules.is_search_eligible`): this run's
+    candidates merged onto their stored review records (`merge_candidate`), plus stored
+    eligible domains from earlier runs. Eligibility is recomputed every run; nothing is
+    written for it. At most `MAX_AUTO_SEARCH_TARGETS` (default 5) per run, ranked by
+    `auto_target_rank` (discovery results only, never scores); the rest are in
+    `skipped_targets` with the reason. They are never price benchmarks.
+    `PIPELINE_SEARCH_AUTO_APPROVED=false` turns them off.
 - **Never searched:**
-  - pending domains (including those just discovered);
-  - rejected domains;
+  - pending domains that are not automatically search-eligible (no-LLM, failed or pre-Stage 8.1
+    classifications; manufacturers, marketplaces, directories, other or unknown types; name or
+    cited URL not in the evidence; excluded domains);
+  - rejected domains, even when automatically eligible;
   - approved `directory` domains.
-- **Reviewer decisions win:** a reviewer rejection overrides an LLM
-  auto-approval, because discovery applies saved decisions.
+- **Reviewer decisions win:** a reviewer rejection overrides automatic eligibility, and a
+  domain with any decision is never counted against the automatic cap.
 - **Benchmark eligibility is unchanged:** Gibson and approved marketplaces are
   searched but never used as price benchmarks.
 - **Narrowing a run:** a `domains` subset limits a run to some of the eligible
@@ -171,12 +179,14 @@ BopDJ (reviewer-approved) and Gibson, followed over SSE:
   LLM 1 and LLM 2 only.
 - **Frontend:** run controls and live views are in Phase 8 (`docs/dashboard.md`).
 
-## UK evidence in events (Stage 6.3)
+## Discovery events (Stage 8.1)
 
-`competitor_discovered` also carries `uk_mixed_location` (additive). The event
-carries flags only (`uk_assessed`, `uk_evidence_sufficient`,
-`uk_evidence_contradicted`, `uk_mixed_location`, `uk_independent_sources`);
-the quotes are in the run result (`discovery.candidates[].uk_review`). The
-whole workflow (discover, review through the API, re-run, extract, match,
+`competitor_discovered` carries `auto_search_eligible` (the run's automatic decision) and the
+informational `serves_uk_customers`. The UK verification flags (`uk_assessed`,
+`uk_evidence_sufficient`, `uk_evidence_contradicted`, `uk_mixed_location`,
+`uk_independent_sources`) were removed with Option B. `domain_auto_approved` now reads
+"<domain> is automatically searchable". `known_domains_loaded` keeps its `auto_approved` count
+(now the automatic targets actually searched, stored ones included) and lists cap-skipped
+domains under `skipped`. The whole workflow (discover, review through the API, re-run, extract, match,
 stream) is covered by `tests/test_workflow_integration.py` with fakes and a
 temporary database.

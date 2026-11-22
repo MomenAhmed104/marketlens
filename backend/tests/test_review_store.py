@@ -10,7 +10,6 @@ from app.agents.discovery.schemas import (
     DiscoveredCompetitor,
     DiscoveryMode,
     DiscoveryRunResult,
-    DiscoveryThresholds,
     DiscoveryUsage,
     EvidenceItem,
     EvidenceKind,
@@ -31,7 +30,7 @@ def evidence(url: str, product="SB-001") -> EvidenceItem:
 def candidate(domain="example.co.uk", urls=("https://example.co.uk/a",), **kw) -> DiscoveredCompetitor:
     return DiscoveredCompetitor(domain=domain, hostnames=[domain], homepage_url=f"https://{domain}/",
                                 evidence=[evidence(u) for u in urls], products_matched=["SB-001"],
-                                uk_signals=["uk_domain"], discovered_at=NOW, **kw)  # fmt: skip
+                                discovered_at=NOW, **kw)  # fmt: skip
 
 
 def run(cands, run_id="run-1", mode=DiscoveryMode.LLM_DISABLED, at=NOW) -> DiscoveryRunResult:
@@ -39,8 +38,6 @@ def run(cands, run_id="run-1", mode=DiscoveryMode.LLM_DISABLED, at=NOW) -> Disco
         run_id=run_id, mode=mode, started_at=at, finished_at=at, product_ids=["SB-001"], search_provider="exa",
         known_competitors=[], known_competitor_evidence=[], global_queries=[], candidates=cands, excluded=[],
         targeted_queries=[], usage=DiscoveryUsage(), warnings=[],
-        thresholds=DiscoveryThresholds(auto_approve_min_confidence=0.85, auto_approve_min_relevance=0.75,
-                                       auto_approve_min_evidence_urls=2, reject_max_relevance=0.3),
     )  # fmt: skip
 
 

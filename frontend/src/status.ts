@@ -100,7 +100,7 @@ const LABELS: Record<string, string> = {
   MEDIUM: 'Medium confidence',
   LOW: 'Low confidence',
   PRECONFIGURED: 'Configured',
-  AUTO_APPROVED: 'Auto-approved (this run)',
+  AUTO_APPROVED: 'Automatically searchable',
   APPROVAL_REQUIRED: 'Approval required',
   EXCLUDED_SALE_PRICE: 'Sale price excluded',
   WRONG_CURRENCY: 'Wrong currency',

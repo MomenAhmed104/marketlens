@@ -20,7 +20,7 @@ from tests.matching_fakes import target
 from tests.search_fakes import make_settings
 from tests.test_intelligence_agent import dec
 from tests.test_search_targets import AND_RC5, fresh, payload
-from tests.uk_fakes import make_v1_db, make_v2_db, table_snapshot
+from tests.store_fakes import make_v1_db, make_v2_db, table_snapshot
 
 GIBSON = "https://www.gibson.com/boss-rc-5"
 PENDING = "https://www.pending-shop.co.uk/boss-rc-5-loop-station-pedal"

@@ -19,8 +19,6 @@ from app.agents.discovery.schemas import (
     DiscoveredCompetitor,
     DiscoveryMode,
     EvidenceKind,
-    UkRelevanceEvidenceKind,
-    UkRelevanceQuote,
     UkSeller,
 )
 from app.main import create_app
@@ -32,8 +30,8 @@ from app.services.review_store import ReviewStore
 from app.services.search.base import RawHit
 from tests.discovery_fakes import FakeLLM, FakeSearch
 from tests.search_fakes import make_settings
-from tests.test_discovery_agent import BECKETTS_UK, GLOBAL_HITS, PLAN, PROFILE_HITS
-from tests.test_discovery_rules import TH, candidate, cls, ev, uk_pages, uk_quotes
+from tests.test_discovery_agent import GLOBAL_HITS, PLAN, PROFILE_HITS
+from tests.test_discovery_rules import POLICY, candidate, cls, ev
 from tests.test_review_store import candidate as stored_candidate
 from tests.test_review_store import run as run_result
 
@@ -75,7 +73,7 @@ KNOWN_MARKETPLACES = ["amazon.co.uk", "ebay.co.uk", "reverb.com", "etsy.com", "g
 @pytest.mark.parametrize("proposed", [D, R, N])
 @pytest.mark.parametrize("ctype", [T.MARKETPLACE, T.RETAILER, T.MANUFACTURER, T.OTHER])
 def test_known_marketplace_is_always_related_retailer(domain, proposed, ctype):
-    c = classified(candidate(domain), competitor_class=proposed, company_type=ctype, uk_seller=UkSeller.UNKNOWN)
+    c = classified(candidate(domain), competitor_class=proposed, company_type=ctype, serves_uk_customers=UkSeller.UNKNOWN)
     assert c.proposed_competitor_class is proposed and c.competitor_class is R
     assert c.competitor_class_reasons == [
         f"Known marketplace domain ({domain}): always RELATED_RETAILER, overriding the LLM 1 proposal ({proposed.value})"
@@ -122,36 +120,22 @@ def test_directory_and_other_types_cannot_be_direct_or_related(ctype, proposed):
     assert c.competitor_class is N and len(downgrade_reasons(c)) == 1
 
 
-@pytest.mark.parametrize("uk", [UkSeller.UNKNOWN, UkSeller.NO])
+@pytest.mark.parametrize("uk", list(UkSeller))
 @pytest.mark.parametrize("proposed", [D, R])
-def test_unconfirmed_uk_selling_gives_needs_review(uk, proposed):
-    # An LLM "no" without a verified no-UK-service quote is reconciled to "unknown" (never trusted).
-    c = classified(competitor_class=proposed, uk_seller=uk)
-    assert c.competitor_class is N and "UK selling is 'unknown'" in downgrade_reasons(c)[0]
+def test_uk_answer_never_changes_the_class(uk, proposed):
+    # Stage 8.1: serves_uk_customers is informational only; no UK downgrade remains.
+    c = classified(competitor_class=proposed, serves_uk_customers=uk)
+    assert c.competitor_class is proposed and downgrade_reasons(c) == []
 
 
-def test_unverified_uk_selling_claim_gives_needs_review():
-    # LLM 1 says "yes" but cites no verified UK evidence: uk_seller is unknown, so not Direct.
-    c = classified(competitor_class=D, uk_evidence=[])
-    assert c.uk_seller is UkSeller.UNKNOWN and c.competitor_class is N
-
-
-def test_direct_needs_a_strong_uk_signal():
-    # .com domain, USD price only: LLM says UK seller, but code finds no strong UK signal.
-    # Verified overseas evidence (based abroad, delivers to the UK) so uk_seller is "yes"; still no .uk,
-    # GBP or postcode signal. This classification safeguard is unchanged (approval no longer uses it).
-    imprint, shipping = "https://loopshop.com/imprint", "https://loopshop.com/shipping"
+def test_direct_needs_no_uk_domain_gbp_or_postcode():
+    # .com domain, USD price only, based abroad: Direct is accepted (no .uk/GBP/postcode safeguard).
     cand = candidate("loopshop.com", evidence=[
         ev("https://loopshop.com/boss-rc-5", "Boss RC-5 - Loop Shop", "$199"),
-        ev(imprint, "Imprint", "Loop Shop LLC, 100 Main Street, Austin, Texas, USA", kind=EvidenceKind.DOMAIN_PROFILE),
-        ev(shipping, "Shipping", "We ship to the United Kingdom with DHL Express", kind=EvidenceKind.DOMAIN_PROFILE)])
-    quotes = [UkRelevanceQuote(url=imprint, quote="Loop Shop LLC, 100 Main Street, Austin, Texas, USA",
-                               kind=UkRelevanceEvidenceKind.NON_UK_OPERATOR),
-              UkRelevanceQuote(url=shipping, quote="We ship to the United Kingdom with DHL Express",
-                               kind=UkRelevanceEvidenceKind.UK_DELIVERY)]  # fmt: skip
-    c = classified(cand, competitor_class=D, evidence_urls=["https://loopshop.com/boss-rc-5"], uk_evidence=quotes)
-    assert c.uk_seller is UkSeller.YES
-    assert c.competitor_class is N and "no strong UK signal" in downgrade_reasons(c)[0]
+        ev("https://loopshop.com/imprint", "Imprint", "Loop Shop LLC, 100 Main Street, Austin, Texas, USA",
+           kind=EvidenceKind.DOMAIN_PROFILE)])  # fmt: skip
+    c = classified(cand, competitor_class=D, company_name="Loop Shop", evidence_urls=["https://loopshop.com/boss-rc-5"])
+    assert c.competitor_class is D and downgrade_reasons(c) == []
 
 
 def test_invalid_cited_evidence_gives_needs_review():
@@ -188,21 +172,20 @@ def test_code_never_upgrades_a_needs_review_proposal():
 
 
 def test_classification_is_independent_of_approval_and_benchmark():
-    domain = "beckettsmusic.co.uk"  # only one discovery URL: auto-approval requires 2
-    c = candidate(evidence=[ev(f"https://{domain}/boss-rc-5", "Boss RC-5 Loop Station - Beckett's Music", "£189.99"),
-                            *uk_pages(domain)])
-    apply_classification(c, cls(competitor_class=D), CATS)
-    decide(c, TH, MARKETPLACES)
+    domain = "beckettsmusic.co.uk"
+    c = candidate(evidence=[ev(f"https://{domain}/boss-rc-5", "Boss RC-5 Loop Station - Beckett's Music", "£189.99")])
+    apply_classification(c, cls(competitor_class=D, company_type=T.MANUFACTURER), CATS)  # not searched automatically
+    decide(c, POLICY)
     before = (c.approval_status, c.price_benchmark, list(c.decision_reasons))
     classify_competitor(c, MARKETPLACES)
-    assert c.competitor_class is D and c.approval_status is S.APPROVAL_REQUIRED
+    assert c.competitor_class is N and c.approval_status is S.APPROVAL_REQUIRED
     assert (c.approval_status, c.price_benchmark, c.decision_reasons) == before
 
     rejected = DomainDecisionRecord(domain=c.domain, decision=ReviewDecision.REJECTED, company_type=T.RETAILER,
                                     reviewer="sam", decided_at=NOW, evidence_urls=[])  # fmt: skip
     apply_review_decision(c, rejected)
     assert c.approval_status is S.REJECTED and c.price_benchmark is False
-    assert c.competitor_class is D  # a reviewer decision does not rewrite the classification
+    assert c.competitor_class is N  # a reviewer decision does not rewrite the classification
 
 
 def test_benchmark_eligibility_does_not_depend_on_class():
@@ -213,7 +196,7 @@ def test_benchmark_eligibility_does_not_depend_on_class():
     assert c.competitor_class is R and c.price_benchmark is True
 
 
-def test_direct_does_not_use_the_auto_approval_relevance_threshold():
+def test_direct_does_not_use_relevance_or_confidence():
     c = classified(competitor_class=D, relevance=0.4, confidence=0.5)
     assert c.competitor_class is D
 
@@ -235,11 +218,9 @@ def test_strict_schema_requires_competitor_class():
 def batch(**classes: CompetitorClass) -> ClassificationBatch:
     def item(domain, name, ctype, urls, competitor_class):
         return CompanyClassification(domain=domain, company_name=name, company_type=ctype,
-                                     relevant_categories=["Effects"], uk_seller=UkSeller.YES,
+                                     relevant_categories=["Effects"], serves_uk_customers=UkSeller.YES,
                                      sells_new_musical_instruments=True, relevance=0.9, confidence=0.9,
-                                     rationale="From evidence.", evidence_urls=urls, competitor_class=competitor_class,
-                                     uk_evidence=[UkRelevanceQuote(url=u, quote=q, kind=k) for u, q, k in BECKETTS_UK]
-                                     if domain == "beckettsmusic.co.uk" else [])
+                                     rationale="From evidence.", evidence_urls=urls, competitor_class=competitor_class)
     return ClassificationBatch(companies=[
         item("beckettsmusic.co.uk", "Beckett's Music", T.SPECIALIST_RETAILER,
              ["https://beckettsmusic.co.uk/products/boss-rc-5"], classes.get("becketts", D)),
@@ -284,7 +265,6 @@ def test_pmt_is_excluded_before_classification(catalogue):
 
 def llm_classified(domain="example.co.uk") -> DiscoveredCompetitor:
     c = stored_candidate(domain)
-    c.evidence += uk_pages(domain)  # verified UK evidence for the cited quotes
     apply_classification(c, cls(domain=domain, competitor_class=R, evidence_urls=[f"https://{domain}/a"]), CATS)
     c.classified_at, c.classification_model = NOW, "openai/gpt-6-luna"
     classify_competitor(c, MARKETPLACES)

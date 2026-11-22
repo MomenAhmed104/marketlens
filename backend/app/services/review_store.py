@@ -98,6 +98,11 @@ class DecisionNotFoundError(Exception):
 
 CLASS_FIELDS = ("proposed_competitor_class", "competitor_class", "competitor_class_reasons",
                 "classified_at", "classification_model")  # fmt: skip
+# Everything a completed LLM 1 classification sets; kept together by `merge_candidate`.
+LLM_FIELDS = ("classification_status", "classification_version", "company_name", "company_type",
+              "relevant_categories", "serves_uk_customers", "serves_uk_customers_note",
+              "sells_new_musical_instruments", "relevance", "confidence", "rationale", "cited_evidence_urls",
+              "name_verified", "validation_notes", *CLASS_FIELDS)  # fmt: skip
 
 
 def has_llm_competitor_class(c: DiscoveredCompetitor) -> bool:
@@ -118,29 +123,24 @@ def merge_candidate(old: DiscoveredCompetitor, new: DiscoveredCompetitor) -> Dis
     - an LLM-backed competitor class (e.g. backfilled) is never replaced by one from
       a run without a completed LLM classification: the five class fields are kept
       together.
-    A new completed LLM classification replaces both.
-    The UK assessment (`uk_assessment`) follows the same rule, and in addition a stored
-    assessment is never replaced by none: a run without the LLM, a failed or missing
-    classification, or a classification without a UK answer keeps the stored one."""
+    A new completed LLM classification replaces both. The classification version travels
+    with the LLM fields, so a kept pre-Stage 8.1 classification never becomes eligible for
+    automatic search (`rules.is_search_eligible`); a new one at the current version does.
+    Fields of the retired UK evidence system (`uk_assessment`, `uk_signals`) are not part of
+    the model: they load from old rows without error and are not written again."""
     merged = new.model_copy(deep=True)
     seen = {(e.canonical_url, e.product_id, e.kind) for e in new.evidence}
     extra = [e for e in old.evidence if (e.canonical_url, e.product_id, e.kind) not in seen]
     merged.evidence = (new.evidence + extra)[:MAX_EVIDENCE_PER_CANDIDATE]
     merged.hostnames = sorted(set(old.hostnames) | set(new.hostnames))
     merged.products_matched = sorted(set(old.products_matched) | set(new.products_matched))
-    merged.uk_signals = sorted(set(old.uk_signals) | set(new.uk_signals))
     if (old.classification_status is ClassificationStatus.COMPLETED
             and new.classification_status is not ClassificationStatus.COMPLETED):  # fmt: skip
-        for field in ("classification_status", "company_name", "company_type", "relevant_categories", "uk_seller",
-                      "sells_new_musical_instruments", "relevance", "confidence", "rationale",
-                      "cited_evidence_urls", "name_verified", "validation_notes", "uk_assessment",
-                      *CLASS_FIELDS):  # fmt: skip
+        for field in LLM_FIELDS:
             setattr(merged, field, getattr(old, field))
     elif new.classification_status is not ClassificationStatus.COMPLETED and has_llm_competitor_class(old):
         for field in CLASS_FIELDS:
             setattr(merged, field, getattr(old, field))
-    if merged.uk_assessment is None and old.uk_assessment is not None:
-        merged.uk_assessment = old.uk_assessment
     merged.discovered_at = min(old.discovered_at, new.discovered_at)
     return merged
 
@@ -192,9 +192,8 @@ class ReviewStore:
         with self._tx() as conn:
             for c in written:
                 row = conn.execute("SELECT record FROM review_candidates WHERE domain = ?", (c.domain,)).fetchone()
-                # Never persist run-scoped review state: decisions live in their own table, and
-                # the UK review view is derived from the assessment and the decision when shown.
-                fresh = c.model_copy(update={"review_decision": None, "uk_review": None})
+                # Never persist run-scoped review state: decisions live in their own table.
+                fresh = c.model_copy(update={"review_decision": None})
                 if row:
                     old = StoredCandidate.model_validate_json(row[0])
                     keep_mode = (old.candidate.classification_status is ClassificationStatus.COMPLETED

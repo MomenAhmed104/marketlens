@@ -1,7 +1,7 @@
 """Stage 6.3.6: the whole user workflow through the HTTP API, with mocked LLM 1, LLM 2 and search.
 
-Run 1 discovers competitors (LLM 1, verified UK evidence), queues new domains as pending and does
-not search them. A reviewer approves one domain (with benchmark permission) and rejects another
+Run 1 discovers competitors (LLM 1), queues new domains as pending and, with automatic search
+switched off (PIPELINE_SEARCH_AUTO_APPROVED=false), does not search them. A reviewer approves one domain (with benchmark permission) and rejects another
 through the review API. Run 2 searches the approved domain, extracts with LLM 2 and matches in
 Python. Checks the SSE stream, the run result the dashboard reads, availability (including a
 geographic delivery restriction) and that the temporary review database is the only one used.
@@ -43,12 +43,12 @@ def test_discover_review_approve_rerun_extract_match_and_stream(catalogue, tmp_p
                 llm2=lambda: FakeExtractLLM(EXTRACTIONS_2, PROPOSALS),
                 intel_search=lambda: FakeIntelSearch(HITS, PAGES_2),
                 pipeline_search_auto_approved=False)  # fmt: skip
-    app = create_app(make_settings(review_db_path=h.settings.review_db_path))
+    app = create_app(make_settings(review_db_path=h.settings.review_db_path, pipeline_search_auto_approved=False))
     with TestClient(app) as client:
         app.state.run_manager, app.state.review_store = h.manager, h.review  # one temporary database
         assert len(client.get("/api/catalogue/products").json()["items"]) == 100  # 1. catalogue
 
-        # 2-3. Run 1: LLM 1 discovery with verified UK evidence; new domains are queued, not searched.
+        # 2-3. Run 1: LLM 1 discovery; new domains are queued, not searched (automatic search is off).
         run1 = client.post("/api/runs", json={"product_ids": ["SB-001"]}).json()["run_id"]
         with client.stream("GET", f"/api/runs/{run1}/stream") as resp:
             events1 = parse_sse(list(resp.iter_lines()))
@@ -56,22 +56,24 @@ def test_discover_review_approve_rerun_extract_match_and_stream(catalogue, tmp_p
         found = {e["data"]["payload"]["domain"]: e["data"]["payload"]
                  for e in events1 if e["event"] == "competitor_discovered"}  # fmt: skip
         beck_evt = found["beckettsmusic.co.uk"]
-        assert (beck_evt["uk_assessed"], beck_evt["uk_evidence_sufficient"], beck_evt["uk_independent_sources"]) \
-            == (True, True, 2)
+        assert beck_evt["auto_search_eligible"] is True and beck_evt["serves_uk_customers"] == "yes"
+        assert not [k for k in beck_evt if k.startswith("uk_")]  # Stage 8.1: no UK verification flags
         result1 = client.get(f"/api/runs/{run1}/result").json()
         searched1 = {t["domain"] for t in result1["search_targets"]}
         assert "beckettsmusic.co.uk" not in searched1 and "ebay.co.uk" not in searched1
         disc = {c["domain"]: c for c in result1["discovery"]["candidates"]}
-        assert disc["beckettsmusic.co.uk"]["uk_review"]["verified_evidence"]  # quotes reach the dashboard
+        assert "uk_review" not in disc["beckettsmusic.co.uk"] and "uk_assessment" not in disc["beckettsmusic.co.uk"]
         assert disc["beckettsmusic.co.uk"]["price_benchmark"] is False  # automatic decisions never benchmark
 
-        # 4. Domain review: pending with the UK evidence view; approve one, reject another.
+        # 4. Domain review: pending (eligible, but automatic search is off); approve one, reject another.
         pending = {c["domain"]: c for c in client.get("/api/review/candidates").json()}
         assert pending["beckettsmusic.co.uk"]["review_status"] == "PENDING"
-        assert pending["beckettsmusic.co.uk"]["uk_review"]["sufficient"] is True
+        assert pending["beckettsmusic.co.uk"]["auto_search_eligible"] is True
+        assert pending["beckettsmusic.co.uk"]["search_basis"] == "NOT_SEARCHED"
+        assert "uk_review" not in pending["beckettsmusic.co.uk"]
         r = client.post("/api/review/candidates/beckettsmusic.co.uk/approve",
                         json={"reviewer": "Sam", "company_type": "specialist_retailer", "benchmark_eligible": True,
-                              "notes": "UK shop with verified address"})  # fmt: skip
+                              "notes": "Checked the shop's pages"})  # fmt: skip
         assert r.status_code == 201 and r.json()["benchmark_eligible"] is True
         assert client.post("/api/review/candidates/ebay.co.uk/reject", json={"reviewer": "Sam"}).status_code == 201
 

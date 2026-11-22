@@ -96,11 +96,9 @@ class Settings(BaseSettings):
     discovery_max_targeted_variants: int = Field(default=2, ge=1, le=5)
     discovery_classification_batch_size: int = Field(default=8, ge=1, le=20)
     discovery_search_concurrency: int = Field(default=3, ge=1, le=10)
-    # Auto-approval thresholds. Starting values, NOT calibrated: tune on labelled runs.
-    discovery_auto_approve_min_confidence: float = Field(default=0.85, ge=0, le=1)
-    discovery_auto_approve_min_relevance: float = Field(default=0.75, ge=0, le=1)
-    discovery_auto_approve_min_evidence_urls: int = Field(default=2, ge=1)
-    discovery_reject_max_relevance: float = Field(default=0.3, ge=0, le=1)
+    # The former auto-approval thresholds (DISCOVERY_AUTO_APPROVE_MIN_CONFIDENCE, ..._RELEVANCE,
+    # ..._EVIDENCE_URLS, DISCOVERY_REJECT_MAX_RELEVANCE) were removed in Stage 8.1: scores are
+    # informational and never gate eligibility. Old .env entries are ignored (extra="ignore").
     # Competitors removed by the user (e.g. PMT): excluded before classification and
     # never written to the review queue. Registrable domains.
     discovery_excluded_competitor_domains: tuple[str, ...] = ("pmtonline.co.uk",)
@@ -144,8 +142,15 @@ class Settings(BaseSettings):
     pipeline_run_timeout_seconds: float = Field(default=1800, gt=0)
     pipeline_discovery_timeout_seconds: float = Field(default=300, gt=0)
     pipeline_product_timeout_seconds: float = Field(default=600, gt=0)  # search + retrieval + extraction, per product
-    # Search domains LLM 1 auto-approved in this run (LLM_ENABLED only; run-scoped, never persisted).
+    # Search automatically search-eligible discovered domains (rules.is_search_eligible): this
+    # run's and those stored from earlier runs. False: only configured and reviewer-approved
+    # domains are searched. The name predates Stage 8.1 and is kept for existing .env files.
     pipeline_search_auto_approved: bool = True
+    # Cost control: at most this many automatically eligible domains are searched per run
+    # (pipeline and product-intelligence API), ranked by grounded discovery relevance.
+    # Configured and reviewer-approved domains do not count. Each extra domain costs about one
+    # Exa search plus a few page retrievals and LLM 2 calls per selected product.
+    max_auto_search_targets: int = Field(default=5, ge=0, le=50)
     pipeline_max_events_per_run: int = Field(default=5000, ge=100)
     pipeline_sse_heartbeat_seconds: float = Field(default=15, gt=0)
 

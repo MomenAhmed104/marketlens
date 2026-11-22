@@ -6,8 +6,8 @@ import StatusPill from './components/StatusPill'
 import CompetitorClassPill from './components/CompetitorClassPill'
 import { effectiveCompanyType, resolveCompetitorClass } from './competitorClass'
 import { useReviewer } from './reviewer'
-import { UkDetails, UkSummary } from './components/UkEvidence'
-import { ukReviewOf } from './ukRelevance'
+import { SearchStatusDetails, SearchStatusSummary } from './components/SearchStatus'
+import { searchStatusOf } from './searchEligibility'
 import {
   approveCandidate,
   BENCHMARK_ELIGIBLE_TYPES,
@@ -75,8 +75,9 @@ export default function Review({ status, onChanged }: ReviewProps = {}) {
         <>
           <h2 id="review-heading">Competitor domain review</h2>
           <p className="muted">
-            Discovered companies need a reviewer decision before they can be used in targeted
-            product searches. The 13 configured competitors are not listed here and stay unchanged.
+            Discovered retailers that pass the basic checks are searched automatically; everything
+            else needs a reviewer decision. Rejecting a domain always stops it being searched. The
+            13 configured competitors are not listed here and stay unchanged.
           </p>
         </>
       )}
@@ -196,7 +197,7 @@ export function CandidateCard(props: {
   const shownType = effectiveCompanyType(c)
   // Backend class (source of truth); a provisional fallback only for unclassified older records.
   const { cls, source: clsSource } = resolveCompetitorClass(c)
-  const uk = ukReviewOf(c)
+  const search = searchStatusOf(c)
   const domainLink = (className: string) => (
     <a href={c.homepage_url} target="_blank" rel="noreferrer noopener" className={className}>{c.domain}</a>
   )
@@ -239,7 +240,7 @@ export function CandidateCard(props: {
         )}
       </div>
 
-      <UkSummary review={uk} />
+      <SearchStatusSummary status={search} />
 
       <div className="domain-actions">
         {c.review_status === 'PENDING' ? (
@@ -268,7 +269,7 @@ export function CandidateCard(props: {
         />
       )}
       {error && <p role="alert" className="error">{error}</p>}
-      {open && <UkDetails review={uk} />}
+      {open && <SearchStatusDetails status={search} servesUk={c.serves_uk_customers} servesUkNote={c.serves_uk_customers_note} />}
       {open && detail && <Details detail={detail} />}
       {open && !detail && !error && <p className="muted">Loading evidence…</p>}
     </li>
@@ -292,7 +293,6 @@ function DecisionForm(props: {
   const [name, setName] = useState(d?.company_name ?? (c.name_verified ? (c.proposed_company_name ?? '') : ''))
   const [benchmark, setBenchmark] = useState(d?.benchmark_eligible ?? false)
   const [notes, setNotes] = useState(d?.notes ?? '')
-  const uk = ukReviewOf(c)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -369,16 +369,9 @@ function DecisionForm(props: {
           {!canBenchmark && <span className="muted"> (retailer or manufacturer types only)</span>}
         </label>
       )}
-      {approving && (uk.contradicted || !uk.sufficient) && (
-        <p className="small warn-text">
-          {uk.contradicted
-            ? 'The verified evidence includes a statement that the UK is not served. You can still approve; the contradiction stays on record.'
-            : 'There is no sufficient verified UK evidence. You can still approve; say why in the notes.'}
-        </p>
-      )}
       <p className="small muted">
-        UK evidence is separate from approval and from benchmark permission: the evidence is never changed by
-        your decision, and approving never makes a domain a price benchmark.
+        Searching and benchmarking are separate: approving (or automatic search) never makes a domain a price
+        benchmark; only the checkbox above does. Rejecting always stops a domain being searched.
       </p>
       <label className="field">
         Notes (optional)

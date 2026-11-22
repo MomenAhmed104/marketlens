@@ -21,7 +21,7 @@ from app.schemas.review import ReviewDecision
 from app.services import sqlite_backup
 from app.services.review_store import CORE_TABLES, LEGACY_UK_TABLES, SUPPORTED_SCHEMA_VERSIONS, ReviewStore
 from tests.test_review_store import candidate, decision, run
-from tests.uk_fakes import make_v1_db, make_v2_db, table_snapshot
+from tests.store_fakes import make_v1_db, make_v2_db, table_snapshot
 
 
 def sha(p):
@@ -122,8 +122,8 @@ def test_legacy_records_still_load_and_are_never_rewritten(tmp_path):
     rows_before = {t: r for t, r in table_snapshot(path, CORE_TABLES).items()}
 
     cand = store.get_candidate("legacy.co.uk").candidate
-    assert cand.uk_assessment is not None and cand.uk_assessment.sufficient is False  # never trusted as verified
-    assert not hasattr(cand.uk_assessment, "relevance")
+    # Stage 8.1: the retired UK assessment is not part of the model; it loads and is ignored.
+    assert not hasattr(cand, "uk_assessment") and cand.classification_version is None
     dec = store.get_decision("legacy.co.uk")
     assert dec.notes == "checked the about page" and not hasattr(dec, "uk_relevance_override")
     assert store.history("legacy.co.uk")[0].decision is ReviewDecision.APPROVED

@@ -1,14 +1,13 @@
 // What the selected run searched and discovered. Approvals happen in the Pending
-// section and apply to the next run; pending domains are never searched in this run.
-// Each discovered domain also shows the backend's UK evidence view (Option B): the
-// verified quotes and their kinds, unverified claims kept apart, and any contradiction.
+// section and apply to the next run; pending domains that are not automatically
+// searchable (Stage 8.1) are never searched. Each discovered domain shows the backend's
+// reasons for its status in this run. There is no UK verification.
 import type { DiscoveredCompetitor, PipelineResult } from '../api'
 import CompetitorClassPill from '../components/CompetitorClassPill'
 import StatusPill from '../components/StatusPill'
-import { UkDetails, UkSummary } from '../components/UkEvidence'
 import { fromBackendClass } from '../competitorClass'
 import { label } from '../format'
-import { ukReviewOf } from '../ukRelevance'
+import { SERVES_UK_LABEL } from '../searchEligibility'
 
 export default function RunDomains({ result, onShowPending }: { result: PipelineResult; onShowPending: () => void }) {
   const disc = result.discovery
@@ -84,26 +83,27 @@ function DiscoveredClassCell({ c }: { c: DiscoveredCompetitor }) {
   )
 }
 
-// Compact status in the table; the quotes, missing evidence and reasons on demand.
-function UkEvidenceCell({ c }: { c: DiscoveredCompetitor }) {
-  const r = ukReviewOf(c)
-  const quotes = r.verified_evidence.length + r.unverified_claims.length
+// Why the domain has its status in this run (the backend's reasons), on demand.
+function ReasonsCell({ c }: { c: DiscoveredCompetitor }) {
+  const reasons = c.decision_reasons ?? []
+  const auto = c.approval_status === 'AUTO_APPROVED'
   return (
     <>
-      <UkSummary review={r} compact />
-      {r.assessed && (
-        <details className="disclosure uk-run-details">
-          <summary>
-            {quotes > 0 ? `UK evidence (${r.verified_evidence.length} verified, ${r.unverified_claims.length} unverified)` : 'How this was assessed'}
-          </summary>
-          <UkDetails review={r} showSummary />
+      <span className="small">{auto ? 'Automatically searchable' : reasons.length ? 'Not searched automatically' : '—'}</span>
+      {(reasons.length > 0 || c.serves_uk_customers) && (
+        <details className="disclosure run-reasons">
+          <summary>Why</summary>
+          <ul className="small">{reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+          {c.serves_uk_customers && (
+            <p className="small muted">{SERVES_UK_LABEL[c.serves_uk_customers]} (information only).</p>
+          )}
         </details>
       )}
     </>
   )
 }
 
-/** One row per domain discovered in a run: approval in this run, type, class and UK evidence. */
+/** One row per domain discovered in a run: status in this run, type, class and why. */
 export function DiscoveredDomainsTable({ candidates }: { candidates: DiscoveredCompetitor[] }) {
   return (
     <div className="table-scroll">
@@ -114,7 +114,7 @@ export function DiscoveredDomainsTable({ candidates }: { candidates: DiscoveredC
             <th scope="col">Status in this run</th>
             <th scope="col">Company type</th>
             <th scope="col">Classification</th>
-            <th scope="col">UK evidence</th>
+            <th scope="col">Why</th>
           </tr>
         </thead>
         <tbody>
@@ -134,7 +134,7 @@ export function DiscoveredDomainsTable({ candidates }: { candidates: DiscoveredC
                 <DiscoveredClassCell c={c} />
               </td>
               <td>
-                <UkEvidenceCell c={c} />
+                <ReasonsCell c={c} />
               </td>
             </tr>
           ))}

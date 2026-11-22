@@ -13,8 +13,6 @@ from app.agents.discovery.schemas import (
     EvidenceKind,
     ProductQueryPlan,
     QuerySource,
-    UkRelevanceEvidenceKind as UK,
-    UkRelevanceQuote,
     UkSeller,
 )
 from app.schemas.common import DomainApprovalStatus as S
@@ -58,24 +56,15 @@ PLAN = DiscoveryPlan(products=[
 ])  # fmt: skip
 
 
-def c(domain, name, ctype, rel, conf, urls, uk=UkSeller.YES, uk_evidence=()):
+def c(domain, name, ctype, rel, conf, urls, uk=UkSeller.YES):
     return CompanyClassification(domain=domain, company_name=name, company_type=ctype, relevant_categories=["Effects", "Guitars"],
-                                 uk_seller=uk, sells_new_musical_instruments=True, relevance=rel, confidence=conf,
-                                 rationale="From evidence.", evidence_urls=urls,
-                                 uk_evidence=[UkRelevanceQuote(url=u, quote=q, kind=k) for u, q, k in uk_evidence])  # fmt: skip
-
-
-# Verified UK evidence for Beckett's from two different pages (an address and a delivery statement).
-BECKETTS_UK = [
-    ("https://beckettsmusic.co.uk/pages/about", "Independent music shop in Bedford, MK40 1AB", UK.UK_ADDRESS),
-    ("https://beckettsmusic.co.uk/pages/delivery", "We deliver to all UK mainland addresses", UK.UK_DELIVERY),
-]
+                                 serves_uk_customers=uk, sells_new_musical_instruments=True, relevance=rel,
+                                 confidence=conf, rationale="From evidence.", evidence_urls=urls)  # fmt: skip
 
 
 CLASSIFICATIONS = ClassificationBatch(companies=[
     c("beckettsmusic.co.uk", "Beckett's Music", T.SPECIALIST_RETAILER, 0.9, 0.92,
-      ["https://beckettsmusic.co.uk/products/boss-rc-5", "https://beckettsmusic.co.uk/pages/about"],
-      uk_evidence=BECKETTS_UK),
+      ["https://beckettsmusic.co.uk/products/boss-rc-5", "https://beckettsmusic.co.uk/pages/about"]),
     c("ebay.co.uk", "eBay", T.MARKETPLACE, 0.6, 0.9, ["https://www.ebay.co.uk/itm/123"]),
     c("guitarworld.com", "Guitar World", T.OTHER, 0.1, 0.9, ["https://www.guitarworld.com/reviews/boss-rc-5"],
       uk=UkSeller.UNKNOWN),
@@ -138,16 +127,18 @@ def test_decisions(outcome):
     assert beck.approval_status is S.AUTO_APPROVED and beck.price_benchmark is False  # never automatic
     assert beck.name_verified and beck.company_name == "Beckett's Music"
     assert beck.products_matched == ["SB-001", "SB-028"]
-    assert set(beck.uk_signals) >= {"uk_domain", "gbp_price", "uk_postcode"}
     assert cands["ebay.co.uk"].approval_status is S.APPROVAL_REQUIRED  # marketplace: always a person's call
     assert cands["ebay.co.uk"].price_benchmark is False
-    assert cands["guitarworld.com"].approval_status is S.REJECTED
+    # Type 'other' with low relevance: not searched automatically, but never rejected on a score
+    # (Stage 8.1: relevance and confidence are informational only). A person decides.
+    gw = cands["guitarworld.com"]
+    assert gw.approval_status is S.APPROVAL_REQUIRED
+    assert any("type is other" in r for r in gw.decision_reasons)
     look = cands["lookalike-music.co.uk"]
     assert look.approval_status is S.APPROVAL_REQUIRED and not look.name_verified
-    assert any("not verified" in r for r in look.decision_reasons)
-    # Ordering: auto-approved first, rejected last
+    assert any("company name not found" in r for r in look.decision_reasons)
+    # Ordering: automatically searchable first
     assert [x.approval_status for x in result.candidates][0] is S.AUTO_APPROVED
-    assert result.candidates[-1].approval_status is S.REJECTED
 
 
 def test_evidence_and_metadata_preserved(outcome):
@@ -196,7 +187,7 @@ def test_usage_and_prompt_safety(outcome):
     assert u.llm_model == "fake/llm-1@2026"
     classify_prompt = llm.calls[1]["user"]
     assert "<untrusted_evidence>" in classify_prompt and "stompbox.co.uk" not in classify_prompt
-    assert result.thresholds.calibrated is False
+    assert "uk_evidence" not in llm.calls[1]["system"] and "serves_uk_customers" in llm.calls[1]["system"]
 
 
 def test_llm_failures_degrade_to_manual_review(catalogue):

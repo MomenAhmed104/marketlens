@@ -46,41 +46,18 @@ export interface DomainDecision {
   version: number
 }
 
-// --- UK relevance evidence (Option B) ----------------------------------------
-// Mirrors backend schemas. There is no UK category: the backend verifies LLM 1's quotes and
-// decides whether the evidence is sufficient, contradicted or mixed (rules.uk_review); the UI
-// only shows it. UK evidence, domain approval and benchmark permission are separate.
+// --- Search eligibility (Stage 8.1) ---------------------------------------------
+// There is no UK verification: LLM 1 searches for UK-serving retailers, and its
+// `serves_uk_customers` answer is informational only. Whether a pending domain is searched
+// automatically is decided by the backend (rules.is_search_eligible); the UI only shows it.
 
-export type UkEvidenceKind =
-  | 'UK_PHYSICAL_STORE'
-  | 'UK_ADDRESS'
-  | 'UK_COMPANY_REGISTRATION'
-  | 'UK_DELIVERY'
-  | 'NON_UK_OPERATOR'
-  | 'NO_UK_SERVICE'
-  | 'WEAK_SIGNAL'
+export type ServesUkCustomers = 'yes' | 'no' | 'unknown'
 
-export interface UkQuote {
-  url: string
-  quote: string
-  kind: UkEvidenceKind
-  verified: boolean
-  supports: boolean
-  note: string | null
-}
+/** Mirrors the backend's CLASSIFICATION_VERSION (checked by backend tests/test_discovery_contract.py). */
+export const CLASSIFICATION_VERSION = 3
 
-export interface UkReview {
-  assessed: boolean // false: no UK evidence assessment (LLM disabled, failed, or an older record)
-  sufficient: boolean // verified evidence of UK relevance
-  contradicted: boolean // a verified quote says the UK is not served
-  mixed_location: boolean // verified UK presence and a verified based-abroad quote
-  independent_sources: number // distinct evidence pages behind the supporting quotes
-  summary: string
-  reasons: string[]
-  missing_evidence: string[]
-  verified_evidence: UkQuote[]
-  unverified_claims: UkQuote[]
-}
+/** Why a reviewed or pending domain is (not) searched: mirrors the backend's SearchBasis. */
+export type SearchBasis = 'MANUAL_APPROVAL' | 'AUTOMATIC' | 'NOT_SEARCHED'
 
 /** Backend competitor classification (LLM 1 proposal + deterministic code safeguards). */
 export type BackendCompetitorClass = 'DIRECT_COMPETITOR' | 'RELATED_RETAILER' | 'NEEDS_REVIEW'
@@ -91,6 +68,10 @@ export interface CandidateSummary {
   review_status: ReviewStatus
   decision: DomainDecision | null
   search_eligible: boolean
+  // Optional for older backends and fixtures (then derived from review_status).
+  search_basis?: SearchBasis
+  auto_search_eligible?: boolean
+  search_eligibility_reasons?: string[]
   benchmark_eligible: boolean
   discovery_mode: 'LLM_ENABLED' | 'LLM_DISABLED'
   classification_status: 'COMPLETED' | 'SKIPPED_LLM_DISABLED' | 'FAILED' | 'MISSING'
@@ -101,16 +82,18 @@ export interface CandidateSummary {
   proposed_company_type: CompanyType | null
   confidence: number | null
   relevance: number | null
-  uk_seller: 'yes' | 'no' | 'unknown'
-  uk_signals: string[]
+  // LLM 1's informational answer; never a gate. Optional for older fixtures.
+  serves_uk_customers?: ServesUkCustomers
+  serves_uk_customers_note?: string | null
+  classification_version?: number | null
+  // LLM 1: true sells new instruments, false only used (never searched automatically), null unknown.
+  sells_new_musical_instruments?: boolean | null
   products_matched: string[]
   known_marketplace: boolean
   // Final class (the source of truth) and LLM 1's raw proposal. Null on records stored
   // before classification existed (not yet backfilled); optional for older fixtures.
   competitor_class?: BackendCompetitorClass | null
   proposed_competitor_class?: BackendCompetitorClass | null
-  // UK relevance evidence view. Optional for older backends and fixtures.
-  uk_review?: UkReview | null
   evidence_count: number
   first_seen_at: string
   last_seen_at: string
@@ -251,7 +234,8 @@ export interface DiscoveryConfig {
   llm_disabled_reason: string | null
   llm1_model: string | null
   search_provider: string | null
-  thresholds?: { auto_approve_min_relevance: number } // reported by the backend; optional in older fixtures
+  auto_search_enabled?: boolean // Stage 8.1; optional for older backends
+  max_auto_search_targets?: number
 }
 
 export interface IntelligenceConfig {
@@ -278,8 +262,8 @@ export interface DiscoveredCompetitor {
   automatic_approval_status: DomainApprovalStatus | null
   price_benchmark: boolean
   review_decision: DomainDecision | null
-  // UK relevance evidence view, the same as the review API's (optional for older fixtures).
-  uk_review?: UkReview | null
+  decision_reasons?: string[]
+  serves_uk_customers?: ServesUkCustomers
 }
 
 export interface DiscoveryUsage {
@@ -664,12 +648,9 @@ export interface CompetitorDiscoveredPayload {
   competitor_class?: BackendCompetitorClass | null // absent on events from older backends
   proposed_competitor_class?: BackendCompetitorClass | null
   reviewed: boolean
-  // UK relevance evidence view (absent on events from older backends).
-  uk_assessed?: boolean
-  uk_evidence_sufficient?: boolean
-  uk_evidence_contradicted?: boolean
-  uk_mixed_location?: boolean
-  uk_independent_sources?: number
+  // Stage 8.1 (absent on events from older backends).
+  auto_search_eligible?: boolean
+  serves_uk_customers?: ServesUkCustomers
 }
 
 export interface ProductRunResult {

@@ -40,6 +40,17 @@ A domain's review status is `PENDING` (no decision yet), `APPROVED` or
 `REJECTED`. The automatic result from the Phase 3 rules (`AUTO_APPROVED`,
 `APPROVAL_REQUIRED` or `REJECTED`) is shown separately as `automatic_status`.
 
+Since Stage 8.1 (22 Nov 2026) a `PENDING` domain can also be searched without a decision when
+it is automatically search-eligible (`rules.is_search_eligible`: a retailer or specialist
+retailer classified by the current LLM 1 prompt, named in its evidence, with a cited evidence
+URL, a valid domain, not excluded, not a marketplace or directory, not confirmed to sell only used
+instruments, and not rejected). A used-only retailer can still be approved; approval never sets the
+benchmark flag by itself. This is
+recomputed on every request from the stored record; no decision is written for it. The review
+API reports it as `search_basis` (`MANUAL_APPROVAL`, `AUTOMATIC` or `NOT_SEARCHED`),
+`auto_search_eligible` and `search_eligibility_reasons`. A rejection always wins. Rules and the
+per-run cap: `docs/competitor-discovery.md` ("Stage 8.1").
+
 ## Rules (deterministic)
 
 | Rule | Enforced in |
@@ -48,7 +59,8 @@ A domain's review status is `PENDING` (no decision yet), `APPROVED` or
 | Approval (may it be searched?) and benchmark eligibility (do its prices count as a direct retailer benchmark?) are separate | `DomainDecisionRecord` |
 | `benchmark_eligible=true` only for `retailer`, `specialist_retailer` or `manufacturer` (manufacturers since 18 Nov 2026, user decision). Unknown, marketplace, directory and other types are refused (422, never silently changed) | `DomainDecisionRecord` validator and API |
 | A rejected domain is never benchmark-eligible | Same |
-| Known marketplaces (`amazon`, `ebay`, `reverb`, `etsy`, `gumtree` in any TLD; `MARKETPLACE_DOMAIN_LABELS`) can only be approved as `marketplace`, and are never auto-approved, even if LLM 1 calls them a retailer | API and `rules.decide` |
+| Known marketplaces (`amazon`, `ebay`, `reverb`, `etsy`, `gumtree` in any TLD; `MARKETPLACE_DOMAIN_LABELS`) can only be approved as `marketplace`, and are never automatically searchable, even if LLM 1 calls them a retailer | API and `rules.is_search_eligible` |
+| Automatic search eligibility never grants benchmark permission: `benchmark_eligible` is true only for a reviewer-approved domain with the reviewer's explicit flag | API (`_summary`) and `rules.decide` |
 | The 13 preconfigured competitors cannot be approved or rejected here (409). Decisions stored for them are ignored by discovery. Gibson stays a manufacturer reference | API and agent |
 | A domain must have been discovered before it can be decided (404 otherwise), so every decision has evidence | API |
 | A second approve or reject is 409. Changing a decision needs an explicit `PUT`, which keeps the old version in the history | API and store |
@@ -60,9 +72,10 @@ The API and CLI load the current decisions and pass them to the agent:
 - **Targeted searches** (`DiscoveryRunResult.search_targets`) cover:
   - the 13 preconfigured competitors, unchanged;
   - every reviewer-`APPROVED` domain, even if this run did not rediscover it;
-  - in `LLM_ENABLED` mode, domains auto-approved in this run only. Auto-approval is never persisted.
-- **Pending and rejected domains never get targeted queries.** A reviewer
-  rejection overrides an LLM auto-approval.
+  - in `LLM_ENABLED` mode, this run's automatically search-eligible domains (the pipeline and
+    the intelligence API also add stored eligible domains, capped; see `docs/pipeline.md`).
+- **Ineligible pending and rejected domains never get targeted queries.** A reviewer
+  rejection always overrides automatic eligibility.
 - Each targeted query carries `price_benchmark` from the decision, so an
   approved marketplace or unknown-type domain is searched but never used as a
   benchmark. `company_type` stays `null` for domains approved as unknown.
@@ -77,7 +90,7 @@ All routes are under `/api/review`.
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/candidates?status=PENDING\|APPROVED\|REJECTED` | Discovered domains with review status, decision, search and benchmark eligibility, discovery mode, classification status, and confidence/relevance (null unless LLM 1 classified the domain) |
+| GET | `/candidates?status=PENDING\|APPROVED\|REJECTED` | Discovered domains with review status, decision, search status (`search_eligible`, `search_basis`, `auto_search_eligible`, `search_eligibility_reasons`), benchmark eligibility, discovery mode, classification status and version, the informational `serves_uk_customers` / `serves_uk_customers_note`, and confidence/relevance (informational; null unless LLM 1 classified the domain) |
 | GET | `/candidates/{domain}` | The above plus evidence (URL, title, snippet, query, provider, retrieval time), automatic reasons and decision history |
 | POST | `/candidates/{domain}/approve` | Body `{reviewer, company_type (required, may be null), company_name?, benchmark_eligible?, notes?}`. 201 |
 | POST | `/candidates/{domain}/reject` | Body `{reviewer, company_type?, company_name?, notes?}`. 201 |
@@ -88,13 +101,11 @@ All routes are under `/api/review`.
 (`www.shop.co.uk` becomes `shop.co.uk`). Unknown body fields are rejected
 (422). Responses never include settings or keys.
 
-Every candidate has `uk_review` (additive): whether the verified UK evidence is sufficient,
-contradicted or mixed, from how many independent pages, the verified evidence, unverified
-claims and what is missing. There is no UK category and no UK override (Option B, 19 Nov
-2026): the reviewer's judgement is the approve/reject decision and its `notes`, kept in the
-decision history. Bodies that still send `uk_relevance_override` are refused (422). A
-decision never changes the stored evidence, and approval never implies benchmark
-permission. Rules: `docs/competitor-discovery.md` ("UK relevance evidence").
+There is no UK verification (Stage 8.1): `uk_review`, `uk_seller` and `uk_signals` were removed
+from the responses. The reviewer's judgement is the approve/reject decision and its `notes`,
+kept in the decision history. Bodies that still send `uk_relevance_override` are refused (422).
+A decision never changes the stored evidence, and neither approval nor automatic eligibility
+implies benchmark permission.
 
 ## Storage versions
 
@@ -115,7 +126,7 @@ The **Competitor domain review** section on the main page:
 - Filters by Pending, Approved, Rejected or All, with counts.
 - Shows each company's name (or "Company name unknown") and domain, its status, and its type (or **Unknown type**).
 - Shows an **Unclassified · discovered in no-LLM mode** badge where it applies, plus a known-marketplace badge.
-- Shows search and benchmark eligibility, confidence and relevance (or "not assessed"), UK signals and products found.
+- Shows the search status (automatically searchable retailer, manually approved, rejected, manufacturer, marketplace, directory, not classified yet, or pending review) with the backend's reasons, and the informational UK answer on demand.
 - Shows the reviewer, time and notes for decided domains.
 - Has approve, reject and change-decision forms. The type must be chosen, or explicitly set to unknown. The benchmark checkbox is only enabled for retailer and manufacturer types.
 - Has an expandable evidence list (links, snippets, query, retrieval time) and the decision history.
@@ -129,15 +140,19 @@ The **Competitor domain review** section on the main page:
 - The UI has no automated frontend tests (none exist in the project). It is
   covered by lint, type-checked build and backend API tests.
 
-## Stored records and thresholds (checked 20 November 2026)
+## Stored records (checked read-only on a copy, 22 November 2026)
 
-- The real review database holds 48 candidates (39 pending, 7 approved, 2
-  rejected). None has a UK evidence assessment: 38 come from no-LLM runs and 10
-  from an LLM 1 run on 14 November 2026, before Option B. They show "UK evidence
-  not assessed" until rediscovered with LLM 1, and are not backfilled (D9).
-- Auto-approval thresholds are the settings defaults (confidence 0.85,
-  relevance 0.75, 2 evidence URLs; rejection at relevance 0.3), not overridden
-  in `.env`. They are uncalibrated starting values; calibrate them against a
-  labelled set (Phase 9) before changing them.
+- Before Stage 8.1 the real review database (version 1) held 69 candidates and 9 decisions: 7 approved
+  (`absolutemusic.co.uk`, `amazon.com` as marketplace, `ashdownmusic.com`, `audiodirect.co.uk`,
+  `backalleymusic.co.uk`, `billybowmanmusic.co.uk` with benchmark permission, `bopdj.com`) and 2
+  rejected (`amazon.co.uk`, `scan.co.uk`). All are kept unchanged.
+- None of the 60 pending candidates is automatically searchable: 37 were classified before
+  Stage 8.1 (no `classification_version`, so they need rediscovery) and 32 have no completed
+  LLM 1 classification (counts include decided domains). Some still hold the retired
+  `uk_assessment`; it loads and is ignored, and is dropped only when the record is next
+  rewritten by a discovery run.
+- A later discovery run (`discovery-20261122T142946Z-226a39`, 22 Nov 2026 14:29 UTC) wrote 15 candidates
+  at classification version 3: 80 candidates, 14 automatically eligible, decisions unchanged.
+- The former auto-approval thresholds were removed in Stage 8.1; scores are informational.
 - Version-2 review databases (retired UK gate) are still opened read/write for
   the three core tables; their UK tables are never read, written or dropped.

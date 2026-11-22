@@ -18,7 +18,7 @@ from app.services.search.http import ProviderNotConfiguredError
 from tests.intelligence_fakes import FakeExtractLLM, FakeIntelSearch
 from tests.search_fakes import make_settings
 from tests.test_intelligence_agent import EXTRACTIONS, HITS, PAGES
-from tests.uk_fakes import CONFIGURED_13
+from tests.store_fakes import CONFIGURED_13
 
 RUN = "/api/intelligence/runs"
 SECRET = "sk-or-never-shown"

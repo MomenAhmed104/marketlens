@@ -143,17 +143,15 @@ generic admin-panel look.
   - filter chips (`aria-pressed`), a product filter, and a "Follow live" switch;
   - while paused, a "N new · resume" pill;
   - events grouped under sticky stage headings, newest first, capped at 200.
-  - each `competitor_discovered` item shows the backend class and a UK evidence
-    pill with "From N independent pages" (`ukRelevance.ukEventStatus`, flags
-    only; events from older backends without UK fields show no pill).
+  - each `competitor_discovered` item shows the backend class and, when
+    `auto_search_eligible` is true, an "Automatically searchable" pill (Stage 8.1;
+    older events show none). The UK evidence pill was removed.
   - This is display only; SSE ingestion is untouched.
-- **Discovered domains and UK evidence** (Stage 6.3.3, shown when the run result
-  has discovery candidates): `RunDomains.DiscoveredDomainsTable`, the same table
-  as Domain Review's run summary, with a UK evidence column. Each row shows the
-  evidence status and, on demand, the verified quotes with their kinds, missing
-  evidence, unverified claims (labelled "Not verified", kept apart) and how it was
-  assessed (`components/UkEvidence.tsx`, shared with the Domain Review cards).
-  A domain without a UK view shows "UK evidence not assessed" and nothing else.
+- **Discovered domains** (shown when the run result has discovery candidates):
+  `RunDomains.DiscoveredDomainsTable`, the same table as Domain Review's run summary. Since
+  Stage 8.1 its last column is **Why**: "Automatically searchable" or "Not searched
+  automatically", with the backend's `decision_reasons` and LLM 1's informational UK answer on
+  demand. The UK evidence column and `components/UkEvidence.tsx` were removed.
 - **New run:** the catalogue picker, and a sticky **selection tray** with "N of
   5 selected", discovery and domain options, the disabled reason and Start.
 
@@ -174,6 +172,16 @@ generic admin-panel look.
     It is omitted when there is no type (the card then says Needs Review), except
     that a known marketplace domain shows "marketplace (known marketplace domain)";
   - for decided domains, one line: "Approved/Rejected by <reviewer>, <date>";
+  - the **search status** (Stage 8.1, `searchEligibility.ts`, `components/SearchStatus.tsx`),
+    from the backend's `search_basis` and reasons: "Automatically searchable retailer",
+    "Manually approved: searched", "Rejected: never searched", "Manufacturer: needs review",
+    "Marketplace: needs review", "Directory: not searched for offers", "Used-only retailer: needs
+    review", "Pending: not
+    classified yet" (no LLM 1 classification, or one from before Stage 8.1 that needs
+    rediscovery), "Eligible: automatic search is off" or "Pending review", with one line saying
+    why. "Show evidence" adds the full reasons and LLM 1's `serves_uk_customers` answer,
+    labelled as information only. Approve and Reject stay available on automatic domains.
+    The benchmark checkbox in the decision form is unchanged and never ticked automatically.
   - actions: Approve (primary), Reject, or Change decision, plus "Show evidence (N)";
   - evidence on demand: product pages first, each with a link, a snippet clamped
     to three lines, and its source and retrieval time (scrolls past 360 px).
@@ -264,8 +272,9 @@ page tests render the whole app against `mockAppApi`.
 | `app/AppShell.test.tsx` | grouped navigation and `aria-current`; `?run=` kept; default run and page; pending count; config; drawer and Escape; skip link; one stream across pages; badge hidden when finished; **run switcher keyboard** (open, Escape returns focus, arrow and Enter switches run); connection badge states |
 | `pages/Overview.test.tsx` | hero product and key finding; stat tiles and their sources; distribution counts only; price cards; coverage folding; price explainer when LLM 2 is off; needs attention; empty and expired states |
 | `pages/ProductIntelligence.test.tsx` | header; eligible-only difference; non-benchmark label; **evidence drawer** (opening tab by status, tab arrows, Escape, Close returns focus, focus trap); collapsed no-match; missing price; no-LLM and empty states |
-| `pages/LiveRuns.test.tsx` | start request and SSE; 429; two-step cancel with focus and 409; every stage state; outcome, re-run and approved-since note; feed filter chips; expired run |
-| `pages/LiveRunsUk.test.tsx` | UK evidence in Live Runs: verified quotes and kinds, unverified claims kept apart, contradiction and reasons, not-assessed rows, no section without discovery, feed pills from event flags, older events without UK fields |
+| `pages/LiveRuns.test.tsx` | start request and SSE; 429; two-step cancel with focus and 409; every stage state; outcome, re-run and approved-since note; feed filter chips; expired run; "Automatically searchable" feed pill from `auto_search_eligible`, no `uk_*` payload fields |
+| `searchEligibility.test.ts` | every search status (automatic, manual approval, rejected, manufacturer, marketplace, directory, unclassified or pre-Stage 8.1, pending, automatic search off); the UK answer never changes it; older backends without `search_basis` |
+| `pages/DomainReviewSearch.test.tsx` | Domain Review search status and reasons, no UK evidence UI, informational UK answer on demand, benchmark checkbox separate and never ticked, approved and rejected shown distinctly |
 | `pages/DomainReview.test.tsx` | approval workflow; **approval and benchmark shown separately**; configured tiles; rejected; run-scoped excluded; arrow-key tabs; selected-run summary |
 | `CataloguePicker`, `reviewer`, `format` tests | filter and 5-product limit; shared reviewer name; formatting (missing vs zero, signed difference, dates without seconds, plurals) |
 
@@ -283,7 +292,7 @@ page tests render the whole app against `mockAppApi`.
   iframe of exactly that width). It found that wide tables widened Live Runs at
   390 px (grid items with `min-width: auto`); fixed in `index.css`. After the fix
   no page scrolls horizontally; tables scroll inside their own container, so the
-  UK evidence column of the discovered-domains table needs a sideways scroll on
+  last column of the discovered-domains table needs a sideways scroll on
   a phone. Not checked: a real phone, other browsers, touch interaction, a live
   run streaming real data.
 

@@ -41,7 +41,7 @@ def summarise(result) -> str:
         lines.append(
             f"  [{c.approval_status.value:17}] {c.domain:30} classification={c.classification_status.value} "
             f"name={c.company_name!r} type={c.company_type and c.company_type.value} "
-            f"conf={c.confidence} rel={c.relevance} uk={c.uk_signals} products={c.products_matched}{reviewed}"
+            f"conf={c.confidence} rel={c.relevance} serves_uk={c.serves_uk_customers.value} products={c.products_matched}{reviewed}"
         )
         for r in c.decision_reasons:
             lines.append(f"      - {r}")

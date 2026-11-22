@@ -12,23 +12,28 @@ Rules (deterministic):
   (BENCHMARK_ELIGIBLE_TYPES).
 - Known marketplaces (amazon, ebay, ...) can only be approved as 'marketplace'.
 - Approve/reject on an already-decided domain is a 409: use PUT to update.
+
+Stage 8.1: a pending domain can also be searchable without a decision, when the
+deterministic `rules.is_search_eligible` says so (recomputed from the stored record on
+every request; nothing is written). A rejection always wins. Automatic search
+eligibility never grants benchmark permission.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.agents.discovery.rules import is_known_marketplace, uk_review
+from app.agents.discovery.rules import is_known_marketplace, is_search_eligible, policy_from_settings
 from app.agents.discovery.schemas import (
     ClassificationStatus,
     CompetitorClass,
     DiscoveryMode,
     EvidenceItem,
-    UkReview,
     UkSeller,
 )
 from app.schemas.common import DomainApprovalStatus
@@ -88,13 +93,27 @@ class UpdateDecisionRequest(_DecisionBody):
 # --------------------------------------------------------------------------- views
 
 
+class SearchBasis(StrEnum):
+    """Why a reviewed or pending domain is (not) searched for products."""
+
+    MANUAL_APPROVAL = "MANUAL_APPROVAL"  # a reviewer approved it
+    AUTOMATIC = "AUTOMATIC"  # pending, and automatically search-eligible (rules.is_search_eligible)
+    NOT_SEARCHED = "NOT_SEARCHED"  # rejected, or pending and not eligible (or automatic search is off)
+
+
 class CandidateSummary(BaseModel):
     domain: str
     homepage_url: str
     review_status: ReviewStatus
     decision: DomainDecisionRecord | None
     # Separate concepts: searchable at all vs. counts as a retailer price benchmark.
+    # search_eligible: reviewer-approved, or automatically eligible while automatic search
+    # is on (PIPELINE_SEARCH_AUTO_APPROVED). An automatic domain is still subject to the
+    # per-run cap. benchmark_eligible: only a reviewer's explicit flag, never automatic.
     search_eligible: bool
+    search_basis: SearchBasis
+    auto_search_eligible: bool  # the rule's answer, whatever the decision or setting
+    search_eligibility_reasons: list[str]
     benchmark_eligible: bool
     # What discovery found. Classification fields are null unless LLM 1 classified it.
     discovery_mode: DiscoveryMode
@@ -106,18 +125,18 @@ class CandidateSummary(BaseModel):
     proposed_company_type: CompanyType | None
     confidence: float | None
     relevance: float | None
-    uk_seller: UkSeller
-    uk_signals: list[str]
+    # LLM 1's informational answer (never a gate). Older records give their stored value.
+    serves_uk_customers: UkSeller
+    serves_uk_customers_note: str | None
+    classification_version: int | None  # None: classified before Stage 8.1 (or not at all)
+    # LLM 1: True new instruments, False only used (never searched automatically), None unknown.
+    sells_new_musical_instruments: bool | None
     products_matched: list[str]
     known_marketplace: bool
     # Competitor classification (additive; separate from approval and benchmark eligibility).
     # None on records stored before classification existed.
     competitor_class: CompetitorClass | None = None
     proposed_competitor_class: CompetitorClass | None = None
-    # UK relevance evidence view (additive): verified evidence, unverified claims, whether the
-    # evidence is sufficient or contradicted, and what is missing. Always present; a record
-    # with no assessment gives assessed=false. Never approval or benchmarking.
-    uk_review: UkReview
     evidence_count: int
     first_seen_at: datetime
     last_seen_at: datetime
@@ -160,21 +179,40 @@ def _status(d: DomainDecisionRecord | None) -> ReviewStatus:
     return ReviewStatus(d.decision.value) if d else ReviewStatus.PENDING
 
 
-def _summary(s: StoredCandidate, d: DomainDecisionRecord | None, labels: tuple[str, ...]) -> dict:
+def _summary(s: StoredCandidate, d: DomainDecisionRecord | None, settings) -> dict:
     c = s.candidate
+    labels = settings.marketplace_domain_labels
     approved = d is not None and d.decision is ReviewDecision.APPROVED
+    rejected = d is not None and d.decision is ReviewDecision.REJECTED
+    auto = is_search_eligible(c, d, policy_from_settings(settings))
+    if approved:
+        basis, reasons = SearchBasis.MANUAL_APPROVAL, [f"Approved by {d.reviewer}"]
+    elif rejected:
+        basis, reasons = SearchBasis.NOT_SEARCHED, [f"Rejected by {d.reviewer}: never searched"]
+    elif auto.eligible and settings.pipeline_search_auto_approved:
+        basis, reasons = SearchBasis.AUTOMATIC, [*auto.reasons, f"At most {settings.max_auto_search_targets} "
+                                                 "automatic domain(s) are searched per run"]  # fmt: skip
+    elif auto.eligible:
+        basis, reasons = SearchBasis.NOT_SEARCHED, [*auto.reasons, "Automatic search is switched off "
+                                                    "(PIPELINE_SEARCH_AUTO_APPROVED=false)"]  # fmt: skip
+    else:
+        basis, reasons = SearchBasis.NOT_SEARCHED, [f"Not searched until approved: {r}" for r in auto.reasons]
     return dict(
         domain=s.domain, homepage_url=c.homepage_url, review_status=_status(d), decision=d,
-        search_eligible=approved, benchmark_eligible=approved and d.benchmark_eligible,
+        search_eligible=basis is not SearchBasis.NOT_SEARCHED, search_basis=basis,
+        auto_search_eligible=auto.eligible, search_eligibility_reasons=reasons,
+        benchmark_eligible=approved and d.benchmark_eligible,
         discovery_mode=s.discovery_mode, classification_status=c.classification_status,
         llm_classified=c.classification_status is ClassificationStatus.COMPLETED,
         automatic_status=c.automatic_approval_status or c.approval_status,
         proposed_company_name=c.company_name, name_verified=c.name_verified,
         proposed_company_type=c.company_type, confidence=c.confidence, relevance=c.relevance,
-        uk_seller=c.uk_seller, uk_signals=c.uk_signals, products_matched=c.products_matched,
+        serves_uk_customers=c.serves_uk_customers, serves_uk_customers_note=c.serves_uk_customers_note,
+        classification_version=c.classification_version, products_matched=c.products_matched,
+        sells_new_musical_instruments=c.sells_new_musical_instruments,
         known_marketplace=is_known_marketplace(s.domain, labels), evidence_count=len(c.evidence),
         competitor_class=c.competitor_class, proposed_competitor_class=c.proposed_competitor_class,
-        uk_review=uk_review(c.uk_assessment, d), first_seen_at=s.first_seen_at, last_seen_at=s.last_seen_at, times_seen=s.times_seen,
+        first_seen_at=s.first_seen_at, last_seen_at=s.last_seen_at, times_seen=s.times_seen,
         last_run_id=s.last_run_id,
     )  # fmt: skip
 
@@ -232,8 +270,8 @@ def list_candidates(request: Request, status_filter: Annotated[ReviewStatus | No
     """Discovered domains with their review status. Filter with ?status=PENDING|APPROVED|REJECTED."""
     store = _store(request)
     decisions = {d.domain: d for d in store.list_decisions()}
-    labels = request.app.state.settings.marketplace_domain_labels
-    out = [_summary(s, decisions.get(s.domain), labels) for s in store.list_candidates()]
+    settings = request.app.state.settings
+    out = [_summary(s, decisions.get(s.domain), settings) for s in store.list_candidates()]
     return [o for o in out if status_filter is None or o["review_status"] is status_filter]
 
 
@@ -247,7 +285,7 @@ def get_candidate(request: Request, domain: DomainParam):
         raise HTTPException(404, detail=f"{domain} is not in the review queue")
     c = stored.candidate
     return CandidateDetail(
-        **_summary(stored, store.get_decision(domain), request.app.state.settings.marketplace_domain_labels),
+        **_summary(stored, store.get_decision(domain), request.app.state.settings),
         evidence=c.evidence, cited_evidence_urls=c.cited_evidence_urls,
         relevant_categories=c.relevant_categories, rationale=c.rationale,
         automatic_reasons=[r for r in c.decision_reasons if not r.startswith("Reviewer decision")],

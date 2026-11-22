@@ -76,7 +76,7 @@ class FakeLLM(LLMClient):
 def stored(domain, *, evidence=None, products=("SB-001",), **fields) -> DiscoveredCompetitor:
     c = candidate(domain, evidence=evidence, products=products) if evidence != [] else DiscoveredCompetitor(
         domain=domain, hostnames=[domain], homepage_url=f"https://{domain}/", evidence=[], products_matched=[],
-        uk_signals=[], discovered_at=NOW)  # fmt: skip
+        discovered_at=NOW)  # fmt: skip
     return c.model_copy(update={"classification_status": ClassificationStatus.SKIPPED_LLM_DISABLED,
                                 "competitor_class": N,
                                 "competitor_class_reasons": ["No completed LLM 1 classification"], **fields})
@@ -178,8 +178,8 @@ def test_all_records_are_processed_with_safe_statuses(catalogue, db_copy):
     assert b.previous.competitor_class is N and b.previous.classification_status is ClassificationStatus.SKIPPED_LLM_DISABLED
     assert (b.proposed_competitor_class, b.final_competitor_class, b.changed) == (D, D, True)
     assert b.classification_reasons[-1] == "Accepted: DIRECT_COMPETITOR" and b.classification_model == "fake/llm-1@2026"
-    # 4 = two product pages + the about/delivery profile pages (shared fixture with verified UK evidence)
-    assert b.review_status is ReviewStatus.APPROVED and b.has_usable_evidence and b.evidence_count == 4
+    # 2 = two product pages (shared fixture)
+    assert b.review_status is ReviewStatus.APPROVED and b.has_usable_evidence and b.evidence_count == 2
 
     for domain in ("broken.co.uk", "silent.co.uk", "crash.co.uk", "corrupt.co.uk", "no-evidence.co.uk", "blank.co.uk",
                    "andertons.co.uk"):  # fmt: skip
@@ -239,7 +239,7 @@ def test_dry_run_leaves_the_copy_byte_for_byte_unchanged(catalogue, source_db, d
     rows = {r[0]: r for r in after["review_candidates"]}
     beck = json.loads(rows["beckettsmusic.co.uk"][5])
     assert rows["beckettsmusic.co.uk"][3:5] == ("run-2", 2)
-    assert beck["candidate"]["competitor_class"] == "NEEDS_REVIEW" and len(beck["candidate"]["evidence"]) == 4
+    assert beck["candidate"]["competitor_class"] == "NEEDS_REVIEW" and len(beck["candidate"]["evidence"]) == 2
     assert beck["candidate"]["review_decision"] is None
 
 

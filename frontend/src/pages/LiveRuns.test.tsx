@@ -78,6 +78,26 @@ describe('Live Runs page', () => {
     expect(within(item('lookalike-music.co.uk')).queryByTestId('competitor-class')).not.toBeInTheDocument()
   })
 
+  it('marks automatically searchable domains from competitor_discovered events, with no UK verification flags', async () => {
+    calls = mockAppApi({ run: running() })
+    at(`?run=${RUN_ID}`, '#/runs')
+    render(<App />)
+    await waitFor(() => expect(sources).toHaveLength(1))
+    const discovered = F.events.filter((e) => e.type === 'competitor_discovered')
+    expect(discovered.every((e) => Object.keys(e.payload).every((k) => !k.startsWith('uk_')))).toBe(true) // backend payload
+    expect(discovered.every((e) => typeof e.payload.auto_search_eligible === 'boolean')).toBe(true)
+    const upTo = Math.max(...discovered.map((e) => e.seq))
+    act(() => {
+      sources[0].open()
+      F.events.filter((e) => e.seq <= upTo).forEach((e) => sources[0].emit(e))
+    })
+    const item = (domain: string) =>
+      screen.getByText((text) => text.startsWith(`Discovered ${domain} (`)).closest<HTMLElement>('.feed-item')!
+    expect(within(item('beckettsmusic.co.uk')).getByTestId('auto-searchable')).toHaveTextContent('Automatically searchable')
+    expect(within(item('ebay.co.uk')).queryByTestId('auto-searchable')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('uk-evidence')).not.toBeInTheDocument()
+  })
+
   it('shows why a run could not start', async () => {
     const user = userEvent.setup()
     mockAppApi({

@@ -54,7 +54,7 @@ describe('Domain Review page', () => {
     proposed_company_type: 'retailer',
     relevance: 0.93,
     confidence: 0.97,
-    uk_seller: 'yes',
+    serves_uk_customers: 'yes',
     evidence_count: 2,
     ...over,
   })
@@ -271,6 +271,10 @@ describe('Domain Review page', () => {
     expect(discovered.every((c) => c.competitor_class)).toBe(true) // the fixture follows the backend schema
     expect(within(row('ebay.co.uk')).getByTestId('competitor-class')).toHaveTextContent('Related Retailer')
     expect(within(row('guitarworld.com')).getByTestId('competitor-class')).toHaveTextContent('Needs Review')
+    // Stage 8.1: the reasons column replaces UK evidence; automatic domains say so.
+    const beck = within(run).getAllByRole('rowheader', { name: 'beckettsmusic.co.uk' }).at(-1)!.closest('tr')! // discovered table
+    expect(within(beck).getByText('Automatically searchable', { selector: 'span.small' })).toBeInTheDocument()
+    expect(within(run).queryByText(/UK evidence/)).not.toBeInTheDocument()
   })
 
   const approveForm = async (type: string) => {

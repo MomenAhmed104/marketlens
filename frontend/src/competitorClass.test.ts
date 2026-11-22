@@ -18,7 +18,7 @@ const llm = (over: Partial<CandidateSummary> = {}): CandidateSummary => ({
   proposed_company_type: 'retailer',
   relevance: 0.9,
   confidence: 0.95,
-  uk_seller: 'yes',
+  serves_uk_customers: 'yes',
   ...over,
 })
 
@@ -104,7 +104,7 @@ describe('competitorClass: temporary fallback for records without a backend clas
   it('uncertain or missing data is Needs Review', () => {
     expect(competitorClass(makeCandidate('nollm.example'))).toBe('NEEDS_REVIEW')
     expect(competitorClass(llm({ proposed_company_type: null }))).toBe('NEEDS_REVIEW')
-    expect(competitorClass(llm({ uk_seller: 'unknown', relevance: null }))).toBe('NEEDS_REVIEW')
+    expect(competitorClass(llm({ serves_uk_customers: 'unknown', relevance: null }))).toBe('NEEDS_REVIEW')
     expect(competitorClass(llm({ proposed_company_type: 'marketplace' }))).toBe('NEEDS_REVIEW') // unreviewed LLM type only
   })
 })

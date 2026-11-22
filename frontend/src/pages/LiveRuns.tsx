@@ -173,12 +173,12 @@ export default function LiveRuns() {
       {discovered.length > 0 && (
         <section className="panel-flat" aria-labelledby="discovered-heading">
           <div className="section-head">
-            <h2 id="discovered-heading">Discovered domains and UK evidence</h2>
+            <h2 id="discovered-heading">Discovered domains</h2>
             <span className="hint-inline">{plural(discovered.length, 'domain')}</span>
           </div>
           <p className="hint">
-            UK evidence is verified by the backend and is separate from approval and benchmark permission. Pending
-            domains are not searched in this run; review them on Domain Review.
+            Retailers that pass the basic checks are searched automatically (never as price benchmarks). Other
+            domains stay pending and are not searched until approved on Domain Review; a rejection always wins.
           </p>
           <DiscoveredDomainsTable candidates={discovered} />
         </section>

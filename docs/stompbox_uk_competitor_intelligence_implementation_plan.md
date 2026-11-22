@@ -36,9 +36,9 @@ flowchart TD
     A[Client uploads Excel product catalogue] --> B[Catalogue validation and normalization]
     B --> C[LLM1: UK-focused competitor discovery]
     C --> D[Search provider and evidence retrieval]
-    D --> E[Python verification of UK-relevance evidence]
-    E --> F[Competitor review and domain approval]
-    F --> G[Approved domains with verified UK relevance]
+    D --> E[Python basic domain validation and automatic search eligibility]
+    E --> F[Competitor review: approve or reject uncertain domains]
+    F --> G[Search targets: configured, reviewer-approved and automatically eligible retailers]
     G --> D2[Python: product search and page retrieval]
     D2 --> H[LLM2 Product Intelligence Agent: extraction and match proposal]
     H --> I[Python validation and final matching decisions]
@@ -50,11 +50,11 @@ flowchart TD
 
 1. The client uploads an Excel catalogue.
 2. The system validates and normalizes the catalogue products.
-3. LLM1 discovers competitors specifically relevant to the UK market.
+3. LLM1 discovers competitors selling to UK customers through its UK-focused search strategy (Stage 8.1, 22 November 2026).
 4. Search and retrieval services gather evidence about candidate businesses and domains.
-5. Python verifies the evidence supporting whether each discovered business is relevant to the UK market.
-6. The review workflow presents verified evidence and uncertainty, then supports domain approval or rejection.
-7. Approved domains with sufficient verified UK relevance become eligible inputs to product discovery.
+5. Python performs basic domain validation (valid normalised domain, deduplication, exclusions, company name and cited URLs in the evidence, company type, known marketplaces and directories) and decides automatic search eligibility (`rules.is_search_eligible`). There is no UK verification step.
+6. The review workflow lets a reviewer approve or reject domains that are not automatically eligible, and reject any automatically eligible one.
+7. Configured competitors, reviewer-approved domains and automatically eligible retailer domains (capped per run) become inputs to product discovery. Benchmark permission stays separate.
 8. Python searches approved competitor domains for each selected product and retrieves candidate pages (unchanged search and retrieval behaviour).
 9. LLM2 extracts and organizes product information from each retrieved page and proposes a match classification against the catalogue product, citing page quotes.
 10. Python validates extracted fields, evidence, prices, availability, and LLM2's match proposal, and makes the final match and price-comparison decisions according to deterministic rules.
@@ -63,10 +63,9 @@ flowchart TD
 ### 2.2 Architecture principles
 
 - UK-focused discovery is performed by LLM1; the system must not become a worldwide discovery system followed by an unnecessarily separate UK discovery subsystem.
-- UK relevance must be supported by evidence and deterministic Python verification, not merely by an LLM assertion.
-- UK relevance is represented through verified evidence and uncertainty in the discovery/review workflow; there is no separate formal four-category assessment system.
-- Human review remains available for uncertain cases and domain approval.
-- Domain approval and price-benchmark permission are separate decisions; evidence of UK relevance does not itself approve a domain or grant benchmark permission.
+- UK relevance comes from LLM1's UK-focused search strategy (Stage 8.1, 22 November 2026). There is no UK verification, UK evidence scoring or UK approval gate, and none may be reintroduced under another name without approval. A UK company location is not the same as UK customer relevance; `.co.uk`, GBP prices and UK addresses are never required.
+- Human review remains available for uncertain cases and domain approval; a human rejection always overrides automatic search eligibility.
+- Search eligibility and price-benchmark permission are separate decisions; automatic eligibility never grants benchmark permission.
 - LLM output is not trusted as verified fact without the applicable Python validation.
 - The system should preserve the existing hybrid discovery approach: configured competitors plus newly discovered candidates.
 - The current demo uses selected product execution and temporary persistence.
@@ -96,11 +95,11 @@ LLM1 should find both:
 - UK-based retailers.
 - Retailers based outside the UK that serve UK customers.
 
-LLM1 should propose relevant company/domain information and supporting evidence. It should not make final trusted decisions about domain approval or benchmark permission.
+LLM1 should propose relevant company/domain information: company name, domain, competitor type, product/category overlap, cited supporting search results, informational relevance and confidence, and an informational `serves_uk_customers` answer (yes/no/unknown) with a short note. It should not make final trusted decisions about search eligibility, domain approval or benchmark permission.
 
-The discovery process must cover both UK-based retailers and overseas retailers that serve UK customers. Python verifies the supporting evidence and makes the verified evidence/uncertainty available to the review workflow.
+The discovery process must cover both UK-based retailers and overseas retailers that serve UK customers. Its search strategy includes terms such as UK musical instrument retailers, UK guitar shops, UK music equipment retailers, musical instrument shops delivering to the UK, and UK stockists of the brand or product.
 
-**Approved simplification:** Do not maintain a formal four-category UK assessment system (`UK_BASED`, `SERVES_UK_FROM_ABROAD`, `NOT_SERVING_UK`, `UNKNOWN`) as a separate classification structure. The required outcome is evidence-backed UK relevance, represented directly through verified evidence and uncertainty in the existing discovery and review flow.
+**Stage 8.1 simplification (approved 22 November 2026; supersedes Option B):** LLM1 is not asked for UK evidence quotes, and Python does not verify, score or gate UK relevance. `serves_uk_customers` is shown to reviewers for information only and never affects eligibility, approval or exclusion (not even "no").
 
 ### 3.3 Search and retrieval provider
 
@@ -123,14 +122,13 @@ Provider choice and API usage must remain configurable through the existing arch
 
 Examples include:
 
-- Verify that a quoted claim is present in the stored evidence for the cited URL.
-- Reject unsupported evidence.
-- Verify that evidence supports the claim that a discovered business serves or operates in the UK market.
-- Distinguish verified evidence from unsupported claims and uncertainty.
-- Do not rely on weak signals such as a `.co.uk` domain or GBP pricing alone.
-- Enforce domain approval and the verified UK-relevance requirement before product discovery.
-- Validate extracted product fields and prices.
-- Keep benchmark permission separate from UK relevance and domain approval.
+- Normalise and validate domains; deduplicate by registrable domain; exclude the own site, non-shop platforms and removed competitors (PMT).
+- Keep only cited URLs that are in the stored evidence, and verify that the company name appears in the evidence.
+- Classify competitor type and apply the type-based safeguards (known marketplaces, manufacturers, directories).
+- Decide automatic search eligibility deterministically (`rules.is_search_eligible`); never from relevance, confidence or `serves_uk_customers`.
+- Enforce search permission before product discovery: configured, reviewer-approved or automatically eligible (capped) domains only; rejected domains never.
+- Validate extracted product fields and prices (quote verification is unchanged for LLM2).
+- Keep benchmark permission separate from search eligibility and domain approval.
 
 Python is the enforcement layer for rules that must be predictable and testable.
 
@@ -138,9 +136,9 @@ Python is the enforcement layer for rules that must be predictable and testable.
 
 **Responsibility:** Resolve uncertain cases and make explicit approval decisions.
 
-Reviewers should be able to inspect verified UK-relevance evidence, unverified claims where exposed, and reasons for uncertainty.
+Reviewers should be able to see why each domain is or is not searched (automatically searchable retailer, manually approved, rejected, manufacturer, marketplace, directory, not yet classified, or pending review), inspect the discovery evidence, and approve or reject.
 
-Human domain-approval decisions must remain distinct from evidence verification. A reviewer decision must not rewrite or misrepresent the underlying source evidence.
+A reviewer decision must not rewrite or misrepresent the underlying source evidence.
 
 ### 3.6 LLM2 — Product Intelligence Agent
 
@@ -204,43 +202,41 @@ The following decisions are treated as approved project constraints.
 | Dashboard | Live |
 | LLM architecture | Two specialized LLMs |
 | LLM provider routing | OpenRouter |
-| UK relevance | LLM1 performs UK-focused discovery; Python verifies supporting evidence; review shows evidence and uncertainty without a separate four-category assessment system |
-| Human review | Required for uncertain candidates and domain approval |
-| Benchmark permission | Separate from domain approval and UK relevance; reviewer-controlled |
-| Automatic benchmark permission | Automatic domain approval must not grant benchmark permission |
+| UK relevance | LLM1's UK-focused search strategy only; no UK verification, scoring or gate (Stage 8.1, 22 Nov 2026) |
+| Automatic search eligibility | Retailer or specialist retailer, LLM1 classification at the current version, name and a cited URL in the discovery evidence, valid domain, not excluded, not a marketplace or directory, not rejected; persists across runs; capped per run |
+| Human review | Required for candidates that are not automatically eligible; a rejection always wins |
+| Benchmark permission | Separate from search eligibility and domain approval; reviewer-controlled |
+| Automatic benchmark permission | Automatic search eligibility must not grant benchmark permission |
 | Configured competitor flags | Existing workbook benchmark flags are preserved |
 | Manufacturer/marketplace rules | Existing rules remain unchanged unless explicitly approved |
 
-### 4.1 UK relevance and evidence rules
+### 4.1 UK relevance (Stage 8.1, 22 November 2026)
 
-The approved approach is evidence-based UK relevance verification integrated into LLM1 discovery and the existing review workflow. There is no separate formal four-category assessment structure.
+UK relevance comes from LLM1's search strategy. It replaced the Option B evidence verification (19 November 2026), which very few domains could pass and which duplicated the approval workflow.
 
 - Discovery must cover UK-based retailers and overseas retailers that serve UK customers.
-- Python verifies that supporting quotes/claims are present in the stored evidence.
-- The review interface distinguishes verified evidence from unverified claims and makes uncertainty clear.
-- Weak signals such as a `.co.uk` domain or GBP pricing alone are insufficient.
-- The accepted positive delivery wording includes `sell`, as explicitly decided.
-- Existing regression coverage includes wording such as “No delivery charge to the UK” not being treated as evidence that UK delivery is unavailable.
-
-Do not weaken or reinterpret these evidence rules without asking. If a specific case cannot be resolved from the evidence, keep it visibly uncertain for human review rather than inventing a classification.
+- A physical UK location, a `.co.uk` domain and GBP prices are never required, and never stand in for UK customer relevance.
+- LLM1's `serves_uk_customers` answer is informational only.
+- Do not introduce a replacement UK verification, scoring or approval mechanism under another name without asking.
+- General domain validation, product matching, price validation and extraction safeguards are unchanged.
 
 ---
 
-## 5. Domain approval, UK relevance evidence, and benchmark permission
+## 5. Search eligibility, domain approval, and benchmark permission
 
-These are distinct concepts and must remain distinct in code, API contracts, UI, and tests. UK relevance is verified through evidence in the discovery/review workflow; it is not a separate approval decision or a standalone four-category subsystem.
+These are distinct concepts and must remain distinct in code, API contracts, UI, and tests.
 
-### 5.1 UK relevance evidence
+### 5.1 Automatic search eligibility
 
-Answers: Is there verified evidence that the business operates in or serves the UK market?
+Answers: May this discovered domain be searched for products without a person approving it?
 
-Evidence verification does not itself approve a domain or grant benchmark permission. Insufficient or conflicting evidence must remain visible for human review.
+Decided by `rules.is_search_eligible` from the stored candidate record and the current human decision, recomputed every time; nothing is written to the decisions table. Only retailers and specialist retailers can qualify; manufacturers, marketplaces, directories, other and unknown types always need a reviewer. Classifications made before Stage 8.1 need rediscovery first. At most `MAX_AUTO_SEARCH_TARGETS` automatic domains are searched per run. See `docs/competitor-discovery.md` ("Stage 8.1").
 
 ### 5.2 Domain approval
 
-Answers: Has this domain been approved to participate in competitor product discovery?
+Answers: Has a reviewer approved or rejected this domain for competitor product discovery?
 
-A domain must still go through the agreed approval workflow. UK-relevance evidence does not automatically approve it.
+Reviewer approval makes any reviewed type searchable (directories are still not searched for offers). A rejection always overrides automatic eligibility.
 
 ### 5.3 Benchmark permission
 
@@ -250,13 +246,13 @@ Benchmark permission is not implied by UK-relevance evidence or domain approval.
 
 **Current approved behavior:**
 
-- Auto-approval does not grant benchmark permission.
+- Automatic search eligibility does not grant benchmark permission.
 - A reviewer can explicitly set benchmark eligibility where the competitor type permits it.
 - Marketplaces remain subject to their existing exclusion rules.
 - Configured competitors retain workbook benchmark flags.
 - Existing manufacturer rules remain unchanged.
 
-Never use UK relevance or a UK relevance override to set benchmark permission.
+Never use search eligibility or LLM1's UK answer to set benchmark permission.
 
 ---
 
@@ -299,19 +295,17 @@ The roadmap below organizes work by major deliverable. It is not permission to r
 - Candidate domain discovery.
 - Company/domain classification.
 - Profile/evidence collection.
-- Evidence-backed UK relevance proposal.
-- Deterministic Python validation.
+- Basic deterministic domain validation and automatic search eligibility (Stage 8.1; the earlier evidence-backed UK relevance proposal was retired).
 - Review candidate persistence and rerun behavior.
 
-**Status:** Implemented through the completed Phase A work described below.
+**Status:** Implemented (Phase A), then simplified in Stage 8.1 (22 November 2026, awaiting review).
 
 ### Phase 3 — Competitor review and approval
 
 **Purpose:** Let users inspect discovered competitors and make domain decisions.
 
 **Expected deliverables:**
-- Review candidates and verified UK-relevance evidence.
-- Clear presentation of uncertainty and unsupported claims.
+- Review candidates and why each is or is not searched (Stage 8.1).
 - Human review for uncertain cases.
 - Approve/reject workflow.
 - Persistent domain decisions.
@@ -388,7 +382,9 @@ The roadmap below organizes work by major deliverable. It is not permission to r
 
 This section records the latest reported state as of **19 November 2026**. It is a checkpoint, not a substitute for inspecting the repository before a new code change.
 
-### 7.1 Competitor discovery and UK evidence verification — implemented; simplification pending
+### 7.1 Competitor discovery and UK evidence verification — superseded by Stage 8.1 (22 November 2026)
+
+**Stage 8.1 (22 November 2026, uncommitted, awaiting review):** UK evidence quotes, quote verification, the UK assessment and review view, the UK auto-approval conditions, the score thresholds, the UK SSE flags and the UK review UI were removed. Automatic search eligibility (`rules.is_search_eligible`), persistence across runs, rejection precedence and the per-run cap were added. The items below are the earlier state, kept for history.
 
 Reported implementation includes:
 
@@ -529,7 +525,7 @@ These are two separate kinds of price. They are calculated, stored, and displaye
 | **Meaning** | The competitor sells the same product, including its required variant. | The competitor sells a related product: an equivalent variant or a similar alternative. |
 | **Use** | Direct price benchmarking against the Stompbox price. | Shown as information about alternative products. |
 | **Price difference** | Shown, as competitor − Stompbox in GBP. No percentages, savings, or discounts. | Not used in direct comparisons, averages, or counts of comparable prices. |
-| **Requirements** | Everything the existing comparison gate checks: a `VALID` GBP price with `VERIFIED` evidence, a competitor marked as a price benchmark, and comparable condition. | The same price validation (quote, sale exclusion, currency, ambiguity, freshness). No benchmark flag is needed, but the domain must already be approved for product search (configured or reviewer-approved, or auto-approved in this run where that is enabled). Used and refurbished items may be shown, always with an explicit condition label (approved, U-2). |
+| **Requirements** | Everything the existing comparison gate checks: a `VALID` GBP price with `VERIFIED` evidence, a competitor marked as a price benchmark, and comparable condition. | The same price validation (quote, sale exclusion, currency, ambiguity, freshness). No benchmark flag is needed, but the domain must already be allowed for product search (configured, reviewer-approved, or automatically search-eligible where that is enabled). Used and refurbished items may be shown, always with an explicit condition label (approved, U-2). |
 | **Dashboard** | The main comparison table and price KPIs. | A separate, clearly labelled "Alternative products" section. |
 
 `EQUIVALENT_VARIANT` is not eligible for exact-product price benchmarking by default. Changing that needs a new explicit approval. `REVIEW_REQUIRED` and `NO_MATCH` prices appear in neither group. Their price evidence stays visible in the evidence view only.
@@ -749,7 +745,11 @@ Each stage is reviewed before the next starts. No stage makes a paid call. All t
 
 ## 9. Engineering and testing standards
 
-### 9.0 Approved Option B simplification
+### 9.0a Stage 8.1 discovery simplification (approved 22 November 2026; supersedes 9.0)
+
+LLM1 searches specifically for competitors serving UK customers; there is no separate UK verification, evidence-scoring or approval-gating system. Python keeps basic domain validation and decides automatic search eligibility. Eligible retailer domains persist across runs; old pending records need rediscovery; `serves_uk_customers`, confidence and relevance are informational; a human rejection always wins; benchmark permission stays separate and `trusted.py` remains the benchmark check. Do not reintroduce UK verification under another name without approval.
+
+### 9.0 Approved Option B simplification (superseded by 9.0a)
 
 The project owner selected the simplified UK relevance approach (Option B) on 19 November 2026.
 
@@ -854,9 +854,9 @@ Do not silently choose an alternative.
 | D-10 | Use Excel catalogue input for current scope | Approved |
 | D-11 | Website catalogue extraction is future scope only | Approved |
 | D-12 | LLM1 searches for UK-relevant competitors, including overseas sellers serving UK | Approved |
-| D-13 | Validate UK evidence deterministically in Python | Approved |
-| D-14 | Keep domain approval, UK relevance, and benchmark permission independent | Approved |
-| D-15 | Automatic domain approval must not grant benchmark permission | Approved |
+| D-13 | Validate UK evidence deterministically in Python | Superseded by D-35 (22 Nov 2026) |
+| D-14 | Keep domain approval, UK relevance, and benchmark permission independent | Approved (UK relevance is now search strategy only, D-35) |
+| D-15 | Automatic domain approval must not grant benchmark permission | Approved (applies to automatic search eligibility) |
 | D-16 | Preserve configured competitor workbook benchmark flags | Approved |
 | D-17 | Preserve existing manufacturer and marketplace benchmark rules | Approved |
 | D-18 | Do not make paid live calls without explicit approval | Approved |
@@ -876,13 +876,20 @@ Do not silently choose an alternative.
 | D-32 | Alternative prices: search-approved domain required, no benchmark flag, condition label for used/refurbished, no price difference, kept separate from exact-match prices (U-2) | Approved (19 Nov 2026) |
 | D-33 | "Only 2 left" / "Low stock" is `IN_STOCK` when the page shows the product is currently purchasable (U-3) | Approved (19 Nov 2026) |
 | D-34 | `REVIEW_REQUIRED` is the only direct consequence of LLM2/Python disagreement; Python alone may assign `EQUIVALENT_VARIANT` (U-4) | Approved (19 Nov 2026) |
+| D-35 | LLM1 searches for UK-serving competitors; no UK verification, UK evidence scoring or UK approval gate (Stage 8.1) | Approved (22 Nov 2026) |
+| D-36 | Automatically eligible retailer domains persist across runs, recomputed from the stored record; no artificial human decision records | Approved (22 Nov 2026) |
+| D-37 | Existing pending domains need rediscovery and classification under the new prompt before becoming automatically searchable | Approved (22 Nov 2026) |
+| D-38 | `serves_uk_customers` is informational only; never an eligibility, approval or exclusion gate | Approved (22 Nov 2026) |
+| D-39 | Confidence and relevance never block eligibility; scores are informational | Approved (22 Nov 2026) |
+| D-40 | A human rejection always overrides automatic eligibility; benchmark permission stays separate | Approved (22 Nov 2026) |
+| D-41 | A retailer confirmed to sell only used instruments is never automatically searchable; unknown does not block; manual approval allowed, never an automatic benchmark | Approved (22 Nov 2026) |
 
 ### Unresolved items
 
 These are not decisions and must not be treated as approved design changes:
 
-- Exact current `UK_GATE_MODE` transition/retirement behavior.
-- Whether the legacy v2 UK gate can be removed entirely or must remain temporarily for compatibility.
+- The default automatic-target cap (`MAX_AUTO_SEARCH_TARGETS=5`) is a conservative starting value, not calibrated.
+- Discovery relevance under the Stage 8.1 prompt is unmeasured (no paid run yet).
 - Exact LLM1 and LLM2 model identifiers/configuration for the live demo.
 - Final product-matching threshold and any unresolved equivalence policy.
 - Live test budget (P-7: none authorized yet). All LLM2 Product Intelligence Agent design decisions (P-1 to P-7, U-1 to U-4) are otherwise approved; see §8.6.6.
@@ -914,9 +921,9 @@ The demo is ready when a user can:
 
 1. Upload the retailer's Excel product catalogue.
 2. Run UK-focused competitor discovery.
-3. Review discovered businesses and their verified UK evidence.
-4. Approve relevant competitor domains.
-5. Run product discovery for selected catalogue products against approved competitor domains.
+3. Review discovered businesses and see why each is or is not searched.
+4. Approve or reject competitor domains that are not automatically searchable (and reject any that are).
+5. Run product discovery for selected catalogue products against configured, approved and automatically eligible competitor domains.
 6. Extract competitor product details and current prices with supporting evidence.
 7. See reliable product matches and understandable match outcomes.
 8. View the results in the live competitor-intelligence dashboard.

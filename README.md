@@ -6,8 +6,10 @@ for the full plan, rules and phase breakdown.
 **Status:** Phases 1–7 complete (catalogue, search, competitor discovery with
 LLM 1, competitor domain review, product intelligence with LLM 2, deterministic
 matching and price validation, end-to-end pipeline runs with progress events and
-cancellation). Phase 8 (live dashboard) is implemented. UK relevance uses verified
-evidence quotes (Option B; the separate UK eligibility gate is retired). The
+cancellation). Phase 8 (live dashboard) is implemented. UK relevance comes from LLM 1's
+UK-focused search strategy (Stage 8.1, 22 Nov 2026; no UK verification or gate), and
+discovered retailers that pass basic checks are searched automatically (capped, never
+benchmarks). The
 three-task Product Intelligence Agent was evaluated live twice on 19 Nov 2026
 (Stage 6 and 6.2, two products on two retailers), and Stage 6.3 pre-demo hardening
 (20 Nov 2026) is awaiting review before the next checkpoint. Phase 9 (testing and
@@ -95,7 +97,6 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `LLM1_REASONING_EFFORT` / `LLM2_REASONING_EFFORT` | unset | `none`, `minimal`, `low`, `medium`, `high` or `xhigh`; sent as OpenRouter `reasoning.effort` (reasoning text excluded). Configured: `low` |
 | `LLM1_MAX_COMPLETION_TOKENS` / `LLM2_MAX_COMPLETION_TOKENS` | `6000` / `3000` | Output budget, including reasoning tokens. Configured: `12000` / `8000` |
 | `DISCOVERY_USE_LLM` | `true` | `false` forces `LLM_DISABLED` discovery even when the LLM is configured |
-| `DISCOVERY_AUTO_APPROVE_MIN_CONFIDENCE` / `_MIN_RELEVANCE` | `0.85` / `0.75` | Auto-approval thresholds (uncalibrated starting values) |
 | `REVIEW_DB_PATH` | `data/review/competitor_review.sqlite3` | Persistent competitor review decisions |
 | `LLM2_MODEL` | unset | LLM 2 (extraction) model id on OpenRouter; independent of `LLM1_MODEL`. With the key, enables `LLM_ENABLED` product intelligence. Chosen: `openai/gpt-6-luna` |
 | `INTELLIGENCE_USE_LLM` | `true` | `false` forces `LLM_DISABLED` product intelligence |
@@ -104,9 +105,10 @@ All settings come from environment variables or `backend/.env` (git-ignored). Se
 | `PIPELINE_MAX_PRODUCTS_PER_RUN` / `PIPELINE_MAX_ACTIVE_RUNS` | `5` / `2` | Run limits |
 | `PIPELINE_RUN_TIMEOUT_SECONDS` / `_DISCOVERY_` / `_PRODUCT_` | `1800` / `300` / `600` | Timeouts (run, discovery stage, per product) |
 | `PIPELINE_RUN_TTL_MINUTES` / `PIPELINE_MAX_RUNS_RETAINED` | `120` / `50` | In-memory retention of finished runs |
-| `PIPELINE_SEARCH_AUTO_APPROVED` | `true` | Search domains LLM 1 auto-approved in the same run (never persisted) |
+| `PIPELINE_SEARCH_AUTO_APPROVED` | `true` | Search automatically search-eligible discovered retailers (this run's and stored ones; never benchmarks) |
+| `MAX_AUTO_SEARCH_TARGETS` | `5` | At most this many automatic domains searched per run (configured and approved domains do not count) |
 | `DISCOVERY_EXCLUDED_COMPETITOR_DOMAINS` | `["pmtonline.co.uk"]` | Competitors removed by the user (PMT): excluded from discovery and never written to the review queue |
-| `MARKETPLACE_DOMAIN_LABELS` | `["amazon","ebay","reverb","etsy","gumtree"]` | Never auto-approved; can only be approved as `marketplace` |
+| `MARKETPLACE_DOMAIN_LABELS` | `["amazon","ebay","reverb","etsy","gumtree"]` | Never searched automatically; can only be approved as `marketplace` |
 
 Provider and discovery tuning options are listed in `.env.example`. Never commit keys.
 
@@ -158,7 +160,7 @@ See [docs/product-matching.md](docs/product-matching.md).
 | POST | `/api/catalogue/products/lookup` | Body `{"product_ids": [...]}` (1–100). Returns products in request order, de-duplicated. Any unknown ID returns 404 with `missing_ids` |
 | GET | `/api/catalogue/categories` | Category/subcategory product counts |
 | GET | `/api/competitors` | Configured competitor domains |
-| GET | `/api/discovery/config` | Discovery mode (`LLM_ENABLED`/`LLM_DISABLED`), reason when disabled, thresholds. No secrets |
+| GET | `/api/discovery/config` | Discovery mode (`LLM_ENABLED`/`LLM_DISABLED`), reason when disabled, automatic search on/off and its cap. No secrets |
 | POST | `/api/discovery/runs` | Body `{"product_ids": [...]}` (1–10). Runs competitor discovery and returns mode, candidates, evidence, decisions and targeted queries. The run is not stored; its candidates enter the review queue and saved decisions are applied. 503 only if the search provider is not configured |
 | GET | `/api/review/candidates?status=` | Review queue (`PENDING`/`APPROVED`/`REJECTED`) |
 | GET | `/api/review/candidates/{domain}` | Evidence, automatic reasons and decision history |

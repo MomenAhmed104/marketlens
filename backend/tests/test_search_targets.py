@@ -1,14 +1,14 @@
 """Every operational path into product searches and price benchmarks: who is searched, and
-who can be a benchmark, now that the separate UK gate is retired (Option B, 19 Nov 2026).
+who can be a benchmark. There is no UK gate (Stage 8.1, 22 Nov 2026).
 
-Rewritten from test_uk_gate_paths.py. It covers the same paths: eligible_search_targets
-(configured + reviewer-approved), the pipeline (including run-scoped auto-approved domains
+It covers: eligible_search_targets (configured + reviewer-approved; automatic targets are in
+test_search_eligibility.py), the pipeline (including automatically search-eligible domains
 and `domains` subsets), the intelligence API and CLI, direct ProductIntelligenceAgent
 construction, compare(), discovery's reported targets, and the matching API with tampered
 payloads. The invariants protected:
 - the 13 configured competitors follow their configured path with workbook types and flags;
-- pending and rejected domains are never searched; approved directories are skipped;
-- auto-approval needs verified UK evidence and never grants benchmark permission;
+- ineligible pending and rejected domains are never searched; approved directories are skipped;
+- automatic search eligibility never grants benchmark permission;
 - with LLM 1 disabled, new domains stay pending and configured competitors are still searched;
 - benchmark permission is only the workbook flag or the reviewer's explicit flag. No network.
 """
@@ -21,6 +21,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agents.discovery.schemas import ClassificationBatch, SearchTarget
+from app.schemas.competitor import CompanyType
 from app.agents.intelligence import ProductIntelligenceAgent, eligible_search_targets
 from app.agents.intelligence import cli as intel_cli
 from app.agents.intelligence.schemas import (
@@ -47,15 +48,16 @@ from tests.search_fakes import make_settings
 from tests.test_discovery_agent import CLASSIFICATIONS, PLAN
 from tests.test_intelligence_agent import HITS, PAGES, dec
 from tests.test_pipeline import IDS, searched_domains
-from tests.uk_fakes import CONFIGURED_13
+from tests.store_fakes import CONFIGURED_13
 
 
 def by_domain(items):
     return {i.domain: i for i in items}
 
 
-def without_uk_evidence(batch: ClassificationBatch) -> ClassificationBatch:
-    return ClassificationBatch(companies=[c.model_copy(update={"uk_evidence": []}) for c in batch.companies])
+def as_manufacturer(batch: ClassificationBatch, domain: str) -> ClassificationBatch:
+    return ClassificationBatch(companies=[c.model_copy(update={"company_type": CompanyType.MANUFACTURER})
+                                          if c.domain == domain else c for c in batch.companies])  # fmt: skip
 
 
 # --------------------------------------------------------------------------- eligible_search_targets
@@ -180,7 +182,7 @@ def test_llm_disabled_new_domains_stay_pending_and_configured_are_still_searched
     _, result, _ = asyncio.run(h.run(product_ids=["SB-001"]))
     cands = result.discovery.candidates
     assert cands and all(c.approval_status is DS.APPROVAL_REQUIRED for c in cands if c.review_decision is None)
-    assert all(c.uk_assessment is None for c in cands)  # nothing assessed, nothing invented
+    assert all(c.classification_version is None and c.company_type is None for c in cands)  # nothing invented
     searched = searched_domains(h)
     assert not searched & {c.domain for c in cands}
     assert {"andertons.co.uk", "gibson.com"} <= searched
@@ -190,17 +192,17 @@ def test_auto_approved_domain_is_searched_but_never_a_benchmark(catalogue, tmp_p
     h = harness(catalogue, tmp_path, llm1=lambda: FakeLLM(PLAN, CLASSIFICATIONS))
     _, result, _ = asyncio.run(h.run(product_ids=["SB-001"]))
     beck = by_domain(result.discovery.candidates)["beckettsmusic.co.uk"]
-    assert beck.approval_status is DS.AUTO_APPROVED and beck.uk_assessment.independent_sources >= 2
+    assert beck.approval_status is DS.AUTO_APPROVED
     assert "beckettsmusic.co.uk" in searched_domains(h)
     assert by_domain(result.search_targets)["beckettsmusic.co.uk"].price_benchmark is False
 
 
-def test_without_verified_uk_evidence_a_domain_is_not_auto_approved(catalogue, tmp_path):
-    h = harness(catalogue, tmp_path, llm1=lambda: FakeLLM(PLAN, without_uk_evidence(CLASSIFICATIONS)))
+def test_a_domain_failing_a_basic_check_is_not_searched(catalogue, tmp_path):
+    h = harness(catalogue, tmp_path, llm1=lambda: FakeLLM(PLAN, as_manufacturer(CLASSIFICATIONS, "beckettsmusic.co.uk")))
     _, result, _ = asyncio.run(h.run(product_ids=["SB-001"]))
     beck = by_domain(result.discovery.candidates)["beckettsmusic.co.uk"]
     assert beck.approval_status is DS.APPROVAL_REQUIRED
-    assert any("insufficient verified UK evidence" in r for r in beck.decision_reasons)
+    assert any("type is manufacturer" in r for r in beck.decision_reasons)
     assert "beckettsmusic.co.uk" in result.new_pending_domains
     assert "beckettsmusic.co.uk" not in searched_domains(h)
 

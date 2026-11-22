@@ -6,9 +6,10 @@ evidence-checked product fields. Runs synchronously; the result is returned,
 not stored (temporary execution state).
 
 Search targets = the 13 preconfigured competitors + reviewer-APPROVED domains
-(Phase 4). There is no separate UK gate (retired with Option B, 19 Nov 2026): UK
-relevance is verified evidence reviewed before approval. Pending and rejected
-domains are never searched; rejected and excluded-type (directory) domains are listed as skipped.
+(Phase 4) + automatically search-eligible stored domains (Stage 8.1, capped by
+MAX_AUTO_SEARCH_TARGETS, never benchmarks). There is no UK gate. Ineligible pending
+and rejected domains are never searched; rejected, excluded-type (directory) and
+over-the-cap domains are listed as skipped.
 
 Modes: LLM_ENABLED when OPENROUTER_API_KEY and LLM2_MODEL are set, otherwise
 LLM_DISABLED (search + retrieval only). Only a missing search provider makes
@@ -61,9 +62,13 @@ class IntelligenceConfig(BaseModel):
     max_products_per_run: int = MAX_PRODUCTS_PER_RUN
 
 
-def _targets(request: Request) -> tuple[list[SearchTarget], list[SkippedTarget]]:
+def _targets(request: Request, product_ids: list[str] | None = None,
+             only_domains: set[str] | None = None) -> tuple[list[SearchTarget], list[SkippedTarget]]:  # fmt: skip
     state = request.app.state
-    return eligible_search_targets(state.catalogue.competitors, state.review_store.list_decisions(), state.settings)
+    store = state.review_store
+    return eligible_search_targets(state.catalogue.competitors, store.list_decisions(), state.settings,
+                                   candidates=[s.candidate for s in store.list_candidates()],
+                                   product_ids=product_ids, only_domains=only_domains)  # fmt: skip
 
 
 @router.get("/config", response_model=IntelligenceConfig)
@@ -96,17 +101,20 @@ async def run_intelligence(
     products, missing = request.app.state.catalogue.lookup(body.product_ids)
     if missing:
         raise HTTPException(404, detail={"message": "Unknown product IDs", "missing_ids": missing})
-    targets, skipped = _targets(request)
+    wanted = None
     if body.domains is not None:
         try:
             wanted = {registrable_domain(d) for d in body.domains}
         except ValueError:
             raise HTTPException(422, detail="Invalid domain in 'domains'") from None
+    targets, skipped = _targets(request, [p.product_id for p in products], wanted)
+    if wanted is not None:
         eligible = {t.domain for t in targets}
         not_allowed = sorted(wanted - eligible)
         if not_allowed:
             raise HTTPException(422, detail={
-                "message": "Only approved search targets can be searched (preconfigured or reviewer-approved)",
+                "message": "Only search targets can be searched (preconfigured, reviewer-approved or "
+                       "automatically search-eligible)",
                 "not_allowed": not_allowed,
             })  # fmt: skip
         targets = [t for t in targets if t.domain in wanted]

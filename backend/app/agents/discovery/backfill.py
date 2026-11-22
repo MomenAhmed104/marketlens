@@ -119,7 +119,7 @@ class ClassificationSnapshot(BaseModel):
     classification_status: ClassificationStatus | None = None
     company_name: str | None = None
     company_type: CompanyType | None = None
-    uk_seller: UkSeller | None = None
+    serves_uk_customers: UkSeller | None = None
     proposed_competitor_class: CompetitorClass | None = None
     competitor_class: CompetitorClass | None = None
     competitor_class_reasons: list[str] = Field(default_factory=list)
@@ -147,10 +147,12 @@ class BackfillEntry(BaseModel):
     review_status: ReviewStatus | None = None  # read-only context; never changed
     previous: ClassificationSnapshot | None = None
     # New LLM 1 proposal and the result of the existing rules. Null unless CLASSIFIED.
-    # Only the class fields are ever written; the proposed name/type/UK selling are report-only.
+    # Only the class fields are ever written; the proposed name/type/UK answer are report-only.
+    # The classification version is never written, so a backfill never makes a domain
+    # automatically searchable (Stage 8.1: rediscovery is required).
     proposed_company_name: str | None = None
     proposed_company_type: CompanyType | None = None
-    proposed_uk_seller: UkSeller | None = None
+    proposed_serves_uk_customers: UkSeller | None = None
     proposed_competitor_class: CompetitorClass | None = None
     final_competitor_class: CompetitorClass | None = None
     classification_reasons: list[str] = Field(default_factory=list)
@@ -395,7 +397,7 @@ class Backfill:
             notes.append(f"Ignored {others} classification(s) for domains not given")
         return entry.model_copy(update={
             "proposed_company_name": work.company_name, "proposed_company_type": work.company_type,
-            "proposed_uk_seller": work.uk_seller, "proposed_competitor_class": work.proposed_competitor_class,
+            "proposed_serves_uk_customers": work.serves_uk_customers, "proposed_competitor_class": work.proposed_competitor_class,
             "final_competitor_class": work.competitor_class, "classification_reasons": work.competitor_class_reasons,
             "validation_notes": notes, "classification_model": result.model, "classified_at": work.classified_at,
             "changed": work.competitor_class != original.competitor_class,

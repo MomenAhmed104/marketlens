@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.agents.discovery import CompetitorDiscoveryAgent, build_discovery_agent, llm1_disabled_reason
-from app.agents.discovery.schemas import DiscoveryMode, DiscoveryRunResult, DiscoveryThresholds
+from app.agents.discovery.schemas import DiscoveryMode, DiscoveryRunResult
 from app.services.search.http import ProviderError, ProviderNotConfiguredError
 
 router = APIRouter(prefix="/api/discovery", tags=["discovery"])
@@ -38,7 +38,9 @@ class DiscoveryConfig(BaseModel):
     llm_disabled_reason: str | None
     llm1_model: str | None
     search_provider: str | None
-    thresholds: DiscoveryThresholds
+    # Automatic search eligibility (Stage 8.1): whether it is on and the per-run cap.
+    auto_search_enabled: bool
+    max_auto_search_targets: int
 
 
 @router.get("/config", response_model=DiscoveryConfig)
@@ -49,13 +51,8 @@ def discovery_config(request: Request) -> DiscoveryConfig:
     return DiscoveryConfig(
         mode=DiscoveryMode.LLM_DISABLED if reason else DiscoveryMode.LLM_ENABLED,
         llm_disabled_reason=reason, llm1_model=None if reason else s.llm1_model,
-        search_provider=s.search_provider,
-        thresholds=DiscoveryThresholds(
-            auto_approve_min_confidence=s.discovery_auto_approve_min_confidence,
-            auto_approve_min_relevance=s.discovery_auto_approve_min_relevance,
-            auto_approve_min_evidence_urls=s.discovery_auto_approve_min_evidence_urls,
-            reject_max_relevance=s.discovery_reject_max_relevance,
-        ),
+        search_provider=s.search_provider, auto_search_enabled=s.pipeline_search_auto_approved,
+        max_auto_search_targets=s.max_auto_search_targets,
     )  # fmt: skip
 
 

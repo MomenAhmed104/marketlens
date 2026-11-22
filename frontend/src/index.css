@@ -710,13 +710,11 @@ a.domain-title { color: var(--ink); font-family: var(--mono); font-size: 14px; }
 .class-related { color: var(--ink-2); background: #e7eaef; }
 .class-needs-review { color: var(--neutral); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .decision-meta { font-size: 12px; color: var(--muted); }
-.uk-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.uk-summary-text { flex-basis: 100%; margin: 2px 0 0; }
-.uk-details h5 { margin: 10px 0 4px; font-size: 12.5px; color: var(--ink-2); }
-.uk-details blockquote { overflow-wrap: anywhere; }
-.uk-details .evidence-meta a { overflow-wrap: anywhere; }
-/* Live Runs: UK evidence inside a table cell stays readable without widening the table. */
-.uk-run-details { margin-top: 4px; min-width: 14rem; max-width: 30rem; white-space: normal; }
+.search-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.search-summary-text { flex-basis: 100%; margin: 2px 0 0; }
+.search-details ul { overflow-wrap: anywhere; }
+/* Live Runs: reasons inside a table cell stay readable without widening the table. */
+.run-reasons { margin-top: 4px; min-width: 14rem; max-width: 30rem; white-space: normal; }
 .fi-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
 .elig { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r); font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); }
 .elig.yes { color: var(--success); background: var(--success-tint); border-color: #c4e8d6; }
