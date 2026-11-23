@@ -6,6 +6,7 @@
 // `serves_uk_customers` answer is shown as information only. Search status never implies
 // benchmark permission, which is a separate reviewer flag.
 import { CLASSIFICATION_VERSION, type CandidateSummary, type CompanyType, type SearchBasis, type ServesUkCustomers } from './api'
+import { explain } from './plainLanguage'
 import type { Tone } from './status'
 
 export type SearchStatusKind =
@@ -46,7 +47,7 @@ function basisOf(c: Input): SearchBasis {
   return c.review_status === 'APPROVED' ? 'MANUAL_APPROVAL' : 'NOT_SEARCHED'
 }
 
-const strip = (r: string) => r.replace(/^Not searched until approved: /, '')
+const strip = (r: string) => explain(r.replace(/^Not searched until approved: /, ''))
 
 export function searchStatusOf(c: Input): SearchStatus {
   const reasons = c.search_eligibility_reasons ?? []

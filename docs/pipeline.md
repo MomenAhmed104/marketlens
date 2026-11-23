@@ -190,3 +190,33 @@ informational `serves_uk_customers`. The UK verification flags (`uk_assessed`,
 domains under `skipped`. The whole workflow (discover, review through the API, re-run, extract, match,
 stream) is covered by `tests/test_workflow_integration.py` with fakes and a
 temporary database.
+
+## Domain outcomes and wording (Stage 8.2)
+
+Each run now says plainly what happened to every domain it discovered, without inferring that a
+domain was searched because it was eligible or approved.
+
+- `PipelineResult.domain_outcomes` (additive; empty in older saved runs): one
+  `DomainRunOutcome {domain, status, reason}` per domain discovered in this run, computed by
+  `pipeline.domain_outcomes` from the run's actual target list:
+
+  | Status | Meaning |
+  |---|---|
+  | `SELECTED_FOR_SEARCH` | One of this run's search targets. Whether a query was really sent is in `products[].intelligence.domains`. |
+  | `PENDING_APPROVAL` | Needs a reviewer decision; never searched until approved. |
+  | `AUTO_ELIGIBLE_NOT_SEARCHED` | Passes the automatic checks but is not a target here: automatic search switched off (`PIPELINE_SEARCH_AUTO_APPROVED=false`), over the per-run cap, or outside the requested domain subset. |
+  | `APPROVED_NOT_SEARCHED` | Reviewer-approved but not a target here (an excluded type such as directory, or outside the domain subset). |
+  | `REJECTED` | Rejected by a reviewer or automatically (no discovery evidence); never searched. A rejection always wins. |
+
+  `reason` comes from the target builder's skipped list or from the run's settings and request;
+  an unknown reason stays null.
+- `review_queue` stage message: "N candidate(s) saved to the review queue: P pending approval (not
+  searched until approved), A automatically eligible, R already reviewer-approved, J rejected (never
+  searched). The targets stage decides which are searched in this run" (zero parts omitted, pending
+  always shown). The previous wording counted only pending domains.
+- `targets` stage message: "N domain(s) to search: C configured, R reviewer-approved, A automatic;
+  S skipped. Discovered in this run: …" with the outcome counts above.
+- `domain_auto_approved` (event type unchanged) reads "<domain> is automatically searchable" when
+  automatic search is on, and "<domain> is automatically eligible, but automatic search is switched
+  off (PIPELINE_SEARCH_AUTO_APPROVED=false): not searched" when it is off.
+- `known_domains_loaded` gains `discovered` (the outcomes); `pending_not_searched` is unchanged.

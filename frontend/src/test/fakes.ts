@@ -210,6 +210,7 @@ export const COMPETITORS = [
 export const PRODUCTS = [makeProduct('SB-001', { product_name: 'Boss RC-5 Loop Station Guitar Effect Pedal' }), makeProduct('SB-002')]
 
 export interface AppData {
+  products?: StompboxProduct[] // the catalogue; defaults to PRODUCTS
   run?: ExecutionRun | null // the run behind /api/runs/{id}; null = 404
   result?: PipelineResult
   events?: ExecutionEvent[]
@@ -225,11 +226,12 @@ export function mockAppApi(data: AppData = {}) {
   const result = data.result ?? f.result
   const events = data.events ?? f.events
   const candidates = data.candidates ?? []
+  const products = data.products ?? PRODUCTS
   return mockApi((m, p, b) => {
     const o = data.override?.(m, p, b)
     if (o) return o
     if (p === '/api/health') return { body: { status: 'ok', products: 100, competitors: 13 } }
-    if (p === '/api/catalogue/products') return { body: { total: PRODUCTS.length, items: PRODUCTS } }
+    if (p === '/api/catalogue/products') return { body: { total: products.length, items: products } }
     if (p === '/api/discovery/config')
       return { body: { mode: 'LLM_DISABLED', llm_disabled_reason: 'not set', llm1_model: null, search_provider: 'exa' } }
     if (p === '/api/intelligence/config')

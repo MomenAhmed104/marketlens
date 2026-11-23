@@ -509,3 +509,83 @@ def test_extraction_succeeds_but_only_the_match_call_fails(catalogue, tmp_path):
     # warnings come from agent.run(), which the pipeline does not call); none claims an extraction failure.
     assert not any("extraction failed" in w for w in run.warnings)
     assert "match proposal" in ext.message and "1 failed" in ext.message
+
+
+# --------------------------------------------------------------------------- Stage 8.2 domain wording
+
+
+def test_domain_outcomes_distinguish_pending_auto_approved_and_rejected(catalogue, tmp_path):
+    from app.orchestration.schemas import DomainRunStatus as D
+
+    h = harness(catalogue, tmp_path, llm1=lambda: FakeLLM(PLAN, CLASSIFICATIONS))
+    run, result, events = asyncio.run(h.run(product_ids=["SB-001"]))
+    out = {o.domain: o for o in result.domain_outcomes}
+    assert {o.domain for o in result.domain_outcomes} == {c.domain for c in result.discovery.candidates}
+    assert out["beckettsmusic.co.uk"].status is D.SELECTED_FOR_SEARCH and out["beckettsmusic.co.uk"].reason is None
+    assert out["ebay.co.uk"].status is D.PENDING_APPROVAL
+    # Selected for search is only ever a member of the run's actual target list.
+    targets = {t.domain for t in result.search_targets}
+    assert all((o.status is D.SELECTED_FOR_SEARCH) == (o.domain in targets) for o in result.domain_outcomes)
+    st = stages(run)
+    assert "pending approval (not searched until approved)" in st[StageName.REVIEW_QUEUE].message
+    assert "1 automatically eligible" in st[StageName.REVIEW_QUEUE].message
+    assert "Discovered in this run:" in st[StageName.TARGETS].message
+    assert "selected for search" in st[StageName.TARGETS].message
+    loaded = next(e for e in events if e.type == "known_domains_loaded")
+    assert {d["domain"] for d in loaded.payload["discovered"]} == set(out)
+
+
+def test_auto_eligible_domains_not_searched_when_automatic_search_is_off(catalogue, tmp_path):
+    from app.orchestration.schemas import DomainRunStatus as D
+
+    h = harness(catalogue, tmp_path, llm1=lambda: FakeLLM(PLAN, CLASSIFICATIONS), pipeline_search_auto_approved=False)
+    run, result, events = asyncio.run(h.run(product_ids=["SB-001"]))
+    beck = next(o for o in result.domain_outcomes if o.domain == "beckettsmusic.co.uk")
+    assert beck.status is D.AUTO_ELIGIBLE_NOT_SEARCHED and "switched off" in beck.reason
+    assert "beckettsmusic.co.uk" not in searched_domains(h)
+    assert "automatically eligible but not searched" in stages(run)[StageName.TARGETS].message
+    auto_evt = next(e for e in events if e.type == "domain_auto_approved")
+    assert "switched off" in auto_evt.message and "not searched" in auto_evt.message
+
+
+def test_reviewer_decisions_map_to_approved_and_rejected_outcomes(catalogue, tmp_path):
+    from app.orchestration.schemas import DomainRunStatus as D
+
+    h = harness(catalogue, tmp_path, decisions=[
+        dec("beckettsmusic.co.uk", ctype=T.SPECIALIST_RETAILER, bench=True),
+        dec("ebay.co.uk", ReviewDecision.REJECTED, T.MARKETPLACE),
+        dec("idealo.co.uk", ctype=T.DIRECTORY),
+    ])  # fmt: skip
+    _, result, _ = asyncio.run(h.run(product_ids=["SB-001"]))
+    out = {o.domain: o for o in result.domain_outcomes}
+    assert out["beckettsmusic.co.uk"].status is D.SELECTED_FOR_SEARCH
+    assert out["ebay.co.uk"].status is D.REJECTED and out["ebay.co.uk"].reason == "Rejected in review"
+    if "idealo.co.uk" in out:  # discovered by the fake search: approved, but a directory is never searched
+        assert out["idealo.co.uk"].status is D.APPROVED_NOT_SEARCHED and "not searched" in out["idealo.co.uk"].reason
+
+
+def test_domain_outcomes_unit_rules():
+    from app.agents.discovery.schemas import SearchTarget
+    from app.agents.intelligence.schemas import SkippedTarget
+    from app.orchestration.pipeline import domain_outcomes
+    from app.orchestration.schemas import DomainRunStatus as D
+
+    class C:
+        def __init__(self, domain, st, decision=None):
+            self.domain, self.approval_status = domain, st
+            self.review_decision = type("R", (), {"decision": decision})() if decision else None
+
+    cands = [C("a.example", S.AUTO_APPROVED), C("b.example", S.AUTO_APPROVED), C("c.example", S.APPROVED,
+             ReviewDecision.APPROVED), C("d.example", S.AUTO_APPROVED, ReviewDecision.REJECTED),
+             C("e.example", S.APPROVAL_REQUIRED), C("f.example", S.REJECTED)]  # fmt: skip
+    targets = [SearchTarget(domain="a.example", company_name=None, company_type=None, approval_status=S.AUTO_APPROVED,
+                            price_benchmark=False)]
+    skipped = [SkippedTarget(domain="b.example", company_type=None, reason="over the per-run cap")]
+    out = {o.domain: o for o in domain_outcomes(cands, targets, skipped, auto_search_enabled=True,
+                                                domain_subset={"a.example", "b.example"})}  # fmt: skip
+    assert out["a.example"].status is D.SELECTED_FOR_SEARCH
+    assert out["b.example"].status is D.AUTO_ELIGIBLE_NOT_SEARCHED and out["b.example"].reason == "over the per-run cap"
+    assert out["c.example"].status is D.APPROVED_NOT_SEARCHED and "Outside" in out["c.example"].reason
+    assert out["d.example"].status is D.REJECTED  # a rejection wins over automatic eligibility
+    assert out["e.example"].status is D.PENDING_APPROVAL
+    assert out["f.example"].status is D.REJECTED and "no discovery evidence" in out["f.example"].reason

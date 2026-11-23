@@ -18,7 +18,7 @@ export default function AppShell({ health }: { health: Health }) {
   const mainRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    document.title = `${PAGE_TITLES[page]} · Stompbox Competitor Intelligence`
+    document.title = `${PAGE_TITLES[page]} · MarketLens`
   }, [page])
 
   // Mobile drawer: Escape closes it and returns focus to the menu button.

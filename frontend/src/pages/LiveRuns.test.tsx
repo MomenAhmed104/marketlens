@@ -93,7 +93,7 @@ describe('Live Runs page', () => {
     })
     const item = (domain: string) =>
       screen.getByText((text) => text.startsWith(`Discovered ${domain} (`)).closest<HTMLElement>('.feed-item')!
-    expect(within(item('beckettsmusic.co.uk')).getByTestId('auto-searchable')).toHaveTextContent('Automatically searchable')
+    expect(within(item('beckettsmusic.co.uk')).getByTestId('auto-searchable')).toHaveTextContent('Automatically eligible')
     expect(within(item('ebay.co.uk')).queryByTestId('auto-searchable')).not.toBeInTheDocument()
     expect(screen.queryByTestId('uk-evidence')).not.toBeInTheDocument()
   })

@@ -1,17 +1,20 @@
-// What the selected run searched and discovered. Approvals happen in the Pending
-// section and apply to the next run; pending domains that are not automatically
-// searchable (Stage 8.1) are never searched. Each discovered domain shows the backend's
-// reasons for its status in this run. There is no UK verification.
-import type { DiscoveredCompetitor, PipelineResult } from '../api'
+// What the selected run searched and discovered. Approved and automatically eligible
+// domains can be searched; pending and rejected domains cannot. Each discovered domain shows
+// whether this run actually searched it (from the run's search records) and the backend's
+// reasons for its status. There is no UK verification.
+import type { DiscoveredCompetitor, DomainRunOutcome, PipelineResult } from '../api'
 import CompetitorClassPill from '../components/CompetitorClassPill'
 import StatusPill from '../components/StatusPill'
 import { fromBackendClass } from '../competitorClass'
 import { label } from '../format'
+import { explain } from '../plainLanguage'
+import { domainOutcomes, eligibleNotSearched, runDomainStatus, searchedDomains } from '../domainStatus'
 import { SERVES_UK_LABEL } from '../searchEligibility'
 
 export default function RunDomains({ result, onShowPending }: { result: PipelineResult; onShowPending: () => void }) {
   const disc = result.discovery
   const pending = result.new_pending_domains
+  const notSearched = eligibleNotSearched(result)
   return (
     <div className="stack-sm">
       <p className="hint">
@@ -30,6 +33,21 @@ export default function RunDomains({ result, onShowPending }: { result: Pipeline
             Review pending domains
           </button>
         </p>
+      )}
+      {notSearched.length > 0 && (
+        <div className="callout info" data-testid="eligible-not-searched">
+          <p>
+            {notSearched.length} discovered domain(s) were approved or automatically eligible but were{' '}
+            <strong>not searched</strong> in this run:
+          </p>
+          <ul className="small">
+            {notSearched.map((o) => (
+              <li key={o.domain}>
+                {o.domain}: {o.reason ? explain(o.reason) : 'reason not recorded'}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <details className="disclosure">
@@ -65,7 +83,11 @@ export default function RunDomains({ result, onShowPending }: { result: Pipeline
       {disc && disc.candidates.length > 0 && (
         <details className="disclosure">
           <summary>All domains discovered in this run ({disc.candidates.length})</summary>
-          <DiscoveredDomainsTable candidates={disc.candidates} />
+          <DiscoveredDomainsTable
+            candidates={disc.candidates}
+            searched={searchedDomains(result)}
+            outcomes={domainOutcomes(result)}
+          />
         </details>
       )}
     </div>
@@ -83,17 +105,28 @@ function DiscoveredClassCell({ c }: { c: DiscoveredCompetitor }) {
   )
 }
 
-// Why the domain has its status in this run (the backend's reasons), on demand.
-function ReasonsCell({ c }: { c: DiscoveredCompetitor }) {
+// The domain's status in this run, with the backend's reasons on demand.
+function ReasonsCell({
+  c,
+  searched,
+  outcome,
+}: {
+  c: DiscoveredCompetitor
+  searched: ReadonlySet<string>
+  outcome?: DomainRunOutcome
+}) {
   const reasons = c.decision_reasons ?? []
-  const auto = c.approval_status === 'AUTO_APPROVED'
+  const status = runDomainStatus(c, searched)
+  // The backend's reason this domain was not a target (e.g. automatic search switched off, the cap).
+  const why = outcome?.reason && status !== 'Searched in this run' && status !== 'Pending review' ? outcome.reason : null
   return (
     <>
-      <span className="small">{auto ? 'Automatically searchable' : reasons.length ? 'Not searched automatically' : '—'}</span>
+      <span className="small" data-testid="run-domain-status">{status}</span>
+      {why && <div className="cell-sub" data-testid="run-domain-reason">{explain(why)}</div>}
       {(reasons.length > 0 || c.serves_uk_customers) && (
         <details className="disclosure run-reasons">
           <summary>Why</summary>
-          <ul className="small">{reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+          <ul className="small">{reasons.map((r) => <li key={r}>{explain(r)}</li>)}</ul>
           {c.serves_uk_customers && (
             <p className="small muted">{SERVES_UK_LABEL[c.serves_uk_customers]} (information only).</p>
           )}
@@ -104,7 +137,15 @@ function ReasonsCell({ c }: { c: DiscoveredCompetitor }) {
 }
 
 /** One row per domain discovered in a run: status in this run, type, class and why. */
-export function DiscoveredDomainsTable({ candidates }: { candidates: DiscoveredCompetitor[] }) {
+export function DiscoveredDomainsTable({
+  candidates,
+  searched,
+  outcomes = new Map(),
+}: {
+  candidates: DiscoveredCompetitor[]
+  searched: ReadonlySet<string>
+  outcomes?: ReadonlyMap<string, DomainRunOutcome>
+}) {
   return (
     <div className="table-scroll">
       <table className="data">
@@ -134,7 +175,7 @@ export function DiscoveredDomainsTable({ candidates }: { candidates: DiscoveredC
                 <DiscoveredClassCell c={c} />
               </td>
               <td>
-                <ReasonsCell c={c} />
+                <ReasonsCell c={c} searched={searched} outcome={outcomes.get(c.domain)} />
               </td>
             </tr>
           ))}

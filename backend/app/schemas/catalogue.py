@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from app.schemas.images import ProductImage
+
 
 class CatalogueProvenance(BaseModel):
     """How each catalogue row was researched. Preserved verbatim from the workbook."""
@@ -46,6 +48,9 @@ class StompboxProduct(BaseModel):
     product_url: HttpUrl
     search_keywords: str | None = None
     provenance: CatalogueProvenance
+    # Primary image of this catalogue product, from the image sidecar (never from a competitor
+    # page). None until collected; the dashboard then shows a placeholder.
+    image: ProductImage | None = None
 
     @field_validator("displayed_price")
     @classmethod

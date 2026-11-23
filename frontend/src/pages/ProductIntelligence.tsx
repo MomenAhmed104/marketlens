@@ -6,6 +6,9 @@ import { ExternalIcon } from '../components/icons'
 import StatusPill from '../components/StatusPill'
 import BaselineWarning from '../components/BaselineWarning'
 import ComparisonTable from '../dashboard/ComparisonTable'
+import ProductThumb from '../components/ProductThumb'
+import { revealInRow } from '../components/revealInRow'
+import ScrollRow from '../components/ScrollRow'
 import { money, plural } from '../format'
 
 export default function ProductIntelligence({ productId }: { productId: string | null }) {
@@ -40,22 +43,30 @@ export default function ProductIntelligence({ productId }: { productId: string |
     <div className="stack">
       {result.products.length > 1 && (
         <nav aria-label="Products in this run" className="product-switcher">
-          {result.products.map((p) => (
-            <a
-              key={p.product_id}
-              href={href('products', p.product_id)}
-              className="switch-item"
-              aria-current={p.product_id === pr.product_id ? 'page' : undefined}
-            >
-              <span className="cell-mono">{p.product_id}</span>
-              <span className="switch-name">{catalogue.get(p.product_id)?.product_name ?? ''}</span>
-              <StatusPill value={p.status} />
-            </a>
-          ))}
+          <ScrollRow trackClassName="switch-track-row">
+            {result.products.map((p) => (
+              <a
+                key={p.product_id}
+                href={href('products', p.product_id)}
+                className="switch-item"
+                aria-current={p.product_id === pr.product_id ? 'page' : undefined}
+                title={catalogue.get(p.product_id)?.product_name}
+                ref={p.product_id === pr.product_id ? revealInRow : undefined}
+              >
+                <span className="cell-mono switch-id">{p.product_id}</span>
+                <span className="switch-name">{catalogue.get(p.product_id)?.product_name ?? ''}</span>
+                <StatusPill value={p.status} />
+              </a>
+            ))}
+          </ScrollRow>
         </nav>
       )}
 
       <section className="product-hero" aria-labelledby="product-heading">
+        <div className="product-hero-image">
+          <ProductThumb image={product?.image} alt={product?.product_name ?? pr.product_id} size="lg" />
+          <span className="hint-inline">Stompbox image</span>
+        </div>
         <div className="product-hero-main">
           <p className="eyebrow">
             <span className="cell-mono">{pr.product_id}</span>

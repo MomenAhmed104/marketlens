@@ -1,0 +1,413 @@
+{
+ "run_id": "intelligence-20261112T174321Z-046a50",
+ "mode": "LLM_DISABLED",
+ "llm_disabled_reason": "OPENROUTER_API_KEY and LLM2_MODEL not set",
+ "started_at": "2026-11-12T17:43:21.111975Z",
+ "finished_at": "2026-11-12T17:43:40.550640Z",
+ "search_provider": "exa",
+ "search_targets": [
+  {
+   "domain": "andertons.co.uk",
+   "company_name": "Andertons",
+   "company_type": "retailer",
+   "approval_status": "PRECONFIGURED",
+   "price_benchmark": true
+  },
+  {
+   "domain": "gear4music.com",
+   "company_name": "Gear4music",
+   "company_type": "retailer",
+   "approval_status": "PRECONFIGURED",
+   "price_benchmark": true
+  },
+  {
+   "domain": "gibson.com",
+   "company_name": "Gibson",
+   "company_type": "manufacturer",
+   "approval_status": "PRECONFIGURED",
+   "price_benchmark": false
+  },
+  {
+   "domain": "bopdj.com",
+   "company_name": "bop dj",
+   "company_type": "retailer",
+   "approval_status": "APPROVED",
+   "price_benchmark": false
+  },
+  {
+   "domain": "promenademusic.co.uk",
+   "company_name": null,
+   "company_type": "retailer",
+   "approval_status": "APPROVED",
+   "price_benchmark": true
+  }
+ ],
+ "skipped_targets": [
+  {
+   "domain": "idealo.co.uk",
+   "company_type": "directory",
+   "reason": "Approved, but type 'directory' is not searched for offers (lists other sellers)"
+  },
+  {
+   "domain": "scan.co.uk",
+   "company_type": null,
+   "reason": "Rejected in review"
+  }
+ ],
+ "products": [
+  {
+   "product": {
+    "product_id": "SB-001",
+    "product_name": "Boss RC-5 Loop Station Guitar Effect Pedal",
+    "brand": "Boss",
+    "manufacturer_model": "RC-5"
+   },
+   "queries": [
+    "Boss RC-5 Loop Station Guitar Effect Pedal"
+   ],
+   "domains": [
+    {
+     "domain": "andertons.co.uk",
+     "queries": [
+      "Boss RC-5 Loop Station Guitar Effect Pedal"
+     ],
+     "results": 5,
+     "out_of_scope_dropped": 0,
+     "pages_selected": 2,
+     "errors": []
+    },
+    {
+     "domain": "gear4music.com",
+     "queries": [
+      "Boss RC-5 Loop Station Guitar Effect Pedal"
+     ],
+     "results": 5,
+     "out_of_scope_dropped": 0,
+     "pages_selected": 2,
+     "errors": []
+    },
+    {
+     "domain": "gibson.com",
+     "queries": [
+      "Boss RC-5 Loop Station Guitar Effect Pedal"
+     ],
+     "results": 5,
+     "out_of_scope_dropped": 0,
+     "pages_selected": 2,
+     "errors": []
+    },
+    {
+     "domain": "bopdj.com",
+     "queries": [
+      "Boss RC-5 Loop Station Guitar Effect Pedal"
+     ],
+     "results": 5,
+     "out_of_scope_dropped": 0,
+     "pages_selected": 2,
+     "errors": []
+    },
+    {
+     "domain": "promenademusic.co.uk",
+     "queries": [
+      "Boss RC-5 Loop Station Guitar Effect Pedal"
+     ],
+     "results": 5,
+     "out_of_scope_dropped": 0,
+     "pages_selected": 2,
+     "errors": []
+    }
+   ],
+   "candidates": [
+    {
+     "candidate_id": "SB-001:e7bdd533fb45",
+     "stompbox_product_id": "SB-001",
+     "competitor": {
+      "domain": "andertons.co.uk",
+      "company_name": "Andertons",
+      "company_type": "retailer",
+      "approval_status": "PRECONFIGURED",
+      "price_benchmark": true
+     },
+     "product_url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal",
+     "search": {
+      "domain": "andertons.co.uk",
+      "query_text": "Boss RC-5 Loop Station Guitar Effect Pedal",
+      "provider": "exa",
+      "provider_request_id": "e737d2de2f2c63c4f48a867963dee570",
+      "rank": 1,
+      "url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal/",
+      "canonical_url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal",
+      "hostname": "andertons.co.uk",
+      "title": null,
+      "snippet": null,
+      "published_raw": null,
+      "retrieved_at": "2026-11-12T17:43:23.645006Z",
+      "mentions_model": true,
+      "mentions_brand": true
+     },
+     "page": {
+      "status": "OK",
+      "provider": "exa",
+      "provider_request_id": "e0dee340d23ceb52e8a9bbb4901df955",
+      "requested_url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal",
+      "final_url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal",
+      "title": "Boss RC-5 Loop Station Pedal",
+      "content_chars": 17360,
+      "chars_sent_to_llm": 0,
+      "retrieved_at": "2026-11-12T17:43:27.922366Z",
+      "cache_source": "crawled",
+      "error": null
+     },
+     "extraction_status": "SKIPPED_LLM_DISABLED",
+     "extraction_error": null,
+     "page_type": null,
+     "product_title": null,
+     "brand": null,
+     "model": null,
+     "sku": null,
+     "price": null,
+     "currency": null,
+     "price_text": null,
+     "availability": null,
+     "specifications": [],
+     "sale_indicated": false,
+     "ignored_prices": [],
+     "field_evidence": [],
+     "llm_confidence": null,
+     "llm_notes": null,
+     "llm_request_ids": []
+    },
+    {
+     "candidate_id": "SB-001:583bf8c23216",
+     "stompbox_product_id": "SB-001",
+     "competitor": {
+      "domain": "bopdj.com",
+      "company_name": "bop dj",
+      "company_type": "retailer",
+      "approval_status": "APPROVED",
+      "price_benchmark": false
+     },
+     "product_url": "https://www.bopdj.com/boss-rc-5.html",
+     "search": {
+      "domain": "bopdj.com",
+      "query_text": "Boss RC-5 Loop Station Guitar Effect Pedal",
+      "provider": "exa",
+      "provider_request_id": "cf74243091fb3e8e471d2233e1189c6f",
+      "rank": 1,
+      "url": "https://www.bopdj.com/boss-rc-5.html",
+      "canonical_url": "https://www.bopdj.com/boss-rc-5.html",
+      "hostname": "bopdj.com",
+      "title": "BOSS RC-5 | Loop Station | Bop Dj",
+      "snippet": null,
+      "published_raw": null,
+      "retrieved_at": "2026-11-12T17:43:23.235812Z",
+      "mentions_model": true,
+      "mentions_brand": true
+     },
+     "page": {
+      "status": "OK",
+      "provider": "exa",
+      "provider_request_id": "e0dee340d23ceb52e8a9bbb4901df955",
+      "requested_url": "https://www.bopdj.com/boss-rc-5.html",
+      "final_url": "https://www.bopdj.com/boss-rc-5.html",
+      "title": "BOSS RC-5 | Loop Station | Bop Dj",
+      "content_chars": 5157,
+      "chars_sent_to_llm": 0,
+      "retrieved_at": "2026-11-12T17:43:27.922366Z",
+      "cache_source": "cached",
+      "error": null
+     },
+     "extraction_status": "SKIPPED_LLM_DISABLED",
+     "extraction_error": null,
+     "page_type": null,
+     "product_title": null,
+     "brand": null,
+     "model": null,
+     "sku": null,
+     "price": null,
+     "currency": null,
+     "price_text": null,
+     "availability": null,
+     "specifications": [],
+     "sale_indicated": false,
+     "ignored_prices": [],
+     "field_evidence": [],
+     "llm_confidence": null,
+     "llm_notes": null,
+     "llm_request_ids": []
+    },
+    {
+     "candidate_id": "SB-001:6902999b7393",
+     "stompbox_product_id": "SB-001",
+     "competitor": {
+      "domain": "promenademusic.co.uk",
+      "company_name": null,
+      "company_type": "retailer",
+      "approval_status": "APPROVED",
+      "price_benchmark": true
+     },
+     "product_url": "https://www.promenademusic.co.uk/boss-rc-5-loop-pedal",
+     "search": {
+      "domain": "promenademusic.co.uk",
+      "query_text": "Boss RC-5 Loop Station Guitar Effect Pedal",
+      "provider": "exa",
+      "provider_request_id": "9d982fab7ada3973dcd676770ab89159",
+      "rank": 1,
+      "url": "https://www.promenademusic.co.uk/boss-rc-5-loop-pedal/",
+      "canonical_url": "https://www.promenademusic.co.uk/boss-rc-5-loop-pedal",
+      "hostname": "promenademusic.co.uk",
+      "title": "Boss RC5 Loop Station Pedal",
+      "snippet": null,
+      "published_raw": null,
+      "retrieved_at": "2026-11-12T17:43:24.863756Z",
+      "mentions_model": true,
+      "mentions_brand": true
+     },
+     "page": {
+      "status": "OK",
+      "provider": "exa",
+      "provider_request_id": "e0dee340d23ceb52e8a9bbb4901df955",
+      "requested_url": "https://www.promenademusic.co.uk/boss-rc-5-loop-pedal",
+      "final_url": "https://www.promenademusic.co.uk/boss-rc-5-loop-pedal",
+      "title": "Boss RC5 Loop Station Pedal",
+      "content_chars": 5797,
+      "chars_sent_to_llm": 0,
+      "retrieved_at": "2026-11-12T17:43:27.922366Z",
+      "cache_source": "crawled",
+      "error": null
+     },
+     "extraction_status": "SKIPPED_LLM_DISABLED",
+     "extraction_error": null,
+     "page_type": null,
+     "product_title": null,
+     "brand": null,
+     "model": null,
+     "sku": null,
+     "price": null,
+     "currency": null,
+     "price_text": null,
+     "availability": null,
+     "specifications": [],
+     "sale_indicated": false,
+     "ignored_prices": [],
+     "field_evidence": [],
+     "llm_confidence": null,
+     "llm_notes": null,
+     "llm_request_ids": []
+    }
+   ],
+   "not_selected": [
+    {
+     "domain": "gear4music.com",
+     "url": "https://www.gear4music.com/us/en/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal/3LJT",
+     "title": "Boss RC-5 Loop Station Guitar Loop Pedal at Gear4music",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "gear4music.com",
+     "url": "https://www.gear4music.com/blog/boss-loop-stations-explained/",
+     "title": "BOSS Loop Stations Explained | Gear4music",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "andertons.co.uk",
+     "url": "https://www.andertons.co.uk/browse/guitar-pedals/looper-pedals/",
+     "title": "Looper Pedals",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "gear4music.com",
+     "url": "https://www.gear4music.com/us/en/Guitar_Effects/Looper/Boss",
+     "title": "Boss Looper Pedals",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "gibson.com",
+     "url": "https://forum.gibson.com/topic/148510-reasons-every-guitar-student-needs-a-loop-pedal/",
+     "title": "Reasons Every Guitar Student Needs a Loop Pedal - Reviews - Gibson Brands Forums",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "bopdj.com",
+     "url": "https://www.bopdj.com/music-production/beatboxing",
+     "title": "Music Production | Beatboxing | Buy Boss & More",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "promenademusic.co.uk",
+     "url": "https://www.promenademusic.co.uk/manufacturer/boss/",
+     "title": "Boss Pedals, Amps & Recording Gear For Sale",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "andertons.co.uk",
+     "url": "https://www.andertons.co.uk/boss-rc-500-loop-station-pedal/",
+     "title": "Boss RC-500 Loop Station Pedal",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "gibson.com",
+     "url": "https://forum.gibson.com/topic/94506-npd-boss-rc-2/",
+     "title": "NPD Boss RC-2 - The Gibson Lounge - Gibson Brands Forums",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "bopdj.com",
+     "url": "https://www.bopdj.com/boss-rc-505-mkii.html",
+     "title": "Boss RC-505 MKII | Loop Station Tabletop Looper | 0% Finance | Bop DJ",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "promenademusic.co.uk",
+     "url": "https://www.promenademusic.co.uk/shop/page/10/",
+     "title": "Shop - Page 10 of 60 - Promenade Music",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "andertons.co.uk",
+     "url": "https://www.andertons.co.uk/browse/brands/boss-pedals/boss-looper-utility-pedals/",
+     "title": "Boss Looper & Utility Pedals",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "gibson.com",
+     "url": "https://forum.gibson.com/topic/118395-what-are-you-guys-using-for-a-looper/",
+     "title": "What are you guy's using for a looper? - The Gibson Lounge - Gibson Brands Forums",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "bopdj.com",
+     "url": "https://www.bopdj.com/brands/boss",
+     "title": "Shop BOSS | FX Effects Pedals & Loop Pedals | Bop DJ",
+     "reason": "Over the per-domain page limit (2)"
+    },
+    {
+     "domain": "promenademusic.co.uk",
+     "url": "https://www.promenademusic.co.uk/stock-just-arrived/",
+     "title": "Latest Stock Just Arrived",
+     "reason": "Over the per-domain page limit (2)"
+    }
+   ]
+  }
+ ],
+ "usage": {
+  "search_requests": 10,
+  "search_errors": 0,
+  "search_cost_usd": "0.070",
+  "retrieval_requests": 2,
+  "retrieval_errors": 0,
+  "pages_requested": 20,
+  "pages_ok": 20,
+  "retrieval_cost_usd": "0.02",
+  "llm_model": null,
+  "llm_calls": 0,
+  "llm_failures": 0,
+  "llm_prompt_tokens": 0,
+  "llm_completion_tokens": 0,
+  "llm_cost_usd": null
+ },
+ "warnings": [
+  "LLM 2 extraction skipped (OPENROUTER_API_KEY and LLM2_MODEL not set); pages are searched and retrieved but no product fields are extracted"
+ ],
+ "_note": "Legacy-format fixture: candidates use extraction_status SKIPPED_LLM_DISABLED with no extraction_error, as saved before the Phase 5 finalisation (12 Nov 2026). Derived from phase5_no_llm_run.json; test data only."
+}

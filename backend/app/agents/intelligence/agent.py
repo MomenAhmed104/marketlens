@@ -61,6 +61,7 @@ from app.agents.intelligence.schemas import (
 from app.core.config import Settings
 from app.schemas.catalogue import StompboxProduct
 from app.schemas.search import RetrievalStatus, RetrievedPage, SearchQuery, SearchResponse, SearchScope
+from app.services.images import ImageLookup, flag_shared_images, not_attempted
 from app.services.llm import LLMClient, LLMOutputError, LLMUsage
 from app.services.search import SearchProvider
 from app.services.search.http import ProviderAuthError, ProviderError
@@ -88,6 +89,7 @@ class ProductIntelligenceAgent:
         targets: list[SearchTarget],
         skipped_targets: list[SkippedTarget] | None = None,
         llm_disabled_reason: str | None = None,
+        images: ImageLookup | None = None,
     ):
         """`targets` must already be filtered to approved, searchable domains
         (see `eligible_search_targets`). `llm=None` runs in LLM_DISABLED mode."""
@@ -103,11 +105,22 @@ class ProductIntelligenceAgent:
         self._search_sem = asyncio.Semaphore(settings.intelligence_search_concurrency)
         self._llm_sem = asyncio.Semaphore(settings.intelligence_llm_concurrency)
         self._llm_stopped: str | None = None
+        # Optional product-image lookup (display only; never affects extraction or matching).
+        self.images = images
 
     async def aclose(self) -> None:
         await self.search.aclose()
         if self.llm:
             await self.llm.aclose()
+        if self.images:
+            await self.images.aclose()
+
+    async def _image(self, cand: CompetitorProduct) -> None:
+        """Find this listing's own image. Any failure is recorded on the candidate, never raised."""
+        try:
+            cand.image = await self.images.find(cand.product_url)  # type: ignore[union-attr]
+        except Exception as e:  # defensive: ImageLookup.find should already never raise
+            cand.image = not_attempted(cand.product_url, f"Image lookup failed ({type(e).__name__})")
 
     # ------------------------------------------------------------------ search
 
@@ -360,6 +373,12 @@ class ProductIntelligenceAgent:
                 extraction_status=ExtractionStatus.SKIPPED_NOT_RETRIEVED,
             )  # fmt: skip
             candidates.append(cand)
+            if self.images is None:
+                cand.image = not_attempted(cand.product_url, "Product images are switched off")
+            elif page is None or page.status is not RetrievalStatus.OK:
+                cand.image = not_attempted(cand.product_url, "The page was not retrieved")
+            else:
+                jobs.append(self._image(cand))
             if page is None or page.status is not RetrievalStatus.OK:
                 why = page.status.value if page else "not retrieved"
                 cand.extraction_error = f"Page {why}" + (f": {record.error}" if record.error else "")
@@ -371,6 +390,11 @@ class ProductIntelligenceAgent:
             else:
                 jobs.append(self._extract(cand, p, page))
         await asyncio.gather(*jobs)
+        # One og:image shared by different listing pages of one site is a site-wide picture, not
+        # a product image (display only; never affects extraction or matching).
+        by_page = {c.candidate_id: c.image for c in candidates}
+        for cid in flag_shared_images(by_page, "listing pages of this site"):
+            next(c for c in candidates if c.candidate_id == cid).image = by_page[cid]
         return ProductIntelligence(
             product=ProductSummary(product_id=p.product_id, product_name=p.product_name, brand=p.brand,
                                    manufacturer_model=p.manufacturer_model),  # fmt: skip

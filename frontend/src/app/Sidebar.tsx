@@ -2,7 +2,7 @@ import type { ComponentType } from 'react'
 import type { Health } from '../api'
 import { BrandMark, DomainsIcon, OverviewIcon, ProductIcon, RunsIcon } from '../components/icons'
 import { plural } from '../format'
-import { href, PAGE_TITLES, type Page } from './router'
+import { HOME_HREF, href, PAGE_TITLES, type Page } from './router'
 import { useRunContext } from './runContext'
 
 const GROUPS: { label: string; items: { page: Page; Icon: ComponentType }[] }[] = [
@@ -38,13 +38,16 @@ export default function Sidebar({ current, health, open, onNavigate }: Props) {
 
   return (
     <aside id="sidebar" className={open ? 'sidebar open' : 'sidebar'} aria-label="Main">
-      <div className="brand">
+      <a className="brand brand-link" href={HOME_HREF} title="Back to the MarketLens home page">
         <BrandMark />
         <span className="brand-text nav-label">
-          Stompbox
+          MarketLens
           <span>Competitor Intelligence</span>
         </span>
-      </div>
+      </a>
+      <a className="home-link nav-label" href={HOME_HREF}>
+        <span aria-hidden="true">←</span> Back to home
+      </a>
       <nav aria-label="Sections" className="nav">
         {GROUPS.map((g) => (
           <div key={g.label} className="nav-group">

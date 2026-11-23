@@ -21,6 +21,8 @@ DEFAULT_CATALOGUE_PATH = (
     REPO_ROOT / "data" / "catalogue" / "Stompbox_100_Product_Catalogue_No_Sale_Pricing.xlsx"
 )
 DEFAULT_REVIEW_DB_PATH = REPO_ROOT / "data" / "review" / "competitor_review.sqlite3"
+DEFAULT_IMAGE_CACHE_DIR = REPO_ROOT / "data" / "image_cache"
+DEFAULT_CATALOGUE_IMAGES_PATH = REPO_ROOT / "data" / "catalogue" / "product_images.json"
 
 
 class Settings(BaseSettings):
@@ -108,6 +110,29 @@ class Settings(BaseSettings):
 
     # --- Competitor review (Phase 4). Persistent decisions; git-ignored SQLite file. ---
     review_db_path: Path = DEFAULT_REVIEW_DB_PATH
+
+    # --- Product images (MarketLens). Free HTTP only: each retrieved competitor page's HTML is
+    # read once to find its primary image (JSON-LD > og:image > product meta > gallery img).
+    # Images are display-only and never decide a match. False: images are NOT_ATTEMPTED.
+    product_images_enabled: bool = True
+    image_fetch_timeout_seconds: float = Field(default=8, gt=0)  # per connect/read; see the total deadline
+    # Total deadline for one image lookup (page, redirects, image attempts, verification) and for
+    # one /api/images cache-miss fetch. A slow site can never hold a product run longer than this.
+    image_lookup_deadline_seconds: float = Field(default=20, gt=0, le=300)
+    image_concurrency: int = Field(default=4, ge=1, le=16)
+    image_page_max_bytes: int = Field(default=3_000_000, ge=100_000)  # HTML read cap
+    image_max_bytes: int = Field(default=8_000_000, ge=100_000)  # one image's byte cap
+    image_cache_dir: Path = DEFAULT_IMAGE_CACHE_DIR  # git-ignored; the dashboard's image cache
+    # Upper bound on the cache's total size; the oldest entries are removed beyond it.
+    image_cache_max_bytes: int = Field(default=300_000_000, ge=1_000_000)
+    # Politeness per host (page and image requests): requests in flight and the minimum gap
+    # between request starts to one host. The catalogue collector and runs share these rules.
+    image_per_host_concurrency: int = Field(default=2, ge=1, le=8)
+    image_host_min_interval_seconds: float = Field(default=0.5, ge=0, le=30)
+    # /api/images serves only image URLs the backend itself found (catalogue sidecar or a run in
+    # memory), so it cannot be used as a general-purpose fetcher. Cached copies are still served.
+    image_proxy_known_urls_only: bool = True
+    catalogue_images_path: Path = DEFAULT_CATALOGUE_IMAGES_PATH  # sidecar written by the collect CLI
 
     # --- Product intelligence (Phase 5) ---
     # Use LLM 2 when OPENROUTER_API_KEY and LLM2_MODEL are set. False forces

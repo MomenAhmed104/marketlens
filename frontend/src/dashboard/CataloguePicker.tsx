@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { MAX_PRODUCTS_PER_RUN, type StompboxProduct } from '../api'
 import { money } from '../format'
+import ProductThumb from '../components/ProductThumb'
 
 interface Props {
   products: StompboxProduct[] | null
@@ -100,6 +101,7 @@ export default function CataloguePicker({ products, error, selected, onChange, d
                 <thead>
                   <tr>
                     <th scope="col"><span className="sr-only">Select</span></th>
+                    <th scope="col"><span className="sr-only">Image</span></th>
                     <th scope="col">ID</th>
                     <th scope="col">Product</th>
                     <th scope="col">Brand</th>
@@ -121,6 +123,9 @@ export default function CataloguePicker({ products, error, selected, onChange, d
                             disabled={disabled || (full && !checked)}
                             onChange={() => toggle(p.product_id)}
                           />
+                        </td>
+                        <td className="col-thumb">
+                          <ProductThumb image={p.image} alt={p.product_name} size="sm" />
                         </td>
                         <td>{p.product_id}</td>
                         <td>

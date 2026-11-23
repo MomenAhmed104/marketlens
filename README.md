@@ -1,6 +1,7 @@
-# Stompbox Competitor Intelligence
+# MarketLens (Stompbox Competitor Intelligence)
 
-Live AI-assisted competitor intelligence demo for Stompbox. See [CLAUDE.md](CLAUDE.md)
+Live AI-assisted competitor intelligence demo for Stompbox, presented as **MarketLens**.
+Product images: [docs/product-images.md](docs/product-images.md). See [CLAUDE.md](CLAUDE.md)
 for the full plan, rules and phase breakdown.
 
 **Status:** Phases 1–7 complete (catalogue, search, competitor discovery with

@@ -5,6 +5,7 @@ import type { CompetitorDiscoveredPayload, ExecutionEvent } from '../api'
 import CompetitorClassPill from '../components/CompetitorClassPill'
 import { fromBackendClass } from '../competitorClass'
 import { plural, timeOnly } from '../format'
+import { eventLabel, explain } from '../plainLanguage'
 import { TONE_ICON } from '../status'
 
 type Group = 'lifecycle' | 'discovery' | 'search' | 'matching' | 'other'
@@ -140,9 +141,9 @@ export default function EventTimeline({ events }: { events: ExecutionEvent[] }) 
                     </time>
                     <span className="fi-dot" aria-hidden="true" />
                     <div className="fi-body">
-                      <span className="fi-type">{e.type.replace(/_/g, ' ')}</span>
+                      <span className="fi-type">{eventLabel(e.type)}</span>
                       {e.product_id && <span className="chip-sm">{e.product_id}</span>}
-                      <p className="fi-message">{e.message}</p>
+                      <p className="fi-message">{explain(e.message)}</p>
                       <DiscoveredClass event={e} />
                     </div>
                   </li>
@@ -168,7 +169,7 @@ function DiscoveredClass({ event }: { event: ExecutionEvent }) {
       {cls && <CompetitorClassPill cls={cls} />}
       {auto && (
         <span className="pill tone-success" data-testid="auto-searchable">
-          <span className="pill-icon" aria-hidden="true">{TONE_ICON.success}</span> Automatically searchable
+          <span className="pill-icon" aria-hidden="true">{TONE_ICON.success}</span> Automatically eligible
         </span>
       )}
     </div>

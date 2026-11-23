@@ -82,6 +82,25 @@ class ProductRunResult(BaseModel):
     matching: ProductMatchSummary | None = None  # Phase 6 decisions per candidate
 
 
+class DomainRunStatus(StrEnum):
+    """Where one domain discovered in this run stands for this run's product search.
+
+    SELECTED_FOR_SEARCH means it is one of this run's search targets; whether a query was
+    actually sent is recorded per product (`intelligence.domains`), never inferred from this."""
+
+    SELECTED_FOR_SEARCH = "SELECTED_FOR_SEARCH"
+    PENDING_APPROVAL = "PENDING_APPROVAL"  # needs a reviewer decision; never searched until approved
+    AUTO_ELIGIBLE_NOT_SEARCHED = "AUTO_ELIGIBLE_NOT_SEARCHED"  # passes the automatic checks, not a target here
+    APPROVED_NOT_SEARCHED = "APPROVED_NOT_SEARCHED"  # reviewer-approved, not a target here (type, domain subset)
+    REJECTED = "REJECTED"  # rejected (reviewer or no discovery evidence); never searched
+
+
+class DomainRunOutcome(BaseModel):
+    domain: str
+    status: DomainRunStatus
+    reason: str | None = None  # why it is not a search target in this run, when known
+
+
 class PipelineResult(BaseModel):
     """Consolidated, progressively filled result of one run."""
 
@@ -89,6 +108,8 @@ class PipelineResult(BaseModel):
     new_pending_domains: list[str] = Field(default_factory=list)  # need Phase 4 approval; never searched
     search_targets: list[SearchTarget] = Field(default_factory=list)
     skipped_targets: list[SkippedTarget] = Field(default_factory=list)
+    # One entry per domain discovered in this run (empty without discovery, or in older saved runs).
+    domain_outcomes: list[DomainRunOutcome] = Field(default_factory=list)
     intelligence_mode: IntelligenceMode | None = None
     llm2_disabled_reason: str | None = None
     intelligence_usage: IntelligenceUsage | None = None

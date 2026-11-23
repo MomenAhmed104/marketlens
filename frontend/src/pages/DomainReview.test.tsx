@@ -273,7 +273,8 @@ describe('Domain Review page', () => {
     expect(within(row('guitarworld.com')).getByTestId('competitor-class')).toHaveTextContent('Needs Review')
     // Stage 8.1: the reasons column replaces UK evidence; automatic domains say so.
     const beck = within(run).getAllByRole('rowheader', { name: 'beckettsmusic.co.uk' }).at(-1)!.closest('tr')! // discovered table
-    expect(within(beck).getByText('Automatically searchable', { selector: 'span.small' })).toBeInTheDocument()
+    expect(within(beck).getByTestId('run-domain-status')).toHaveTextContent('Searched in this run') // from the run's search records
+    expect(within(row('ebay.co.uk')).getByTestId('run-domain-status')).toHaveTextContent('Pending review')
     expect(within(run).queryByText(/UK evidence/)).not.toBeInTheDocument()
   })
 

@@ -6,6 +6,7 @@ import EventTimeline from '../dashboard/EventTimeline'
 import PipelineStepper, { PipelineTrack } from '../dashboard/PipelineStepper'
 import RunControls from '../dashboard/RunControls'
 import { DiscoveredDomainsTable } from '../dashboard/RunDomains'
+import { domainOutcomes, searchedDomains } from '../domainStatus'
 import { CancelControl, LiveCounters, ProductProgress, RunSummary } from '../dashboard/RunPanels'
 import { plural, when } from '../format'
 import { isTerminal } from '../runStream'
@@ -177,10 +178,16 @@ export default function LiveRuns() {
             <span className="hint-inline">{plural(discovered.length, 'domain')}</span>
           </div>
           <p className="hint">
-            Retailers that pass the basic checks are searched automatically (never as price benchmarks). Other
-            domains stay pending and are not searched until approved on Domain Review; a rejection always wins.
+            Retailers that pass the basic checks are automatically eligible: they are searched when automatic search is
+            on, up to a per-run limit, and never as price benchmarks. Other domains stay pending until approved on Domain
+            Review; a rejection always wins. The last column shows whether this run actually searched each domain, and why
+            not when it did not.
           </p>
-          <DiscoveredDomainsTable candidates={discovered} />
+          <DiscoveredDomainsTable
+            candidates={discovered}
+            searched={searchedDomains(view.result)}
+            outcomes={domainOutcomes(view.result)}
+          />
         </section>
       )}
 

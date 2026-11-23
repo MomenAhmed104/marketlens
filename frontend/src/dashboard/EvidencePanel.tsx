@@ -8,6 +8,10 @@ import { ExternalIcon } from '../components/icons'
 import StatusPill from '../components/StatusPill'
 import Tabs, { TabPanel } from '../components/Tabs'
 import { label, money, signedGbp, when } from '../format'
+import { explain } from '../plainLanguage'
+import ProductThumb from '../components/ProductThumb'
+import { imageStatusText, proxied, usableImage } from '../productImages'
+import type { ProductImage } from '../api'
 
 type Tab = 'source' | 'identity' | 'price'
 
@@ -104,7 +108,7 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
           {m.price.reasons.length > 0 && (
             <ul className="plain-list">
               {m.price.reasons.map((r) => (
-                <li key={r}>{r}</li>
+                <li key={r}>{explain(r)}</li>
               ))}
             </ul>
           )}
@@ -154,7 +158,7 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
               </p>
               <p className="hint">Shown for information only: never a price benchmark and no difference is calculated.</p>
               {m.alternative_price.reasons.map((r) => (
-                <p key={r} className="hint">Not shown: {r}</p>
+                <p key={r} className="hint">Not shown: {explain(r)}</p>
               ))}
             </div>
           ) : m.comparison.eligible && m.comparison.difference_gbp !== null ? (
@@ -175,7 +179,7 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
               </p>
               <ul className="plain-list">
                 {m.comparison.reasons.map((r) => (
-                  <li key={r}>Not compared: {r}</li>
+                  <li key={r}>Not compared: {explain(r)}</li>
                 ))}
               </ul>
               {stompboxPrice !== null && <BaselineWarning productId={m.stompbox_product_id} />}
@@ -189,7 +193,7 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
           <h3 className="drawer-section">Why this match status</h3>
           <ul className="plain-list">
             {m.match_reasons.map((r) => (
-              <li key={r}>{r}</li>
+              <li key={r}>{explain(r)}</li>
             ))}
           </ul>
           {m.review_reasons.length > 0 && (
@@ -197,7 +201,7 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
               <h3 className="drawer-section">To resolve</h3>
               <ul className="plain-list">
                 {m.review_reasons.map((r) => (
-                  <li key={r}>{r}</li>
+                  <li key={r}>{explain(r)}</li>
                 ))}
               </ul>
             </div>
@@ -259,20 +263,21 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
                     <dt>Competitor</dt>
                     <dd className="break">{c.found.join(' · ') || 'none found'}</dd>
                   </dl>
-                  {c.note && <p className="hint">{c.note}</p>}
+                  {c.note && <p className="hint">{explain(c.note)}</p>}
                 </div>
               </li>
             ))}
           </ul>
           <p className="hint">
             Condition: {label(m.condition.condition)}
-            {m.condition.note && ` · ${m.condition.note}`}
+            {m.condition.note && ` · ${explain(m.condition.note)}`}
           </p>
         </TabPanel>
       )}
 
       {tab === 'source' && (
         <TabPanel idPrefix="evidence" id="source">
+          <ListingImage image={page?.image} alt={page?.page.title ?? page?.search.title ?? m.product_url} />
           <dl className="facts">
             <dt>Page</dt>
             <dd>
@@ -299,13 +304,13 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
             <dt>Extraction</dt>
             <dd>
               <StatusPill value={m.extraction_status} />
-              {page?.extraction_error && <span className="cell-sub">{page.extraction_error}</span>}
+              {page?.extraction_error && <span className="cell-sub">{explain(page.extraction_error)}</span>}
             </dd>
             <dt>Availability</dt>
             <dd>
               <StatusPill value={m.availability?.status ?? 'UNKNOWN'} />
               {m.availability?.text && ` “${m.availability.text}”`}
-              {m.availability?.reason && <span className="cell-sub">{m.availability.reason}</span>}
+              {m.availability?.reason && <span className="cell-sub">{explain(m.availability.reason)}</span>}
             </dd>
             <dt>Page type</dt>
             <dd>
@@ -316,5 +321,43 @@ export default function EvidenceDrawer({ m, page, stompboxPrice, stompboxCurrenc
         </TabPanel>
       )}
     </Drawer>
+  )
+}
+
+const SOURCE_TEXT: Record<string, string> = {
+  JSON_LD: 'structured product data (Schema.org)',
+  OPEN_GRAPH: 'the page’s Open Graph image',
+  PRODUCT_META: 'product image metadata',
+  PAGE_IMAGE: 'the product gallery',
+}
+
+/** This listing's own image and where it came from. Inline (no pop-up inside the drawer). */
+function ListingImage({ image, alt }: { image: ProductImage | null | undefined; alt: string }) {
+  return (
+    <div className="listing-image">
+      <ProductThumb image={image} alt={alt} size="lg" zoomable={false} />
+      <div className="small">
+        {usableImage(image) ? (
+          <>
+            <p>
+              Listing image from {SOURCE_TEXT[image.source ?? ''] ?? 'the page'}
+              {image.retrieved_at && <> · {when(image.retrieved_at)}</>}.
+            </p>
+            <p>
+              <a href={proxied(image.url)} target="_blank" rel="noreferrer noopener">
+                Open larger <ExternalIcon />
+              </a>{' '}
+              ·{' '}
+              <a href={image.url} target="_blank" rel="noreferrer noopener" className="break">
+                Image source <ExternalIcon />
+              </a>
+            </p>
+          </>
+        ) : (
+          <p className="hint">{imageStatusText(image)}{image?.note ? ` (${explain(image.note)})` : ''}</p>
+        )}
+        <p className="hint">For reference only: images never decide whether this is the same product.</p>
+      </div>
+    </div>
   )
 }

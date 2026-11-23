@@ -11,6 +11,7 @@ from app.schemas.common import DomainApprovalStatus
 from app.schemas.competitor import CompetitorDomain
 from app.schemas.review import DomainDecisionRecord, ReviewDecision
 from app.services.domains import registrable_domain
+from app.services.images import build_image_finder
 from app.services.llm import LLMClient, build_llm2
 from app.services.search import get_configured_provider
 
@@ -144,7 +145,8 @@ async def build_intelligence_agent(
         except Exception:
             await search.aclose()
             raise
-    return ProductIntelligenceAgent(search, llm, settings, targets, skipped, llm_disabled_reason=reason)
+    return ProductIntelligenceAgent(search, llm, settings, targets, skipped, llm_disabled_reason=reason,
+                                    images=build_image_finder(settings))  # fmt: skip
 
 
 __all__ = ["ProductIntelligenceAgent", "build_intelligence_agent", "eligible_search_targets",

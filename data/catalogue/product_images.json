@@ -1,0 +1,51 @@
+{
+ "version": 1,
+ "generated_at": "2026-11-22T20:02:55.250166+00:00",
+ "images": {
+  "SB-001": {
+   "status": "FETCH_FAILED",
+   "url": null,
+   "source_page_url": "https://stompbox.co.uk/product/boss-rc-5-loop-station-guitar-pedal/",
+   "source": null,
+   "additional_urls": [],
+   "retrieved_at": "2026-11-22T20:02:47.268629Z",
+   "note": "Page returned HTTP 404"
+  },
+  "SB-017": {
+   "status": "FOUND",
+   "url": "https://cdn.shopify.com/s/files/1/1030/1826/6998/files/SX-50H_0003_5.webp?v=1794444051",
+   "source_page_url": "https://stompbox.co.uk/products/ashdown-sx-50h-valve-electric-guitar-amplifier-head-50-watts",
+   "source": "OPEN_GRAPH",
+   "additional_urls": [],
+   "retrieved_at": "2026-11-22T20:02:47.297608Z",
+   "note": null
+  },
+  "SB-028": {
+   "status": "FOUND",
+   "url": "https://cdn.shopify.com/s/files/1/1030/1826/6998/files/2412242Rog7tQL5.jpg?v=1794443640",
+   "source_page_url": "https://stompbox.co.uk/products/epiphone-les-paul-standard-60s-left-handed-electric-guitar-iced-tea-burst",
+   "source": "OPEN_GRAPH",
+   "additional_urls": [],
+   "retrieved_at": "2026-11-22T20:02:47.300837Z",
+   "note": null
+  },
+  "SB-030": {
+   "status": "FOUND",
+   "url": "https://cdn.shopify.com/s/files/1/1030/1826/6998/files/1910572k7AnGH5A.jpg?v=1794444048",
+   "source_page_url": "https://stompbox.co.uk/products/ashdown-saint-artisan-flame-bass-guitar-amethyst-purple-pre-order-only",
+   "source": "OPEN_GRAPH",
+   "additional_urls": [],
+   "retrieved_at": "2026-11-22T20:02:47.302713Z",
+   "note": null
+  },
+  "SB-090": {
+   "status": "FOUND",
+   "url": "https://cdn.shopify.com/s/files/1/1030/1826/6998/files/square-image-28.jpg?v=1794443564",
+   "source_page_url": "https://stompbox.co.uk/products/cherub-wst-905li-flow-tune-rechargeable-clip-on-headstock-guitar-tuner",
+   "source": "OPEN_GRAPH",
+   "additional_urls": [],
+   "retrieved_at": "2026-11-22T20:02:49.377633Z",
+   "note": null
+  }
+ }
+}

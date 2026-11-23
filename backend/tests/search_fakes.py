@@ -56,6 +56,11 @@ def make_settings(**overrides) -> Settings:
               "openrouter_api_key": None, "llm1_model": None,
               "search_provider": None,
               # Never touch the real review database from tests.
-              "review_db_path": Path(tempfile.mkdtemp(prefix="review-test-")) / "review.sqlite3"}  # fmt: skip
+              "review_db_path": Path(tempfile.mkdtemp(prefix="review-test-")) / "review.sqlite3",
+              # No network from tests: image lookup is off unless a test injects a fake finder,
+              # and the image cache and catalogue sidecar never point at the real data folder.
+              "product_images_enabled": False,
+              "image_cache_dir": Path(tempfile.mkdtemp(prefix="image-cache-test-")),
+              "catalogue_images_path": Path(tempfile.mkdtemp(prefix="catimg-test-")) / "product_images.json"}  # fmt: skip
     values.update(overrides)
     return Settings(_env_file=None, **values)

@@ -40,7 +40,9 @@ describe('Product Intelligence page', () => {
 
     const gear = screen.getByText('gear4music.com').closest('tr')!
     expect(within(gear).getByText('Not compared')).toBeInTheDocument()
-    expect(within(gear).getByText('Price status is UNSUPPORTED')).toBeInTheDocument()
+    // The backend's "Price status is UNSUPPORTED" is shown in plain English, never as a raw code.
+    expect(within(gear).getByText('The price could not be confirmed in the page text; excluded from comparison.')).toBeInTheDocument()
+    expect(within(gear).queryByText(/UNSUPPORTED/)).not.toBeInTheDocument()
     // Exact matches and review rows: "Not compared". The similar row sits in the separate
     // alternative-products section, which has no difference column at all.
     expect(screen.getAllByText('Not compared')).toHaveLength(3)
@@ -122,6 +124,18 @@ describe('Product Intelligence page', () => {
     const group = container.querySelector('details.group-no_match')!
     expect(group).not.toHaveAttribute('open')
     expect(group.querySelector('summary')).toHaveTextContent(/No match\s*1/)
+  })
+
+  it('keeps every product reachable in a single scrolling switcher row', async () => {
+    const base = fixture().result
+    const extra = ['SB-002', 'SB-003', 'SB-004', 'SB-005'].map((id) => ({ ...base.products[0], product_id: id }))
+    await open({ ...base, products: [...base.products, ...extra] })
+    const nav = screen.getByRole('navigation', { name: 'Products in this run' })
+    const links = within(nav).getAllByRole('link')
+    expect(links.map((l) => l.querySelector('.switch-id')?.textContent)).toEqual(['SB-001', 'SB-002', 'SB-003', 'SB-004', 'SB-005'])
+    expect(links[0]).toHaveAttribute('aria-current', 'page')
+    expect(nav.querySelector('.scroll-row .scroll-row-track')).toContainElement(links[4]) // one row, never wrapped away
+    expect(nav.querySelectorAll('.scroll-hint')).toHaveLength(2)
   })
 
   it('shows a missing Stompbox price as missing, never zero', async () => {

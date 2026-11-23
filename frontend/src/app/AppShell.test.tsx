@@ -33,12 +33,13 @@ describe('App shell', () => {
 
   it('defaults to the most recent run in memory, or to Live Runs when there is none', async () => {
     mockAppApi({ runs: [] })
+    at('', '#/dashboard') // the dashboard's own default route (an empty URL is the landing page)
     const { unmount } = render(<App />)
     expect(await screen.findByRole('heading', { level: 1, name: 'Live Runs' })).toBeInTheDocument()
     unmount()
 
     mockAppApi()
-    at('')
+    at('', '#/dashboard')
     render(<App />)
     await waitFor(() => expect(window.location.search).toBe(`?run=${RUN_ID}`))
     expect(
@@ -153,6 +154,7 @@ describe('App shell', () => {
 
   it('explains when the backend is unavailable', async () => {
     mockApi(() => ({ status: 503, body: { detail: 'down' } }))
+    at('', '#/dashboard')
     render(<App />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Backend unavailable: down')
   })

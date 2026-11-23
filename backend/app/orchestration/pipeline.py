@@ -45,6 +45,8 @@ from app.agents.intelligence.schemas import ExtractionStatus, ProductIntelligenc
 from app.core.config import Settings
 from app.orchestration.schemas import (
     TERMINAL,
+    DomainRunOutcome,
+    DomainRunStatus,
     ExecutionEvent,
     ExecutionRun,
     PipelineResult,
@@ -59,7 +61,7 @@ from app.orchestration.schemas import (
 from app.orchestration.store import RunStore
 from app.schemas.catalogue import StompboxProduct
 from app.schemas.common import DomainApprovalStatus, MatchStatus
-from app.schemas.review import DomainDecisionRecord
+from app.schemas.review import DomainDecisionRecord, ReviewDecision
 from app.schemas.search import RetrievalStatus
 from app.services.catalogue import Catalogue
 from app.services.domains import registrable_domain
@@ -200,8 +202,10 @@ class PipelineRun:
             self.emit("competitor_discovered", f"Discovered {c.domain} ({c.approval_status.value})",
                       stage=StageName.DISCOVERY, **payload)  # fmt: skip
             if c.approval_status is DomainApprovalStatus.AUTO_APPROVED:
-                self.emit("domain_auto_approved", f"{c.domain} is automatically searchable",
-                          stage=StageName.DISCOVERY, domain=c.domain)  # fmt: skip
+                msg = (f"{c.domain} is automatically searchable" if self.s.pipeline_search_auto_approved else
+                       f"{c.domain} is automatically eligible, but automatic search is switched off "
+                       "(PIPELINE_SEARCH_AUTO_APPROVED=false): not searched")  # fmt: skip
+                self.emit("domain_auto_approved", msg, stage=StageName.DISCOVERY, domain=c.domain)
         for w in disc.warnings:
             self.warn(f"discovery: {w}")
         errors = disc.usage.search_errors
@@ -235,8 +239,7 @@ class PipelineRun:
                       stage=StageName.REVIEW_QUEUE, domain=d)  # fmt: skip
         self.stage(StageName.REVIEW_QUEUE).done = written
         self.end_stage(StageName.REVIEW_QUEUE, StageStatus.COMPLETED,
-                       f"{written} candidate(s) saved to the review queue; {len(pending)} need review "
-                       "(not searched until approved)")  # fmt: skip
+                       f"{written} candidate(s) saved to the review queue: " + _queue_breakdown(disc.candidates, pending))
 
     def _targets(self) -> list[SearchTarget]:
         self.start_stage(StageName.TARGETS)
@@ -267,18 +270,25 @@ class PipelineRun:
         self.result.search_targets, self.result.skipped_targets = targets, skipped
         configured = sum(t.approval_status is DomainApprovalStatus.PRECONFIGURED for t in targets)
         approved = sum(t.approval_status is DomainApprovalStatus.APPROVED for t in targets)
+        outcomes = domain_outcomes(disc.candidates if disc else [], targets, skipped,
+                                   auto_search_enabled=self.s.pipeline_search_auto_approved,
+                                   domain_subset=wanted)  # fmt: skip
+        self.result.domain_outcomes = outcomes
         self.emit("known_domains_loaded", f"{len(targets)} domain(s) to search", stage=StageName.TARGETS,
                   configured=configured, approved=approved, auto_approved=auto,
                   domains=[t.domain for t in targets],
                   skipped=[{"domain": s.domain, "reason": s.reason} for s in skipped],
-                  pending_not_searched=self.result.new_pending_domains)  # fmt: skip
+                  pending_not_searched=self.result.new_pending_domains,
+                  discovered=[o.model_dump(mode="json") for o in outcomes])  # fmt: skip
         st = self.stage(StageName.TARGETS)
         st.done = st.total = len(targets)
         if not targets:
             self.warn("No eligible search targets: nothing will be searched")
-        self.end_stage(StageName.TARGETS, StageStatus.COMPLETED,
-                       f"{configured} configured, {approved} reviewer-approved, {auto} automatically searchable; "
-                       f"{len(skipped)} skipped")  # fmt: skip
+        message = (f"{len(targets)} domain(s) to search: {configured} configured, {approved} reviewer-approved, "
+                   f"{auto} automatic; {len(skipped)} skipped")  # fmt: skip
+        if outcomes:
+            message += f". Discovered in this run: {_outcome_breakdown(outcomes)}"
+        self.end_stage(StageName.TARGETS, StageStatus.COMPLETED, message)
         return targets
 
     async def _products(self, targets: list[SearchTarget]) -> None:
@@ -597,3 +607,74 @@ class RunManager:
         for task in list(self._tasks.values()):
             task.cancel()
         await asyncio.gather(*self._tasks.values(), return_exceptions=True)
+
+
+# ---------------------------------------------------------------------- domain wording
+
+
+def _queue_breakdown(candidates, pending: list[str]) -> str:
+    """'2 pending approval (not searched until approved), 1 automatically eligible, ...' (non-zero parts)."""
+    auto = sum(c.approval_status is DomainApprovalStatus.AUTO_APPROVED for c in candidates)
+    approved = sum(c.approval_status is DomainApprovalStatus.APPROVED for c in candidates)
+    rejected = sum(c.approval_status is DomainApprovalStatus.REJECTED for c in candidates)
+    parts = [f"{len(pending)} pending approval (not searched until approved)"]
+    if auto:
+        parts.append(f"{auto} automatically eligible")
+    if approved:
+        parts.append(f"{approved} already reviewer-approved")
+    if rejected:
+        parts.append(f"{rejected} rejected (never searched)")
+    return ", ".join(parts) + ". The targets stage decides which are searched in this run"
+
+
+_OUTCOME_WORDS = {
+    DomainRunStatus.SELECTED_FOR_SEARCH: "selected for search",
+    DomainRunStatus.PENDING_APPROVAL: "pending approval (not searched)",
+    DomainRunStatus.AUTO_ELIGIBLE_NOT_SEARCHED: "automatically eligible but not searched",
+    DomainRunStatus.APPROVED_NOT_SEARCHED: "reviewer-approved but not searched",
+    DomainRunStatus.REJECTED: "rejected (never searched)",
+}
+
+
+def _outcome_breakdown(outcomes: list[DomainRunOutcome]) -> str:
+    counts = {st: sum(o.status is st for o in outcomes) for st in DomainRunStatus}
+    return ", ".join(f"{n} {_OUTCOME_WORDS[st]}" for st, n in counts.items() if n)
+
+
+def domain_outcomes(
+    candidates, targets: list[SearchTarget], skipped: list[SkippedTarget], *, auto_search_enabled: bool,
+    domain_subset: set[str] | None,
+) -> list[DomainRunOutcome]:  # fmt: skip
+    """Where each domain discovered in this run stands, from the run's actual target list.
+
+    Being approved or automatically eligible never counts as selected: only membership of
+    `targets` does. Reasons come from the target builder's skipped list or from the run's
+    settings and request; nothing is guessed (an unknown reason stays null)."""
+    target_domains = {t.domain for t in targets}
+    skipped_why = {s.domain: s.reason for s in skipped}
+    outside = "Outside the domains selected for this run"
+    out: list[DomainRunOutcome] = []
+    for c in candidates:
+        st, reason = c.approval_status, None
+        decided = c.review_decision.decision if c.review_decision is not None else None
+        in_subset = domain_subset is None or c.domain in domain_subset
+        if st is DomainApprovalStatus.REJECTED or decided is ReviewDecision.REJECTED:
+            status = DomainRunStatus.REJECTED
+            reason = skipped_why.get(c.domain) or ("Rejected in review" if decided else
+                                                   "Rejected automatically: no discovery evidence")  # fmt: skip
+        elif c.domain in target_domains:
+            status = DomainRunStatus.SELECTED_FOR_SEARCH
+        elif st is DomainApprovalStatus.APPROVED or decided is ReviewDecision.APPROVED:
+            status = DomainRunStatus.APPROVED_NOT_SEARCHED
+            reason = skipped_why.get(c.domain) or (None if in_subset else outside)
+        elif st is DomainApprovalStatus.AUTO_APPROVED:
+            status = DomainRunStatus.AUTO_ELIGIBLE_NOT_SEARCHED
+            if not auto_search_enabled:
+                reason = "Automatic search is switched off (PIPELINE_SEARCH_AUTO_APPROVED=false)"
+            else:
+                reason = skipped_why.get(c.domain) or (None if in_subset else outside)
+        else:
+            status = DomainRunStatus.PENDING_APPROVAL
+            reason = "Needs a reviewer decision on Domain Review before it can be searched"
+        out.append(DomainRunOutcome(domain=c.domain, status=status, reason=reason))
+    return out

@@ -34,7 +34,7 @@ describe('Overview page', () => {
     await open()
     expect(within(stat('Products analysed')).getByText('1/1')).toBeInTheDocument()
     expect(within(stat('Competitors searched')).getByText('14')).toBeInTheDocument()
-    expect(within(stat('Competitors searched')).getByText('13 configured · 1 automatically searchable')).toBeInTheDocument()
+    expect(within(stat('Competitors searched')).getByText('13 configured · 1 automatic')).toBeInTheDocument()
     expect(stat('Needs review')).toHaveClass('stat-attention')
     expect(within(stat('Needs review')).getByText('1 product · 1 candidate')).toBeInTheDocument()
     expect(stat('Eligible prices')).toHaveClass('stat-accent')

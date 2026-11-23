@@ -1,4 +1,6 @@
-import { useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { revealInRow } from './revealInRow'
+import ScrollRow from './ScrollRow'
 
 export interface TabItem<T extends string> {
   id: T
@@ -21,6 +23,15 @@ const panelId = (prefix: string, id: string) => `${prefix}-panel-${id}`
 /** WAI-ARIA tabs: roving tabindex, arrow keys, Home and End. Pair with <TabPanel>. */
 export default function Tabs<T extends string>({ label, idPrefix, tabs, value, onChange, variant = 'line' }: Props<T>) {
   const refs = useRef<Partial<Record<string, HTMLButtonElement | null>>>({})
+  const first = useRef(true)
+  // Keep the selected tab visible when the row scrolls (not on first render: no page jump).
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    revealInRow(refs.current[value])
+  }, [value])
   const onKeyDown = (e: KeyboardEvent, i: number) => {
     const last = tabs.length - 1
     let next: number | null = null
@@ -34,7 +45,7 @@ export default function Tabs<T extends string>({ label, idPrefix, tabs, value, o
     refs.current[tabs[next].id]?.focus()
   }
   return (
-    <div className={`tabs-${variant}`} role="tablist" aria-label={label}>
+    <ScrollRow trackClassName={`tabs-${variant}`} role="tablist" aria-label={label}>
       {tabs.map((t, i) => (
         <button
           key={t.id}
@@ -55,7 +66,7 @@ export default function Tabs<T extends string>({ label, idPrefix, tabs, value, o
           {t.count !== undefined && t.count !== null && <span className="tab-count">{t.count}</span>}
         </button>
       ))}
-    </div>
+    </ScrollRow>
   )
 }
 

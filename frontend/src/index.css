@@ -1,4 +1,4 @@
-/* Stompbox Competitor Intelligence: design system v2.
+/* MarketLens: design system v2.
    Navy navigation and hero bands, cobalt accent, cyan only on navy, a cool-grey canvas.
    Sections: tokens · base · controls · shell · layout · components · overview · product ·
    runs · catalogue · domains · responsive */
@@ -191,6 +191,9 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--accent);
 }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 6px; }
 .brand svg { flex: none; }
+.brand-link, .brand-link:hover { text-decoration: none; }
+.home-link { margin: -10px 6px 0; font-size: 12.5px; font-weight: 500; color: var(--nav-muted); text-decoration: none; }
+.home-link:hover { color: #fff; text-decoration: none; }
 .brand-text { color: #fff; font-weight: 650; font-size: 15px; letter-spacing: -0.01em; line-height: 1.2; }
 .brand-text span { display: block; font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--nav-muted); margin-top: 2px; }
 .nav { display: grid; gap: 18px; }
@@ -353,7 +356,19 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--accent);
   background: var(--navy-800); color: #fff; font-weight: 650; font-size: 15px;
 }
 
-.tabs-line { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs-line { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+/* Horizontal scroll rows (tabs, product switcher): scroll instead of clipping, with a fade and
+   chevron while more items are hidden. --fade-bg matches the surface behind the row. */
+.scroll-row { position: relative; min-width: 0; max-width: 100%; --fade-bg: var(--canvas); }
+.scroll-row-track { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.scroll-hint {
+  position: absolute; top: 0; bottom: 0; width: 36px; display: flex; align-items: center; pointer-events: none;
+  opacity: 0; transition: opacity 0.15s; color: var(--muted); font-size: 20px; font-weight: 700; z-index: 2;
+}
+.scroll-hint-left { left: 0; justify-content: flex-start; padding-left: 2px; background: linear-gradient(to right, var(--fade-bg) 40%, transparent); }
+.scroll-hint-right { right: 0; justify-content: flex-end; padding-right: 2px; background: linear-gradient(to left, var(--fade-bg) 40%, transparent); }
+.scroll-row.more-left .scroll-hint-left, .scroll-row.more-right .scroll-hint-right { opacity: 1; }
+.drawer-body .scroll-row, .panel-flat .scroll-row { --fade-bg: var(--surface); }
 .tabs-line .tab-btn {
   display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border: none;
   border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--muted);
@@ -376,7 +391,7 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--accent);
 .drawer-head h2 { font-size: 18px; }
 .drawer-sub { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; flex-wrap: wrap; }
 .drawer-body { flex: 1; overflow-y: auto; padding: 4px 22px 24px; }
-.drawer-body .tabs-line { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.drawer-body .scroll-row:has(.tabs-line) { position: sticky; top: 0; background: var(--surface); z-index: 3; }
 .drawer-section { font-size: 13px; margin: 18px 0 6px; color: var(--ink-2); }
 
 .dist { margin: 0; }
@@ -399,7 +414,7 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--accent);
 .dist.compact .dist-count { font-weight: 600; }
 .dist-legend li.zero .dist-count { color: var(--muted); font-weight: 500; }
 .dist-products { list-style: none; margin: 18px 0 0; padding: 14px 0 0; border-top: 1px solid var(--line); display: grid; gap: 12px; }
-.dist-products li { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; align-items: start; }
+.dist-products > li { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; align-items: start; }
 .dist-product-name { font-family: var(--mono); font-size: 12px; padding-top: 0; }
 
 /* ================================================================ tables */
@@ -485,8 +500,44 @@ table.coverage th[scope='row'] .pill { margin-top: 4px; }
 .chip-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .domain-chip { padding: 2px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); }
 
+/* ================================================================ product images */
+/* One square box everywhere; the image is contained (never cropped) on a white ground. */
+.thumb {
+  flex: none; display: inline-grid; place-items: center; overflow: hidden; padding: 0;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff; color: var(--faint);
+}
+.thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.thumb-sm { width: 48px; height: 48px; }
+.thumb-md { width: 72px; height: 72px; }
+.thumb-lg { width: 132px; height: 132px; border-radius: var(--r); }
+.thumb-empty { background: var(--surface-2); }
+.thumb-button { cursor: zoom-in; transition: border-color 0.15s, box-shadow 0.15s; }
+.thumb-button:hover { border-color: var(--line-strong); box-shadow: var(--shadow-1); }
+td.col-thumb, th.col-thumb { width: 64px; }
+.product-hero-image { display: grid; gap: 6px; justify-items: center; align-content: start; }
+.price-card-head-img { display: flex; gap: 12px; align-items: flex-start; }
+.price-card-head-img > div { display: grid; min-width: 0; }
+.listing-image { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
+.listing-image p { margin: 0 0 4px; }
+.viewer-backdrop {
+  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 32px;
+  background: rgba(10, 19, 36, 0.72);
+}
+.viewer {
+  display: grid; gap: 12px; width: min(880px, 100%); max-height: 100%; padding: 16px 18px;
+  background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-2);
+}
+.viewer-head { display: flex; align-items: center; gap: 12px; }
+.viewer-title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-img { display: grid; place-items: center; background: #fff; border: 1px solid var(--line); border-radius: var(--r); min-height: 0; }
+.viewer-img img { max-width: 100%; max-height: min(68vh, 640px); object-fit: contain; display: block; }
+.viewer-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 0; font-size: 13px; }
+
 /* ================================================================ product intelligence */
-.product-switcher { display: flex; flex-wrap: wrap; gap: 8px; }
+.product-switcher { min-width: 0; }
+.switch-track-row { display: flex; gap: 8px; padding: 2px; }
+.switch-item { flex: none; }
+.switch-id { white-space: nowrap; }
 .switch-item {
   display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border-radius: var(--r);
   border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); text-decoration: none;
@@ -496,7 +547,7 @@ table.coverage th[scope='row'] .pill { margin-top: 4px; }
 .switch-name { font-weight: 500; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .product-hero {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px 40px; padding: 24px 28px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 20px 32px; padding: 24px 28px;
   border-radius: 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-1);
   border-top: 4px solid var(--navy-900);
 }
@@ -795,6 +846,7 @@ a.domain-title { color: var(--ink); font-family: var(--mono); font-size: 14px; }
   .fig-diff { grid-column: 1 / -1; }
   .feed-item { grid-template-columns: 62px 10px minmax(0, 1fr); padding: 6px 10px; }
   .btn, .filter-chip, .switch-item { min-height: 44px; }
+  .switch-name { max-width: 11rem; }
   table.data tbody th { position: sticky; left: 0; z-index: 1; background: var(--surface); }
 }
 @media (max-width: 479px) {

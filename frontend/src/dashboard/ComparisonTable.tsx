@@ -6,8 +6,10 @@
 // never mixed: alternative prices have no difference column.
 import { useState } from 'react'
 import type { CandidateMatch, CompetitorProduct, MatchStatus } from '../api'
+import ProductThumb from '../components/ProductThumb'
 import StatusPill from '../components/StatusPill'
 import { diffDirection, label, money, plural, signedGbp } from '../format'
+import { explain } from '../plainLanguage'
 import { statusMeta } from '../status'
 import EvidenceDrawer from './EvidencePanel'
 
@@ -130,6 +132,9 @@ function GroupTable({
         <thead>
           <tr>
             <th scope="col">Competitor</th>
+            <th scope="col" className="col-thumb">
+              <span className="sr-only">Listing image</span>
+            </th>
             <th scope="col">Page</th>
             <th scope="col">Condition</th>
             <th scope="col">Availability</th>
@@ -162,6 +167,9 @@ function GroupTable({
                     {!m.competitor.price_benchmark && <span className="bench no">Not a price benchmark</span>}
                   </span>
                 </th>
+                <td className="col-thumb">
+                  <ProductThumb image={page?.image} alt={`${m.competitor.company_name ?? m.competitor.domain}: ${title}`} size="sm" />
+                </td>
                 <td className="wrap">
                   <a href={m.product_url} target="_blank" rel="noreferrer noopener">
                     {title}
@@ -186,7 +194,7 @@ function GroupTable({
                       <>
                         <span className="text-muted">Not shown</span>
                         {(alt?.reasons[0] ?? m.price.reasons[0]) && (
-                          <span className="cell-sub">{alt?.reasons[0] ?? m.price.reasons[0]}</span>
+                          <span className="cell-sub">{explain(alt?.reasons[0] ?? m.price.reasons[0])}</span>
                         )}
                       </>
                     )}
@@ -212,7 +220,7 @@ function GroupTable({
                       ) : (
                         <>
                           <span className="text-muted">Not compared</span>
-                          {m.comparison.reasons[0] && <span className="cell-sub">{m.comparison.reasons[0]}</span>}
+                          {m.comparison.reasons[0] && <span className="cell-sub">{explain(m.comparison.reasons[0])}</span>}
                         </>
                       )}
                     </td>

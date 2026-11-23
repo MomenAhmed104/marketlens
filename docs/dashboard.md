@@ -211,6 +211,16 @@ generic admin-panel look.
 - **Excluded and skipped:** reason lists. Run-scoped exclusions are labelled as
   not stored.
 
+## Product images and branding (MarketLens)
+
+- `components/ProductThumb.tsx` and `productImages.ts`: one square thumbnail with one placeholder,
+  loaded through `/api/images`, with a larger view on click. Used in the catalogue picker, the
+  Product Intelligence header (catalogue image), the comparison tables and Overview price cards
+  (each listing's own image) and the evidence drawer's Source tab. Details:
+  [product-images.md](product-images.md).
+- The product is named **MarketLens** in the landing page, sidebar, page titles and boot screen.
+  "Stompbox" stays where it means the client retailer (its prices, pages and catalogue).
+
 ## Design tokens (`index.css`)
 
 | Group | Values |
@@ -306,3 +316,20 @@ page tests render the whole app against `mockAppApi`.
   shadow, and long "not compared" reasons in the price columns wrap. Checked with headless Chrome against the
   saved Stage 7 runs at 1440 (no horizontal scroll), 1024 and 390 px (the table scrolls inside its container,
   the Evidence button stays visible).
+
+## Domain status wording (Stage 8.2, follow-up)
+
+- `AUTO_APPROVED` is labelled **"Automatically eligible"** (status pill, `domain_auto_approved` feed
+  label and the discovery feed pill). It was "Automatically searchable", which was wrong whenever
+  automatic search is switched off or the per-run cap applies. Being searched is shown only from the
+  run's search records ("Searched in this run", `domainStatus.searchedDomains`).
+- The Overview "Competitors searched" tile counts this run's targets as "configured",
+  "reviewer-approved" and "automatic".
+- Live Runs and the Domain Review "Selected run" panel show the backend's
+  `domain_outcomes[].reason` under "Status in this run" when a domain was not searched, and a
+  callout lists approved or automatically eligible domains that were not searched, with the reason.
+  Reasons are put in plain English by `plainLanguage.explain` (automatic search switched off, over
+  the per-run limit). Runs saved before this show no reason (unchanged behaviour).
+- Test stability: `vite.config.ts` sets `testTimeout: 20000` and `maxWorkers: '50%'`, and
+  `src/test/setup.ts` sets Testing Library's `asyncUtilTimeout` to 5000 ms. With one jsdom worker per
+  core, whole-app page tests timed out at random under load; assertions are unchanged.

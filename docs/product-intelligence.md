@@ -249,6 +249,12 @@ a sale-period price is an acceptable benchmark is a Phase 6 policy question
 The API never returns the full page text. Only quotes and metadata are
 returned, and the provider's raw payloads are not exposed.
 
+## Listing images (MarketLens)
+
+`CompetitorProduct.image` holds the listing's own primary image, looked up from the retrieved
+page's HTML alongside extraction. It is display-only and never used by extraction, matching or
+price validation; any failure is a status on the record. See [product-images.md](product-images.md).
+
 ## Usage and cost
 
 `usage` holds:
@@ -376,3 +382,13 @@ Sale wording in the price quote itself still gives `EXCLUDED_SALE_PRICE`. Matchi
 stored `EXCLUDED_SALE_PRICE` without sale wording as `CONFLICT` (`matching.price.validate_price`),
 so saved run files show the right reason without being rewritten. Tests:
 `tests/test_price_ignored_conflict.py`.
+
+## Legacy saved runs
+
+Runs saved before the Phase 5 finalisation (12 Nov 2026) used `extraction_status`
+`SKIPPED_LLM_DISABLED`, the earlier name of `SKIPPED_NO_LLM` (page retrieved, LLM 2 not configured
+or disabled, nothing extracted). `ExtractionStatus._missing_` reads that one value as
+`SKIPPED_NO_LLM` (`LEGACY_EXTRACTION_STATUS`); when the record has no `extraction_error`, the
+loaded record's error names the original legacy status. The alias is read-only: it is not in the
+JSON schema, is never written, and saved files are not migrated. Tests:
+`tests/test_legacy_saved_runs.py` with `tests/fixtures/legacy_skipped_llm_disabled_run.json`.

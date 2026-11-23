@@ -1069,7 +1069,8 @@ or provide its path.
     `classification_version`; discovery config carries `auto_search_enabled`, `max_auto_search_targets`;
     `competitor_discovered` carries `auto_search_eligible`, `serves_uk_customers`. Dashboard:
     `searchEligibility.ts`, `components/SearchStatus.tsx`; Live Runs "Why" column and
-    "Automatically searchable" feed pill. Status label `AUTO_APPROVED` = "Automatically searchable".
+    "Automatically eligible" feed pill. Status label `AUTO_APPROVED` = "Automatically eligible" (both were
+    "Automatically searchable" until the Stage 8.2 completion pass).
 -   **Real database (read-only checks on copies, 22 Nov 2026):** version 1, 9 decisions unchanged
     (7 approved, 2 rejected; `billybowmanmusic.co.uk` is the only reviewed benchmark). Before Stage 8.1:
     69 candidates, none automatically eligible. Afterwards a discovery run outside this work
@@ -1077,6 +1078,46 @@ or provide its path.
     which loads the new code) wrote 15 version-3 candidates: 80 candidates, 14 automatically eligible.
     They are not searched locally because `.env` has `PIPELINE_SEARCH_AUTO_APPROVED=false`.
 -   The 14:29 UTC run is the only real use of the Stage 8.1 prompt so far; its relevance is not yet reviewed.
+
+### Stage 8.2: dashboard polish, landing page, product images (22 Nov 2026, uncommitted)
+
+-   **Batch 1 (frontend):** Overview chart layout fix; plain-English codes (`plainLanguage.ts`); Live Runs
+    domain status from the run's real search records (`domainStatus.ts`); scrolling product switcher and tabs
+    (`components/ScrollRow.tsx`); corrected Domain Review wording.
+-   **Landing page:** `src/landing/` (own chunk, styles scoped under `.lp`); `/`, `#/` and `#/home` show it,
+    `#/dashboard` and every existing dashboard link open the dashboard. Showcase uses real screenshots of a
+    recorded run (`frontend/public/landing/`), labelled as such.
+-   **Branding (user decision, 22 Nov 2026):** the product is shown as **MarketLens**; "Stompbox" remains the
+    client retailer (its catalogue, prices and pages).
+-   **Product images (user decisions, 22 Nov 2026):** listing images from a free direct HTML fetch of each
+    retrieved page (JSON-LD > og:image > product meta > gallery img), catalogue images from a sidecar
+    (`data/catalogue/product_images.json`, written by `python -m app.services.images.catalogue`; not yet run),
+    and a backend proxy cache (`GET /api/images`, `data/image_cache/`, git-ignored). Display-only: images never
+    decide a match; failures become statuses. Public-address-only fetching (SSRF guard), size caps, raster
+    types only. `PRODUCT_IMAGES_ENABLED` (default true). Details: `docs/product-images.md`.
+
+-   **Completion pass (23 Nov 2026, uncommitted, awaiting review):**
+    -   Domain wording: `PipelineResult.domain_outcomes` (`DomainRunOutcome`: SELECTED_FOR_SEARCH /
+        PENDING_APPROVAL / AUTO_ELIGIBLE_NOT_SEARCHED / APPROVED_NOT_SEARCHED / REJECTED, with the reason),
+        clearer review_queue / targets stage messages and `domain_auto_approved` text when automatic
+        search is off (`docs/pipeline.md`). Dashboard shows the reasons; `AUTO_APPROVED` reads
+        "Automatically eligible".
+    -   Image hardening (`docs/product-images.md`): globally-routable-only addresses (CGNAT and IPv4-mapped
+        refused), ports 80/443, no credentials, connect-time pinning against DNS rebinding
+        (`net.PublicOnlyBackend`), byte-signature checks, per-host pacing (`HostPacer`), `/api/images`
+        allow-list of found image URLs plus concurrency cap, bounded atomic cache, shared og:image detection.
+        New settings: `IMAGE_CACHE_MAX_BYTES`, `IMAGE_PER_HOST_CONCURRENCY`, `IMAGE_HOST_MIN_INTERVAL_SECONDS`,
+        `IMAGE_PROXY_KNOWN_URLS_ONLY`. Not hardened for public exposure (no auth or rate limits).
+    -   Collector: `--ids` or explicit `--all`, `--dry-run`, unknown IDs fail first, stale records dropped,
+        one retry for transient failures, failed refresh keeps the old image, merge-on-write, atomic writes.
+        Sidecar: 5 products sampled, 4 found, SB-001 404; the other 95 not collected (deferred). The
+        sidecar is untracked; recommendation: track it (user decision).
+    -   Frontend tests: `maxWorkers: '50%'`, `testTimeout` 20 s, Testing Library `asyncUtilTimeout` 5 s
+        (the full suite timed out at random under load).
+    -   Legacy saved runs: `extraction_status` `SKIPPED_LLM_DISABLED` (the pre-12-Nov-2026 name of
+        `SKIPPED_NO_LLM`) loads as `SKIPPED_NO_LLM` through a read-only enum alias
+        (`LEGACY_EXTRACTION_STATUS`); `extraction_error` names the original value. Not in the JSON schema,
+        never written, no file migrated; all 9 saved runs load (`tests/test_legacy_saved_runs.py`).
 
 ### UK relevance evidence, Option B (18-19 Nov 2026) — SUPERSEDED by Stage 8.1 (history only)
 
@@ -1257,7 +1298,7 @@ page text is not stored, only verified quotes and metadata.
     £599", 10 Nov 2026). The catalogue price is unchanged and used as for every product; £599 is not
     used and no regular price is assumed. It is not independently verified and awaits the user.
 -   **UK evidence in Live Runs (6.3.3):** removed in Stage 8.1; the discovered-domains table now has a
-    "Why" column and the feed an "Automatically searchable" pill.
+    "Why" column and the feed an "Automatically eligible" pill (named "Automatically searchable" until Stage 8.2).
 -   **Phone layout fix (6.3.6):** `.stack > *, .stack-sm > *, .new-run > * { min-width: 0 }`; wide
     tables widened Live Runs at 390 px.
 -   **Workflow test:** `tests/test_workflow_integration.py` (discover, review via API, re-run, extract,

@@ -160,6 +160,21 @@ export interface CatalogueProvenance {
   url_research_status: string | null
 }
 
+// --- Product images (MarketLens) -------------------------------------------------
+// A listing's own image reference with its source; display-only, never match evidence.
+export type ImageStatus = 'FOUND' | 'NOT_FOUND' | 'INVALID' | 'BLOCKED' | 'FETCH_FAILED' | 'NOT_ATTEMPTED'
+export type ImageSource = 'JSON_LD' | 'OPEN_GRAPH' | 'PRODUCT_META' | 'PAGE_IMAGE'
+
+export interface ProductImage {
+  status: ImageStatus
+  url: string | null
+  source_page_url: string | null
+  source: ImageSource | null
+  additional_urls: string[]
+  retrieved_at: string | null
+  note: string | null
+}
+
 export interface StompboxProduct {
   product_id: string
   product_name: string
@@ -176,6 +191,7 @@ export interface StompboxProduct {
   product_url: string
   search_keywords: string | null
   provenance: CatalogueProvenance
+  image?: ProductImage | null // catalogue image from the image sidecar; optional for older backends
 }
 
 export interface ProductListResponse {
@@ -313,6 +329,7 @@ export interface PageRecord {
 }
 
 export interface CompetitorProduct {
+  image?: ProductImage | null // this listing's own image; never the catalogue image
   candidate_id: string
   product_url: string
   search: SearchHit
@@ -661,11 +678,28 @@ export interface ProductRunResult {
   matching: ProductMatchSummary | null
 }
 
+/** Mirrors the backend DomainRunStatus. SELECTED_FOR_SEARCH = a target of this run; whether a
+ *  query was really sent is in the product search records (`domainStatus.searchedDomains`). */
+export type DomainRunStatus =
+  | 'SELECTED_FOR_SEARCH'
+  | 'PENDING_APPROVAL'
+  | 'AUTO_ELIGIBLE_NOT_SEARCHED'
+  | 'APPROVED_NOT_SEARCHED'
+  | 'REJECTED'
+
+export interface DomainRunOutcome {
+  domain: string
+  status: DomainRunStatus
+  reason: string | null
+}
+
 export interface PipelineResult {
   discovery: DiscoveryRunResult | null
   new_pending_domains: string[]
   search_targets: SearchTarget[]
   skipped_targets: SkippedTarget[]
+  /** One per domain discovered in this run. Optional: runs from before Stage 8.2 lack it. */
+  domain_outcomes?: DomainRunOutcome[]
   intelligence_mode: LlmMode | null
   llm2_disabled_reason: string | null
   intelligence_usage: IntelligenceUsage | null

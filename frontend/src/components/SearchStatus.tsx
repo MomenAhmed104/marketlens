@@ -1,6 +1,7 @@
 // Search status of a discovered domain (Stage 8.1), shared by Domain Review and Live Runs.
 // The backend decides; this only shows the decision and why. Benchmark permission is separate.
 import type { ServesUkCustomers } from '../api'
+import { explain } from '../plainLanguage'
 import { TONE_ICON } from '../status'
 import { SERVES_UK_LABEL, type SearchStatus } from '../searchEligibility'
 
@@ -34,7 +35,7 @@ export function SearchStatusDetails(props: {
       <h4>Why it is {st.kind === 'AUTOMATIC' || st.kind === 'MANUAL_APPROVAL' ? '' : 'not '}searched</h4>
       {st.reasons.length > 0 ? (
         <ul className="small" aria-label="Search eligibility reasons">
-          {st.reasons.map((r) => <li key={r}>{r}</li>)}
+          {st.reasons.map((r) => <li key={r}>{explain(r)}</li>)}
         </ul>
       ) : (
         <p className="small">{st.line}</p>

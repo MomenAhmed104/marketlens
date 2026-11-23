@@ -10,6 +10,7 @@ import Tabs, { TabPanel } from '../components/Tabs'
 import RunDomains from '../dashboard/RunDomains'
 import { label, plural } from '../format'
 import Review from '../Review'
+import { explain } from '../plainLanguage'
 
 type Section = 'PENDING' | 'APPROVED' | 'REJECTED' | 'configured' | 'excluded'
 const LABELS: Record<Section, string> = {
@@ -54,7 +55,10 @@ export default function DomainReview() {
       <section aria-labelledby="domains-heading" className="stack-sm">
         <div className="section-head">
           <h2 id="domains-heading">Competitor domains</h2>
-          <span className="hint-inline">Approvals apply to the next run. Pending and rejected domains are never searched.</span>
+          <span className="hint-inline">
+            Approved and automatically eligible domains can be searched; pending and rejected domains cannot. Decisions
+            apply from the next run.
+          </span>
         </div>
         <Tabs
           label="Domain sections"
@@ -131,7 +135,7 @@ function Excluded(props: {
               <li key={s.domain}>
                 <span className="cell-mono">{s.domain}</span>
                 {s.company_type && <span className="tag">{label(s.company_type)}</span>}
-                <span>{s.reason}</span>
+                <span>{explain(s.reason)}</span>
               </li>
             ))}
           </ul>
@@ -145,7 +149,7 @@ function Excluded(props: {
             {excluded.map((x) => (
               <li key={x.domain}>
                 <span className="cell-mono">{x.domain}</span>
-                <span>{x.reason}</span>
+                <span>{explain(x.reason)}</span>
                 <span className="hint-inline">{plural(x.evidence_count, 'evidence item')}</span>
               </li>
             ))}

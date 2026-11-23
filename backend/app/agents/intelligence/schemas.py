@@ -24,11 +24,14 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, model_validator
 
 from app.agents.discovery.schemas import SearchTarget
 from app.schemas.common import AvailabilityStatus, MatchStatus
 from app.schemas.search import RetrievalStatus
+from app.schemas.images import ProductImage
 
 # --------------------------------------------------------------------------- LLM contract, Task B
 
@@ -159,6 +162,22 @@ class ExtractionStatus(StrEnum):
     SKIPPED_NO_LLM = "SKIPPED_NO_LLM"  # LLM 2 not configured or disabled: nothing extracted
     SKIPPED_NOT_RETRIEVED = "SKIPPED_NOT_RETRIEVED"  # page failed, blocked, empty or not fetched
     FAILED = "FAILED"  # LLM call failed or output stayed invalid after repair
+
+    @classmethod
+    def _missing_(cls, value: object) -> ExtractionStatus | None:
+        """Read-only aliases for values written by earlier versions (saved run files).
+
+        SKIPPED_LLM_DISABLED was the name of SKIPPED_NO_LLM until the Phase 5 finalisation
+        (12 Nov 2026): a retrieved page that LLM 2 did not read because it was not configured or
+        disabled. Same meaning, so it loads as SKIPPED_NO_LLM. Never written again; not part of
+        the JSON schema. Anything else is still rejected."""
+        return LEGACY_EXTRACTION_STATUS.get(value) if isinstance(value, str) else None
+
+
+# Legacy value -> current status (see ExtractionStatus._missing_).
+LEGACY_EXTRACTION_STATUS: dict[str, ExtractionStatus] = {
+    "SKIPPED_LLM_DISABLED": ExtractionStatus.SKIPPED_NO_LLM,
+}
 
 
 class ExtractedField(StrEnum):
@@ -337,6 +356,20 @@ class CompetitorProduct(BaseModel):
     extraction_status: ExtractionStatus
     extraction_error: str | None = None
     page_type: PageType | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _note_legacy_status(cls, data: Any) -> Any:
+        """Keep the original legacy status visible: a record saved as SKIPPED_LLM_DISABLED loads
+        as SKIPPED_NO_LLM (same meaning) and, when it had no explanation, says so in
+        extraction_error. The input is never modified (a copy is returned)."""
+        if isinstance(data, dict):
+            legacy = data.get("extraction_status")
+            if isinstance(legacy, str) and legacy in LEGACY_EXTRACTION_STATUS and not data.get("extraction_error"):
+                current = LEGACY_EXTRACTION_STATUS[legacy].value
+                data = {**data, "extraction_error": f"LLM 2 not used; page retrieved, nothing extracted (saved as legacy "
+                                                    f"status {legacy}, now {current})"}  # fmt: skip
+        return data
     # Populated only when the field's evidence status is EXTRACTED.
     product_title: str | None = None
     brand: str | None = None
@@ -367,6 +400,9 @@ class CompetitorProduct(BaseModel):
     match_proposal: MatchProposalRecord | None = None
     match_proposal_status: ProposalStatus | None = None
     match_proposal_error: str | None = None
+    # This listing's own primary image (never the catalogue image). Display-only: never used by
+    # matching or price validation. None on records made before product images existed.
+    image: ProductImage | None = None
 
 
 class SkippedHit(BaseModel):

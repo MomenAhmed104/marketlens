@@ -29,6 +29,22 @@ export function parseHash(hash: string): Route {
     : { page: null, param: null }
 }
 
+/** The marketing landing page (Stage 8.2). The dashboard lives on the page routes above. */
+export const HOME_HREF = '#/home'
+/** Opens the dashboard on its default page (the selected run's Overview, else Live Runs). */
+export const DASHBOARD_HREF = '#/dashboard'
+
+/**
+ * True when the landing page should show instead of the dashboard: an explicit #/home, or no
+ * route at all and no ?run= in the URL. Every existing dashboard link (#/overview, #/products/…,
+ * #/runs, #/domains, or ?run=<id> without a hash) still opens the dashboard.
+ */
+export function isLandingRoute(hash: string, search: string): boolean {
+  const h = hash.replace(/^#\/?/, '')
+  if (h === 'home') return true
+  return h === '' && !new URLSearchParams(search).has('run')
+}
+
 export const href = (page: Page, param?: string | null) => `#/${page}${param ? `/${encodeURIComponent(param)}` : ''}`
 
 export function navigate(page: Page, param?: string | null) {

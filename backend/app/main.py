@@ -5,12 +5,14 @@ from fastapi import FastAPI
 
 from app.api import catalogue as catalogue_api
 from app.api import discovery as discovery_api
+from app.api import images as images_api
 from app.api import intelligence as intelligence_api
 from app.api import matching as matching_api
 from app.api import review as review_api
 from app.api import runs as runs_api
 from app.core.config import Settings, get_settings
 from app.services.catalogue import load_catalogue
+from app.services.images.catalogue import apply_catalogue_images, load_catalogue_images
 from app.orchestration.pipeline import PipelineDeps, RunManager
 from app.orchestration.store import InMemoryRunStore
 from app.services.review_store import ReviewStore
@@ -35,6 +37,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "Loaded %d products and %d competitors from %s",
             len(catalogue.products), len(catalogue.competitors), catalogue.source_path.name,
         )  # fmt: skip
+        with_images = apply_catalogue_images(catalogue, load_catalogue_images(settings.catalogue_images_path))
+        logger.info("Catalogue images: %d of %d products", with_images, len(catalogue.products))
         app.state.catalogue = catalogue
         app.state.settings = settings
         app.state.review_store = ReviewStore(settings.review_db_path, settings.discovery_excluded_competitor_domains)
@@ -53,6 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(intelligence_api.router)
     app.include_router(matching_api.router)
     app.include_router(runs_api.router)
+    app.include_router(images_api.router)
 
     @app.get("/api/health", tags=["health"])
     def health() -> dict:

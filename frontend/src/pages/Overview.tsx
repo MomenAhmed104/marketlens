@@ -7,6 +7,7 @@ import BaselineWarning from '../components/BaselineWarning'
 import DistributionBar from '../components/DistributionBar'
 import EmptyState from '../components/EmptyState'
 import { ExternalIcon, PriceIcon } from '../components/icons'
+import ProductThumb from '../components/ProductThumb'
 import StatTile from '../components/StatTile'
 import StatusPill from '../components/StatusPill'
 import { diffDirection, money, plural, signedGbp, when } from '../format'
@@ -20,7 +21,14 @@ import {
   productInsights,
   type PriceGate,
 } from '../selectors'
+import { explain } from '../plainLanguage'
 import { statusMeta } from '../status'
+
+const TARGET_KIND: Record<string, string> = {
+  PRECONFIGURED: 'configured',
+  APPROVED: 'reviewer-approved',
+  AUTO_APPROVED: 'automatic',
+}
 
 export default function Overview() {
   const { runId, view, catalogue } = useRunContext()
@@ -48,6 +56,10 @@ export default function Overview() {
   const k = overviewKpis(run, result)
   const finding = keyFinding(run, result)
   const comparisons = eligibleComparisons(result)
+  // Each compared listing's own image (from its intelligence record), never the catalogue image.
+  const listingImages = new Map(
+    (result?.products ?? []).flatMap((p) => (p.intelligence?.candidates ?? []).map((c) => [c.candidate_id, c.image] as const)),
+  )
   const insights = productInsights(result)
   const attention = insights.noCandidates.length + insights.noExactMatch.length + insights.failed.length
   const finished = run.status !== 'RUNNING' && run.status !== 'PENDING'
@@ -58,8 +70,9 @@ export default function Overview() {
     SIMILAR_MATCH: run.summary.similar_matches,
     NO_MATCH: run.summary.no_match,
   }
+  // These are this run's search targets, so say how each got there (not just "eligible").
   const byApproval = Object.entries(k.searchedByApproval)
-    .map(([s, c]) => `${c} ${statusMeta(s).label.toLowerCase()}`)
+    .map(([s, c]) => `${c} ${TARGET_KIND[s] ?? statusMeta(s).label.toLowerCase()}`)
     .join(' · ')
   const firstProduct = run.request.product_ids[0]
 
@@ -188,11 +201,18 @@ export default function Overview() {
             <ul className="price-cards">
               {comparisons.map(({ productId, productName, candidate: c }) => (
                 <li key={c.candidate_id} className="price-card">
-                  <div className="price-card-head">
-                    <span className="price-card-competitor">{c.competitor.company_name ?? c.competitor.domain}</span>
-                    <a href={href('products', productId)} className="price-card-product">
-                      {productId} · {productName}
-                    </a>
+                  <div className="price-card-head price-card-head-img">
+                    <ProductThumb
+                      image={listingImages.get(c.candidate_id)}
+                      alt={`${c.competitor.company_name ?? c.competitor.domain}: ${productName}`}
+                      size="md"
+                    />
+                    <div>
+                      <span className="price-card-competitor">{c.competitor.company_name ?? c.competitor.domain}</span>
+                      <a href={href('products', productId)} className="price-card-product">
+                        {productId} · {productName}
+                      </a>
+                    </div>
                   </div>
                   <div className="price-card-figures">
                     <div>
@@ -336,7 +356,7 @@ function PriceGateExplainer({ gate, running }: { gate: PriceGate; running: boole
           <ul className="plain-list">
             {gate.blockers.map((b) => (
               <li key={b.reason}>
-                {b.reason} <span className="hint-inline">({plural(b.count, 'candidate')})</span>
+                {explain(b.reason)} <span className="hint-inline">({plural(b.count, 'candidate')})</span>
               </li>
             ))}
           </ul>
