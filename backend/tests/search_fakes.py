@@ -61,6 +61,8 @@ def make_settings(**overrides) -> Settings:
               # and the image cache and catalogue sidecar never point at the real data folder.
               "product_images_enabled": False,
               "image_cache_dir": Path(tempfile.mkdtemp(prefix="image-cache-test-")),
-              "catalogue_images_path": Path(tempfile.mkdtemp(prefix="catimg-test-")) / "product_images.json"}  # fmt: skip
+              "catalogue_images_path": Path(tempfile.mkdtemp(prefix="catimg-test-")) / "product_images.json",
+              # Stage 9 budget mode is off unless a test turns it on (a stray STAGE9_* env var cannot).
+              "stage9_ledger_path": None}  # fmt: skip
     values.update(overrides)
     return Settings(_env_file=None, **values)

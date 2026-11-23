@@ -15,6 +15,7 @@ from app.services.llm.base import (
 )
 from app.services.llm.openrouter import OpenRouterClient
 from app.services.search.http import ProviderHttpClient
+from app.stage9.context import active_meter
 
 
 def _build(settings: Settings, model: str | None, model_var: str, temperature: float | None, max_tokens: int,
@@ -25,7 +26,10 @@ def _build(settings: Settings, model: str | None, model_var: str, temperature: f
     model = (model or "").strip()
     if not model:
         raise LLMNotConfiguredError("openrouter", f"{model_var} is not set")
+    meter = active_meter(settings, "openrouter")  # Stage 9: metered inside a budgeted run, refused outside one
     http = ProviderHttpClient("openrouter", client or httpx.AsyncClient(), max_retries=settings.llm_max_retries)
+    if meter is not None:
+        meter.attach(http, "openrouter")
     return OpenRouterClient(
         http, key, model,
         base_url=settings.openrouter_base_url,

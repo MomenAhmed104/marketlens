@@ -1,0 +1,1062 @@
+{
+ "version": 1,
+ "status": "APPROVED 2026-11-23 by the user as a hypothesis-based evaluation specification, not verified market truth. Hypotheses stay hypotheses; unknown expectations stay unknown and unscored.",
+ "prepared_at": "2026-11-23",
+ "prepared_from": [
+  "catalogue workbook (Products sheet), read 2026-11-23",
+  "docs/search-provider-evaluation.md and docs/benchmarks/search-benchmark-20261110T203634Z.json (10 Nov 2026)",
+  "saved run pipeline-run-20261120T202714Z-28317c80 (Stage 7 demo, 20 Nov 2026, demo review DB)",
+  "saved run pipeline-run-20261120T203804Z-3f13cfde (Stage 7 demo, 20 Nov 2026, demo review DB)",
+  "data/catalogue/product_images.json (collected 22 Nov 2026)",
+  "CLAUDE.md (matching rules and user decisions)"
+ ],
+ "scenario": [
+  {
+   "product_id": "SB-001",
+   "catalogue_name": "Boss RC-5 Loop Station Guitar Effect Pedal",
+   "brand": "Boss",
+   "model": "RC-5",
+   "category": "Effects",
+   "variant": null,
+   "catalogue_url": "https://stompbox.co.uk/product/boss-rc-5-loop-station-guitar-pedal/",
+   "specifications": null,
+   "missing_or_ambiguous": [
+    {
+     "text": "No specifications in the workbook.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "Stompbox page not verified: provenance says 'Needs product-page verification'; price £189.99 is a 9 Nov 2026 snapshot.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "The catalogue product URL returned HTTP 404 on 22 Nov 2026 (image collection). It affects the image only; the Stompbox price cannot be re-checked at that URL.",
+     "label": "VERIFIED",
+     "source": "data/catalogue/product_images.json (collected 22 Nov 2026)"
+    }
+   ],
+   "why_useful": "Widely stocked, unambiguous model with known historical exact matches at two configured retailers, plus a nearly-new listing and a sibling model (RC-500): a precision and price baseline."
+  },
+  {
+   "product_id": "SB-028",
+   "catalogue_name": "Epiphone Les Paul Standard '60s Left-Handed Electric Guitar, Iced Tea Burst",
+   "brand": "Epiphone",
+   "model": "Les Paul Standard '60s LH",
+   "category": "Guitars",
+   "variant": {
+    "text": "Left-handed, Iced Tea Burst finish; model designation 'Figured' (approved 20 Nov 2026; the workbook name omits it).",
+    "label": "VERIFIED",
+    "source": "CLAUDE.md Stage 6.3.2 (user decision, 20 Nov 2026); Stompbox page text per docs/search-provider-evaluation.md"
+   },
+   "catalogue_url": "https://stompbox.co.uk/product/epiphone-les-paul-standard-60s-left-handed-electric-guitar-iced-tea-burst/",
+   "specifications": null,
+   "missing_or_ambiguous": [
+    {
+     "text": "Workbook name omits 'Figured'.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "Stompbox price baseline £579 was recorded as a sale price ('was £599'); unconfirmed.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md Stage 6.3 (SB-028 price baseline: NOT CONFIRMED)"
+    },
+    {
+     "text": "No condition or availability in the workbook.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "The workbook URL uses /product/...; the live Stompbox site now serves /products/... (redirects resolved for SB-017, SB-028, SB-030 and SB-090 during image collection).",
+     "label": "VERIFIED",
+     "source": "data/catalogue/product_images.json (collected 22 Nov 2026)"
+    }
+   ],
+   "why_useful": "Hardest variant case: handedness, finish and the Figured designation, with right-handed, Ebony, plain-top, reissue, Gibson and secondhand look-alikes seen historically. Variant matching only; no price scoring."
+  },
+  {
+   "product_id": "SB-017",
+   "catalogue_name": "Ashdown SX-50H All Valve Electric Guitar Amplifier Head, 50-Watts",
+   "brand": "Ashdown",
+   "model": "SX-50H",
+   "category": "Amplification",
+   "variant": null,
+   "catalogue_url": "https://stompbox.co.uk/product/ashdown-sx-50h-valve-electric-guitar-amplifier-head-50-watts/",
+   "specifications": "50W all-valve; 3x ECC83 preamp valves; 2x EL34 power valves; 3 footswitchable channels; effects loop.",
+   "missing_or_ambiguous": [
+    {
+     "text": "Whether Ashdown sells combo or cabinet versions under a similar SX name is not recorded.",
+     "label": "UNKNOWN",
+     "source": null
+    },
+    {
+     "text": "Workbook availability '1 in stock' and Stompbox SKU 'SX-50H' (9 Nov 2026).",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "The workbook URL uses /product/...; the live Stompbox site now serves /products/... (redirects resolved for SB-017, SB-028, SB-030 and SB-090 during image collection).",
+     "label": "VERIFIED",
+     "source": "data/catalogue/product_images.json (collected 22 Nov 2026)"
+    }
+   ],
+   "why_useful": "Amplification category with a head-vs-combo/cabinet configuration distinction and a model code that is written with and without a hyphen."
+  },
+  {
+   "product_id": "SB-030",
+   "catalogue_name": "Ashdown Saint Artisan Flame Bass Guitar, Amethyst Purple",
+   "brand": "Ashdown",
+   "model": "Saint Artisan Flame",
+   "category": "Guitars",
+   "variant": {
+    "text": "Finish: Amethyst Purple.",
+    "label": "VERIFIED",
+    "source": "catalogue workbook (Products sheet), read 2026-11-23"
+   },
+   "catalogue_url": "https://stompbox.co.uk/product/ashdown-saint-artisan-flame-bass-guitar-amethyst-purple-pre-order-only/",
+   "specifications": null,
+   "missing_or_ambiguous": [
+    {
+     "text": "No specifications (string count, handedness, scale) in the workbook.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "Stompbox listing says pre-order ('pre-order-only' in the URL; provenance 'pre-order wording').",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "Which other finishes exist for this model is not recorded.",
+     "label": "UNKNOWN",
+     "source": null
+    },
+    {
+     "text": "The workbook URL uses /product/...; the live Stompbox site now serves /products/... (redirects resolved for SB-017, SB-028, SB-030 and SB-090 during image collection).",
+     "label": "VERIFIED",
+     "source": "data/catalogue/product_images.json (collected 22 Nov 2026)"
+    }
+   ],
+   "why_useful": "A finish-specific bass from a smaller brand, listed as pre-order: tests finish handling (EQUIVALENT_VARIANT vs EXACT) and PREORDER availability."
+  },
+  {
+   "product_id": "SB-090",
+   "catalogue_name": "Cherub WST-905Li Flow Tune Rechargeable Clip-on Headstock Guitar Tuner",
+   "brand": "Cherub",
+   "model": "WST-905Li",
+   "category": "Accessories",
+   "variant": null,
+   "catalogue_url": "https://stompbox.co.uk/product/cherub-wst-905li-flow-tune-rechargeable-clip-on-headstock-guitar-tuner/",
+   "specifications": null,
+   "missing_or_ambiguous": [
+    {
+     "text": "No specifications in the workbook.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "Stompbox price £24.99 checked on the live page on 9 Nov 2026.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "Whether a non-rechargeable 'WST-905' (without 'Li') or multi-packs are sold is not recorded.",
+     "label": "UNKNOWN",
+     "source": null
+    },
+    {
+     "text": "The workbook URL uses /product/...; the live Stompbox site now serves /products/... (redirects resolved for SB-017, SB-028, SB-030 and SB-090 during image collection).",
+     "label": "VERIFIED",
+     "source": "data/catalogue/product_images.json (collected 22 Nov 2026)"
+    }
+   ],
+   "why_useful": "Low-price accessory: tests small absolute price differences and a model code whose suffix ('Li') is the identity."
+  },
+  {
+   "product_id": "SB-055",
+   "catalogue_name": "Emma Electronic OMP-1 OnoMATOpoeia Booster Overdrive Pedal",
+   "brand": "Emma Electronics",
+   "model": "OMP-1",
+   "category": "Effects",
+   "variant": null,
+   "catalogue_url": "https://stompbox.co.uk/product/emma-electronic-omp-1-onomatopoeia-booster-overdrive-pedal/",
+   "specifications": null,
+   "missing_or_ambiguous": [
+    {
+     "text": "No specifications in the workbook.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "The workbook brand is 'Emma Electronics' while the product name says 'Emma Electronic'.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "The workbook URL uses /product/...; the live Stompbox site now serves /products/... (redirects resolved for SB-017, SB-028, SB-030 and SB-090 during image collection).",
+     "label": "VERIFIED",
+     "source": "data/catalogue/product_images.json (collected 22 Nov 2026)"
+    }
+   ],
+   "why_useful": "Less widely stocked: on 10 Nov 2026 neither Exa nor Tavily found an exact page at any configured competitor; the item appeared only at smaller UK shops. Tests discovery and correct NO_MATCH / not-found handling."
+  }
+ ],
+ "planned_runs": [
+  {
+   "name": "A",
+   "product_ids": [
+    "SB-001",
+    "SB-028",
+    "SB-017"
+   ],
+   "run_discovery": true,
+   "note": "Discovery on. New domains go to the evaluation review database as pending."
+  },
+  {
+   "name": "B",
+   "product_ids": [
+    "SB-030",
+    "SB-090",
+    "SB-055"
+   ],
+   "run_discovery": true,
+   "note": "Discovery on. Split from A: at most 5 products per run (PIPELINE_MAX_PRODUCTS_PER_RUN)."
+  },
+  {
+   "name": "A2",
+   "product_ids": [
+    "SB-001",
+    "SB-028",
+    "SB-017"
+   ],
+   "run_discovery": false,
+   "note": "Re-run after reviewer decisions in the evaluation database (optional; subject to budget)."
+  },
+  {
+   "name": "B2",
+   "product_ids": [
+    "SB-030",
+    "SB-090",
+    "SB-055"
+   ],
+   "run_discovery": false,
+   "note": "Re-run after reviewer decisions in the evaluation database (optional; subject to budget)."
+  }
+ ],
+ "entries": [
+  {
+   "product_id": "SB-001",
+   "identity": {
+    "text": "Boss RC-5 Loop Station looper pedal, new.",
+    "label": "VERIFIED",
+    "source": "catalogue workbook (Products sheet), read 2026-11-23"
+   },
+   "exact_requires": [
+    {
+     "name": "brand",
+     "any_of": [
+      "boss"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "model",
+     "any_of": [
+      "rc 5",
+      "rc5"
+     ],
+     "label": "VERIFIED"
+    }
+   ],
+   "not_exact_if": [
+    {
+     "name": "condition",
+     "any_of": [
+      "used",
+      "secondhand",
+      "second hand",
+      "pre owned",
+      "preowned",
+      "nearly new",
+      "b stock",
+      "ex demo",
+      "refurbished",
+      "open box"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "bundle",
+     "any_of": [
+      "bundle",
+      "pack",
+      "kit"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "accessory",
+     "any_of": [
+      "power supply",
+      "adaptor",
+      "adapter",
+      "footswitch",
+      "case"
+     ],
+     "label": "HYPOTHESIS"
+    }
+   ],
+   "similar_examples": [
+    {
+     "text": "Gear4music 'Boss RC-5 Loop Station Guitar Loop Pedal Nearly New' was SIMILAR (condition).",
+     "label": "VERIFIED",
+     "source": "saved run pipeline-run-20261120T202714Z-28317c80 (Stage 7 demo, 20 Nov 2026, demo review DB)"
+    },
+    {
+     "text": "Andertons 'Boss RC-500 Loop Station' was SIMILAR (different model).",
+     "label": "VERIFIED",
+     "source": "saved run pipeline-run-20261120T202714Z-28317c80 (Stage 7 demo, 20 Nov 2026, demo review DB)"
+    }
+   ],
+   "non_match_distinctions": [
+    {
+     "text": "RC-1, RC-10R, RC-30, RC-500, RC-505, RC-600 are different models (whole-word model match keeps 'RC-500' from matching 'RC-5').",
+     "label": "HYPOTHESIS",
+     "source": null
+    },
+    {
+     "text": "Used, secondhand, pre-owned, nearly-new, B-stock, ex-demo and refurbished listings are never the exact (new) product; they are at most SIMILAR.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md price policy and docs/product-matching.md (condition rule)"
+    }
+   ],
+   "retailers": [
+    {
+     "domain": "andertons.co.uk",
+     "expected": "EXACT_LISTED",
+     "label": "HYPOTHESIS",
+     "basis": "Historical: EXACT_MATCH at £219.00, IN_STOCK, on 20 Nov 2026 (saved run pipeline-run-20261120T202714Z-28317c80 (Stage 7 demo, 20 Nov 2026, demo review DB)); a current listing is not guaranteed."
+    },
+    {
+     "domain": "gear4music.com",
+     "expected": "EXACT_LISTED",
+     "label": "HYPOTHESIS",
+     "basis": "Historical: EXACT_MATCH at £192.00, IN_STOCK, on 20 Nov 2026 (saved run pipeline-run-20261120T202714Z-28317c80 (Stage 7 demo, 20 Nov 2026, demo review DB))."
+    },
+    {
+     "domain": "wildwireguitars.com",
+     "expected": "EXACT_LISTED",
+     "label": "HYPOTHESIS",
+     "basis": "Historical: EXACT_MATCH at £189.00 on 20 Nov 2026 (saved run pipeline-run-20261120T203804Z-3f13cfde (Stage 7 demo, 20 Nov 2026, demo review DB)); approved only in the demo database, so it is searched only if approved in the evaluation database."
+    },
+    {
+     "domain": "guitarguitar.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "On 10 Nov 2026 five configured retailers had an exact RC-5 page (docs/search-provider-evaluation.md and docs/benchmarks/search-benchmark-20261110T203634Z.json (10 Nov 2026)), but the record does not say which five."
+    },
+    {
+     "domain": "thomann.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "As above: one of the unnamed five, or not."
+    },
+    {
+     "domain": "bax-shop.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "As above: one of the unnamed five, or not."
+    }
+   ],
+   "price_scoring_eligible": false,
+   "price_scoring_note": "EXCLUDED from price-comparison scoring (user decision, 23 Nov 2026). The workbook snapshot £189.99 (9 Nov 2026) is kept as historical reference only: it cannot be re-checked (catalogue URL returned 404 on 22 Nov 2026).",
+   "evidence_required": [
+    "The retrieved product page itself (not a search snippet) names the brand and model",
+    "Every required variant (handedness, finish, designation) appears on the page, in the title, URL or an extracted model/SKU",
+    "The page is a single-product page for a new item",
+    "A current displayed GBP price quoted verbatim from the retrieved page",
+    "Not a was/RRP/original/saving amount, not a finance or 'from' price, not a delivery charge",
+    "Retrieved within MATCHING_PRICE_MAX_AGE_HOURS (24 h) of scoring",
+    "The competitor is benchmark-eligible (workbook flag or reviewer decision)"
+   ],
+   "notes": [
+    {
+     "text": "The 404 catalogue URL is not a reason to exclude SB-001; images never affect scores.",
+     "label": "VERIFIED",
+     "source": "Stage 9.0 brief (user instruction)"
+    }
+   ]
+  },
+  {
+   "product_id": "SB-028",
+   "identity": {
+    "text": "Epiphone Les Paul Standard '60s Figured, left-handed, Iced Tea Burst, new.",
+    "label": "VERIFIED",
+    "source": "CLAUDE.md Stage 6.3.2 (user decision, 20 Nov 2026)"
+   },
+   "exact_requires": [
+    {
+     "name": "brand",
+     "any_of": [
+      "epiphone"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "model",
+     "any_of": [
+      "les paul standard 60s",
+      "les paul standard 60 s",
+      "lp standard 60s",
+      "les paul std 60s"
+     ],
+     "label": "HYPOTHESIS"
+    },
+    {
+     "name": "handedness",
+     "any_of": [
+      "left handed",
+      "left hand",
+      "lefthanded",
+      "lh"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "finish",
+     "any_of": [
+      "iced tea",
+      "ice tea",
+      "itb"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "designation",
+     "any_of": [
+      "figured"
+     ],
+     "label": "VERIFIED"
+    }
+   ],
+   "not_exact_if": [
+    {
+     "name": "condition",
+     "any_of": [
+      "used",
+      "secondhand",
+      "second hand",
+      "pre owned",
+      "preowned",
+      "nearly new",
+      "b stock",
+      "ex demo",
+      "refurbished",
+      "open box"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "bundle",
+     "any_of": [
+      "bundle",
+      "pack",
+      "kit"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "other brand",
+     "any_of": [
+      "gibson les paul"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "other model",
+     "any_of": [
+      "1960 les paul",
+      "reissue"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "other finish",
+     "any_of": [
+      "ebony",
+      "heritage cherry",
+      "bourbon burst"
+     ],
+     "label": "HYPOTHESIS"
+    },
+    {
+     "name": "handedness",
+     "any_of": [
+      "right handed"
+     ],
+     "label": "VERIFIED"
+    }
+   ],
+   "similar_examples": [
+    {
+     "text": "Andertons 'Epiphone 1960 Les Paul Standard Reissue Iced Tea Burst Left-Handed' was SIMILAR.",
+     "label": "VERIFIED",
+     "source": "saved run pipeline-run-20261120T202714Z-28317c80 (Stage 7 demo, 20 Nov 2026, demo review DB)"
+    },
+    {
+     "text": "Gear4music 'Les Paul Standard 60s Ice Tea Secondhand' was SIMILAR (condition).",
+     "label": "VERIFIED",
+     "source": "saved run pipeline-run-20261120T202714Z-28317c80 (Stage 7 demo, 20 Nov 2026, demo review DB)"
+    },
+    {
+     "text": "Right-handed Figured, left-handed Ebony and a Gibson left-handed Iced Tea page were returned and scored as mismatch or REVIEW on 10 Nov 2026.",
+     "label": "VERIFIED",
+     "source": "docs/search-provider-evaluation.md and docs/benchmarks/search-benchmark-20261110T203634Z.json (10 Nov 2026)"
+    }
+   ],
+   "non_match_distinctions": [
+    {
+     "text": "Right-handed versions are a different product (handedness is critical).",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md matching rules"
+    },
+    {
+     "text": "Finish other than Iced Tea Burst is a different variant.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md matching rules"
+    },
+    {
+     "text": "Plain-top SKU EILS6ITNH1 is a CONFLICT (not Figured); Figured SKUs EIGLP6ITNHRL and EIGLP6ITNH1L confirm it.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md Stage 6.3.2"
+    },
+    {
+     "text": "A page that does not say 'Figured' is REVIEW_REQUIRED, not EXACT (e.g. the Bax left-handed Iced Tea page on 10 Nov 2026).",
+     "label": "VERIFIED",
+     "source": "docs/search-provider-evaluation.md and docs/benchmarks/search-benchmark-20261110T203634Z.json (10 Nov 2026)"
+    },
+    {
+     "text": "Used, secondhand, pre-owned, nearly-new, B-stock, ex-demo and refurbished listings are never the exact (new) product; they are at most SIMILAR.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md price policy and docs/product-matching.md (condition rule)"
+    }
+   ],
+   "retailers": [
+    {
+     "domain": "andertons.co.uk",
+     "expected": "EXACT_LISTED",
+     "label": "HYPOTHESIS",
+     "basis": "Exact Figured LH Iced Tea page found on 10 Nov 2026 (docs/search-provider-evaluation.md and docs/benchmarks/search-benchmark-20261110T203634Z.json (10 Nov 2026)) and EXACT_MATCH, OUT_OF_STOCK on 20 Nov 2026 (saved run pipeline-run-20261120T202714Z-28317c80 (Stage 7 demo, 20 Nov 2026, demo review DB))."
+    },
+    {
+     "domain": "gear4music.com",
+     "expected": "EXACT_LISTED",
+     "label": "HYPOTHESIS",
+     "basis": "Exact page on 10 Nov 2026 (docs/search-provider-evaluation.md and docs/benchmarks/search-benchmark-20261110T203634Z.json (10 Nov 2026)); EXACT_MATCH, OUT_OF_STOCK, no price on 20 Nov 2026 (saved run pipeline-run-20261120T202714Z-28317c80 (Stage 7 demo, 20 Nov 2026, demo review DB))."
+    },
+    {
+     "domain": "guitarguitar.co.uk",
+     "expected": "EXACT_LISTED",
+     "label": "HYPOTHESIS",
+     "basis": "Exact page found by Exa on 10 Nov 2026 (docs/search-provider-evaluation.md and docs/benchmarks/search-benchmark-20261110T203634Z.json (10 Nov 2026))."
+    },
+    {
+     "domain": "thomann.co.uk",
+     "expected": "EXACT_LISTED",
+     "label": "HYPOTHESIS",
+     "basis": "Exact page ('60s F ITB LH') on 10 Nov 2026 (docs/search-provider-evaluation.md and docs/benchmarks/search-benchmark-20261110T203634Z.json (10 Nov 2026))."
+    },
+    {
+     "domain": "bax-shop.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "Left-handed Iced Tea page without 'Figured' on 10 Nov 2026: REVIEW; whether it is the same product needs a human."
+    },
+    {
+     "domain": "wildwireguitars.com",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "'...60s Figured Left Handed in Iced Tea with Gig Bag' was REVIEW_REQUIRED on 20 Nov 2026 (saved run pipeline-run-20261120T203804Z-3f13cfde (Stage 7 demo, 20 Nov 2026, demo review DB)); whether the gig bag makes it a bundle needs a human."
+    }
+   ],
+   "price_scoring_eligible": false,
+   "price_scoring_note": "EXCLUDED from price-comparison scoring: the Stompbox baseline £579 was recorded as a sale price and is not independently confirmed (user decision, Stage 9.0 brief).",
+   "evidence_required": [
+    "The retrieved product page itself (not a search snippet) names the brand and model",
+    "Every required variant (handedness, finish, designation) appears on the page, in the title, URL or an extracted model/SKU",
+    "The page is a single-product page for a new item"
+   ],
+   "notes": []
+  },
+  {
+   "product_id": "SB-017",
+   "identity": {
+    "text": "Ashdown SX-50H 50 W all-valve guitar amplifier head, new.",
+    "label": "VERIFIED",
+    "source": "catalogue workbook (Products sheet), read 2026-11-23"
+   },
+   "exact_requires": [
+    {
+     "name": "brand",
+     "any_of": [
+      "ashdown"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "model",
+     "any_of": [
+      "sx 50h",
+      "sx50h",
+      "sx 50 h"
+     ],
+     "label": "VERIFIED"
+    }
+   ],
+   "not_exact_if": [
+    {
+     "name": "condition",
+     "any_of": [
+      "used",
+      "secondhand",
+      "second hand",
+      "pre owned",
+      "preowned",
+      "nearly new",
+      "b stock",
+      "ex demo",
+      "refurbished",
+      "open box"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "bundle",
+     "any_of": [
+      "bundle",
+      "pack",
+      "kit"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "configuration",
+     "any_of": [
+      "combo",
+      "cab",
+      "cabinet",
+      "1x12",
+      "2x12",
+      "4x12"
+     ],
+     "label": "HYPOTHESIS"
+    }
+   ],
+   "similar_examples": [
+    {
+     "text": "Other Ashdown valve heads or an SX-series combo would be SIMILAR.",
+     "label": "HYPOTHESIS",
+     "source": null
+    }
+   ],
+   "non_match_distinctions": [
+    {
+     "text": "A head is not a combo or a cabinet (configuration is critical).",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md matching rules (configuration)"
+    },
+    {
+     "text": "A different wattage is a different product.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md matching rules (wattage)"
+    },
+    {
+     "text": "Used, secondhand, pre-owned, nearly-new, B-stock, ex-demo and refurbished listings are never the exact (new) product; they are at most SIMILAR.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md price policy and docs/product-matching.md (condition rule)"
+    }
+   ],
+   "retailers": [
+    {
+     "domain": "andertons.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    },
+    {
+     "domain": "gear4music.com",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    },
+    {
+     "domain": "thomann.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    },
+    {
+     "domain": "guitarguitar.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    }
+   ],
+   "price_scoring_eligible": true,
+   "price_scoring_note": "Eligible. Baseline £349.00 (workbook snapshot, 9 Nov 2026).",
+   "evidence_required": [
+    "The retrieved product page itself (not a search snippet) names the brand and model",
+    "Every required variant (handedness, finish, designation) appears on the page, in the title, URL or an extracted model/SKU",
+    "The page is a single-product page for a new item",
+    "A current displayed GBP price quoted verbatim from the retrieved page",
+    "Not a was/RRP/original/saving amount, not a finance or 'from' price, not a delivery charge",
+    "Retrieved within MATCHING_PRICE_MAX_AGE_HOURS (24 h) of scoring",
+    "The competitor is benchmark-eligible (workbook flag or reviewer decision)"
+   ],
+   "notes": []
+  },
+  {
+   "product_id": "SB-030",
+   "identity": {
+    "text": "Ashdown Saint Artisan Flame bass guitar, Amethyst Purple, new.",
+    "label": "VERIFIED",
+    "source": "catalogue workbook (Products sheet), read 2026-11-23"
+   },
+   "exact_requires": [
+    {
+     "name": "brand",
+     "any_of": [
+      "ashdown"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "model",
+     "any_of": [
+      "saint artisan flame"
+     ],
+     "label": "HYPOTHESIS"
+    },
+    {
+     "name": "finish",
+     "any_of": [
+      "amethyst purple",
+      "amethyst"
+     ],
+     "label": "VERIFIED"
+    }
+   ],
+   "not_exact_if": [
+    {
+     "name": "condition",
+     "any_of": [
+      "used",
+      "secondhand",
+      "second hand",
+      "pre owned",
+      "preowned",
+      "nearly new",
+      "b stock",
+      "ex demo",
+      "refurbished",
+      "open box"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "bundle",
+     "any_of": [
+      "bundle",
+      "pack",
+      "kit"
+     ],
+     "label": "VERIFIED"
+    }
+   ],
+   "similar_examples": [
+    {
+     "text": "The same model in another finish should be EQUIVALENT_VARIANT (finish-only difference), never EXACT.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md (EQUIVALENT_VARIANT, U-1)"
+    }
+   ],
+   "non_match_distinctions": [
+    {
+     "text": "Another Ashdown Saint model (without 'Artisan Flame') is a different product.",
+     "label": "HYPOTHESIS",
+     "source": null
+    },
+    {
+     "text": "String count and handedness are not in the workbook: a 5-string or left-handed listing needs human review.",
+     "label": "UNKNOWN",
+     "source": null
+    },
+    {
+     "text": "Used, secondhand, pre-owned, nearly-new, B-stock, ex-demo and refurbished listings are never the exact (new) product; they are at most SIMILAR.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md price policy and docs/product-matching.md (condition rule)"
+    }
+   ],
+   "retailers": [
+    {
+     "domain": "andertons.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    },
+    {
+     "domain": "gear4music.com",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    },
+    {
+     "domain": "thomann.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    },
+    {
+     "domain": "bax-shop.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    }
+   ],
+   "price_scoring_eligible": true,
+   "price_scoring_note": "Eligible. Baseline £369.00 (workbook snapshot, 9 Nov 2026); the Stompbox listing is pre-order.",
+   "evidence_required": [
+    "The retrieved product page itself (not a search snippet) names the brand and model",
+    "Every required variant (handedness, finish, designation) appears on the page, in the title, URL or an extracted model/SKU",
+    "The page is a single-product page for a new item",
+    "A current displayed GBP price quoted verbatim from the retrieved page",
+    "Not a was/RRP/original/saving amount, not a finance or 'from' price, not a delivery charge",
+    "Retrieved within MATCHING_PRICE_MAX_AGE_HOURS (24 h) of scoring",
+    "The competitor is benchmark-eligible (workbook flag or reviewer decision)"
+   ],
+   "notes": []
+  },
+  {
+   "product_id": "SB-090",
+   "identity": {
+    "text": "Cherub WST-905Li Flow Tune rechargeable clip-on tuner, single unit, new.",
+    "label": "VERIFIED",
+    "source": "catalogue workbook (Products sheet), read 2026-11-23"
+   },
+   "exact_requires": [
+    {
+     "name": "brand",
+     "any_of": [
+      "cherub"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "model",
+     "any_of": [
+      "wst 905li",
+      "wst905li",
+      "wst 905 li"
+     ],
+     "label": "VERIFIED"
+    }
+   ],
+   "not_exact_if": [
+    {
+     "name": "condition",
+     "any_of": [
+      "used",
+      "secondhand",
+      "second hand",
+      "pre owned",
+      "preowned",
+      "nearly new",
+      "b stock",
+      "ex demo",
+      "refurbished",
+      "open box"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "bundle",
+     "any_of": [
+      "bundle",
+      "pack",
+      "kit"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "bundle",
+     "any_of": [
+      "2 pack",
+      "3 pack",
+      "twin pack",
+      "pack of"
+     ],
+     "label": "HYPOTHESIS"
+    }
+   ],
+   "similar_examples": [
+    {
+     "text": "Other Cherub clip-on tuners (e.g. a WST-905 without 'Li') would be SIMILAR.",
+     "label": "HYPOTHESIS",
+     "source": null
+    }
+   ],
+   "non_match_distinctions": [
+    {
+     "text": "'Li' (rechargeable) is part of the model: 'WST-905' alone does not match.",
+     "label": "VERIFIED",
+     "source": "catalogue workbook (Products sheet), read 2026-11-23"
+    },
+    {
+     "text": "Multi-packs are a different product (bundle).",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md matching rules (bundle)"
+    },
+    {
+     "text": "Used, secondhand, pre-owned, nearly-new, B-stock, ex-demo and refurbished listings are never the exact (new) product; they are at most SIMILAR.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md price policy and docs/product-matching.md (condition rule)"
+    }
+   ],
+   "retailers": [
+    {
+     "domain": "gear4music.com",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    },
+    {
+     "domain": "thomann.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    },
+    {
+     "domain": "andertons.co.uk",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "configured competitor; it sells this category, but there is no product-level evidence that it lists this item"
+    }
+   ],
+   "price_scoring_eligible": true,
+   "price_scoring_note": "Eligible. Baseline £24.99, checked on the live Stompbox page on 9 Nov 2026.",
+   "evidence_required": [
+    "The retrieved product page itself (not a search snippet) names the brand and model",
+    "Every required variant (handedness, finish, designation) appears on the page, in the title, URL or an extracted model/SKU",
+    "The page is a single-product page for a new item",
+    "A current displayed GBP price quoted verbatim from the retrieved page",
+    "Not a was/RRP/original/saving amount, not a finance or 'from' price, not a delivery charge",
+    "Retrieved within MATCHING_PRICE_MAX_AGE_HOURS (24 h) of scoring",
+    "The competitor is benchmark-eligible (workbook flag or reviewer decision)"
+   ],
+   "notes": []
+  },
+  {
+   "product_id": "SB-055",
+   "identity": {
+    "text": "Emma Electronic OMP-1 OnoMATOpoeia booster/overdrive pedal, new.",
+    "label": "VERIFIED",
+    "source": "catalogue workbook (Products sheet), read 2026-11-23"
+   },
+   "exact_requires": [
+    {
+     "name": "brand",
+     "any_of": [
+      "emma",
+      "emma electronic",
+      "emma electronics"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "model",
+     "any_of": [
+      "omp 1",
+      "omp1",
+      "onomatopoeia"
+     ],
+     "label": "HYPOTHESIS"
+    }
+   ],
+   "not_exact_if": [
+    {
+     "name": "condition",
+     "any_of": [
+      "used",
+      "secondhand",
+      "second hand",
+      "pre owned",
+      "preowned",
+      "nearly new",
+      "b stock",
+      "ex demo",
+      "refurbished",
+      "open box"
+     ],
+     "label": "VERIFIED"
+    },
+    {
+     "name": "bundle",
+     "any_of": [
+      "bundle",
+      "pack",
+      "kit"
+     ],
+     "label": "VERIFIED"
+    }
+   ],
+   "similar_examples": [
+    {
+     "text": "Other Emma pedals would be SIMILAR at most.",
+     "label": "HYPOTHESIS",
+     "source": null
+    }
+   ],
+   "non_match_distinctions": [
+    {
+     "text": "Used, secondhand, pre-owned, nearly-new, B-stock, ex-demo and refurbished listings are never the exact (new) product; they are at most SIMILAR.",
+     "label": "VERIFIED",
+     "source": "CLAUDE.md price policy and docs/product-matching.md (condition rule)"
+    }
+   ],
+   "retailers": [
+    {
+     "domain": "configured competitors (12 searched)",
+     "expected": "NOT_LISTED",
+     "label": "HYPOTHESIS",
+     "basis": "On 10 Nov 2026 no exact OMP-1 page was found at any of the 12 configured retailers searched, by Exa or Tavily (docs/search-provider-evaluation.md and docs/benchmarks/search-benchmark-20261110T203634Z.json (10 Nov 2026)). Listings may have changed since."
+    },
+    {
+     "domain": "smaller UK shops",
+     "expected": "UNKNOWN",
+     "label": "UNKNOWN",
+     "basis": "The benchmark names Beckett's, GM Music, Volume Music Solutions, Prebeat and Ev-Entz as shops listing SB-055, SB-044 or SB-091, without saying which shop lists which product."
+    }
+   ],
+   "price_scoring_eligible": true,
+   "price_scoring_note": "Eligible, but a price is expected only if discovery finds an approvable shop that lists it. Baseline £109.99 (workbook snapshot, 9 Nov 2026).",
+   "evidence_required": [
+    "The retrieved product page itself (not a search snippet) names the brand and model",
+    "Every required variant (handedness, finish, designation) appears on the page, in the title, URL or an extracted model/SKU",
+    "The page is a single-product page for a new item",
+    "A current displayed GBP price quoted verbatim from the retrieved page",
+    "Not a was/RRP/original/saving amount, not a finance or 'from' price, not a delivery charge",
+    "Retrieved within MATCHING_PRICE_MAX_AGE_HOURS (24 h) of scoring",
+    "The competitor is benchmark-eligible (workbook flag or reviewer decision)"
+   ],
+   "notes": [
+    {
+     "text": "A correct outcome at the configured competitors is NO exact match; NO_MATCH there is not a failure.",
+     "label": "HYPOTHESIS",
+     "source": null
+    }
+   ]
+  }
+ ]
+}

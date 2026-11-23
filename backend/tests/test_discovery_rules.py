@@ -43,11 +43,18 @@ def ev(url, title=None, snippet=None, kind=EvidenceKind.DISCOVERY_RESULT, produc
                         retrieved_at=NOW, mentions_product_model=model)  # fmt: skip
 
 
-def candidate(domain="beckettsmusic.co.uk", name="Beckett's Music", evidence=None, products=("SB-001",)):
-    evidence = evidence or [
-        ev(f"https://{domain}/boss-rc-5", f"Boss RC-5 Loop Station - {name}", "£189.99 In stock"),
-        ev(f"https://{domain}/boss-rc-1", f"Boss RC-1 - {name}", "£99", model=False),
-    ]
+def profile_ev(domain, name="the shop"):
+    """A business-profile page, as the discovery profile search returns for real candidates."""
+    return ev(f"https://{domain}/about-us", f"About us - {name}", "Independent shop.", kind=EvidenceKind.DOMAIN_PROFILE,
+              product=None, model=False)  # fmt: skip
+
+
+def candidate(domain="beckettsmusic.co.uk", name="Beckett's Music", evidence=None, products=("SB-001",), profile=True):
+    if evidence is None:  # the default record has what real discovery returns, a profile page included
+        evidence = [
+            ev(f"https://{domain}/boss-rc-5", f"Boss RC-5 Loop Station - {name}", "£189.99 In stock"),
+            ev(f"https://{domain}/boss-rc-1", f"Boss RC-1 - {name}", "£99", model=False),
+        ] + ([profile_ev(domain)] if profile else [])
     return DiscoveredCompetitor(domain=domain, hostnames=[domain], homepage_url=f"https://{domain}/",
                                 evidence=evidence, products_matched=list(products), discovered_at=NOW)  # fmt: skip
 
@@ -208,7 +215,8 @@ def test_a_human_rejection_always_wins():
 
 def test_international_retailer_qualifies_without_uk_domain_gbp_or_address():
     c = candidate("musikhaus-example.de", "Musikhaus Example", evidence=[
-        ev("https://musikhaus-example.de/boss-rc-5", "Boss RC-5 - Musikhaus Example", "EUR 179, ships worldwide")])
+        ev("https://musikhaus-example.de/boss-rc-5", "Boss RC-5 - Musikhaus Example", "EUR 179, ships worldwide"),
+        profile_ev("musikhaus-example.de", "Musikhaus Example")])
     c = classified({"domain": "musikhaus-example.de", "company_name": "Musikhaus Example",
                     "serves_uk_customers": UkSeller.UNKNOWN,
                     "evidence_urls": ["https://musikhaus-example.de/boss-rc-5"]}, c)  # fmt: skip
@@ -317,5 +325,6 @@ def test_unclassified_and_unevidenced_candidates():
 
 def test_one_discovery_page_is_enough():
     """The former 2-discovery-URL and 2-independent-UK-page requirements are gone."""
-    single = candidate(evidence=[ev("https://beckettsmusic.co.uk/boss-rc-5", "Boss RC-5 - Beckett's Music", "£189")])
+    single = candidate(evidence=[ev("https://beckettsmusic.co.uk/boss-rc-5", "Boss RC-5 - Beckett's Music", "£189"),
+                                 profile_ev("beckettsmusic.co.uk")])  # one product page + its profile page
     assert decided(cand=single).approval_status is S.AUTO_APPROVED

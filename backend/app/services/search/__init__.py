@@ -10,6 +10,7 @@ from __future__ import annotations
 import httpx
 
 from app.core.config import Settings
+from app.stage9.context import active_meter
 from app.services.search.base import SearchProvider
 from app.services.search.brave import BraveProvider
 from app.services.search.exa import ExaProvider
@@ -44,7 +45,10 @@ def build_provider(
     if name not in PROVIDER_NAMES:
         raise ValueError(f"Unknown search provider {name!r}; expected one of {PROVIDER_NAMES}")
     key = _key(settings, name)
+    meter = active_meter(settings, name)  # Stage 9: metered inside a budgeted run, refused outside one
     http = ProviderHttpClient(name, client or httpx.AsyncClient(), max_retries=settings.search_max_retries)
+    if meter is not None:
+        meter.attach(http, name)
     if name == "exa":
         return ExaProvider(
             http, key,

@@ -1,39 +1,25 @@
 # CLAUDE.md --- Stompbox Competitor Intelligence Live Demo
 
 **Purpose:** Implementation instructions for Claude Code.\
-**Status:** Phases 1 and 2 complete and approved (commit b2a4c70). Phase 3
-(competitor discovery, LLM 1) is complete and approved (commit 05290be). Phase 4
-(competitor domain review with persistent decisions) is complete (commit
-7371a44). Phase 5 (product intelligence, LLM 2) is complete (commit 9089770). Phase 6
-(deterministic matching and price validation) is complete (commit 2118cec).
-Phase 7 (pipeline orchestration) is complete (commit e295c17). Phase 8 (live
-dashboard) and the classification work are in the WIP checkpoint `970c7be` on
-branch `wip/uk-gate-2026-11-17`, awaiting review; see `docs/dashboard.md`. Competitor
-discovery follows the **Stage 8.1 simplification (22 Nov 2026, uncommitted, awaiting review)**:
-LLM 1 searches for UK-serving retailers, there is no UK verification or UK gate, and retailer
-domains that pass basic checks are automatically searchable (persisting across runs, capped per
-run, never benchmarks). It replaced Option B (19 Nov 2026). See "Stage 8.1" below and
-`docs/stompbox_uk_competitor_intelligence_implementation_plan.md` (the authoritative
-baseline). Last commit: `34354f5` (Stage 7 post-demo fixes). LLM 2 is now the three-task Product Intelligence Agent (plan §8.6
-stages 1-5 implemented 19 Nov 2026, uncommitted). Stage 6 controlled live evaluation was
-authorized and run twice on 19 Nov 2026 (Stage 6 and Stage 6.2: SB-001 and SB-028 on Andertons
-and Gear4music, about $0.04 each); Stages 6.1, 6.1.1 and 6.3 corrected what they found, offline
-only. See "Product Intelligence Agent, stages 1-5" and "Live evaluation runs" below. Stage 6.3
-(pre-demo hardening, 20 Nov 2026, uncommitted) awaits review before the Git checkpoint; its P-5
-refinement and the SB-028 Figured identity were approved on 20 Nov 2026, and the SB-028 price
-baseline (£579, recorded as a sale price) is still unconfirmed. Do not
-start Phase 9 or any further live (paid) run until the user approves. Both models are configured
-as `openai/gpt-6-luna` (14 Nov 2026; see "OpenRouter configuration" below); without
-`OPENROUTER_API_KEY` both agents run in `LLM_DISABLED` mode. See
-`docs/competitor-discovery.md`.\
+**Status (24 Nov 2026):** Phases 1-7 complete (Phase 7: commit e295c17). Phase 8 (live
+dashboard), Stages 6.x-8.x (product intelligence agent, UK discovery simplification, MarketLens
+UI, landing page, product images) and Stage 9 are committed on `wip/uk-gate-2026-11-17` (Stage
+8.2: `c3a56fc`; Stage 9: the commit after it); local `main` is fast-forwarded to the same commit.
+Nothing has been pushed (remote `origin` = github.com/MomenAhmed104/marketlens, empty; it appears
+**public**, and the catalogue workbook and `product_images.json` are tracked in history, so do not
+push until the user resolves visibility). Stage 9 (see "Stage 9" below and `docs/stage9/README.md`):
+budget-controlled live evaluation; smoke test and Runs A and B completed and reconciled ($1.023 of
+the $3.00 Stage 9 ceiling); 13 user decisions applied to the isolated evaluation database; A2 / B2
+not run. Do not start any further live (paid) run without explicit user authorisation. Both
+models are `openai/gpt-6-luna` (see "OpenRouter configuration"); without `OPENROUTER_API_KEY`
+both agents run in `LLM_DISABLED` mode. The SB-028 price baseline (£579, recorded as a sale
+price) is still unconfirmed.\
 **Catalogue baseline:** 100 Stompbox products.\
 **Plan date:** 9 November 2026.
 
 ## 1. Your role
 
-Act as the lead engineer implementing this project in the current
-repository. Inspect, implement, test and report. Do not merely provide
-suggestions.
+
 
 ### Mandatory rules
 
@@ -1118,6 +1104,48 @@ or provide its path.
         `SKIPPED_NO_LLM`) loads as `SKIPPED_NO_LLM` through a read-only enum alias
         (`LEGACY_EXTRACTION_STATUS`); `extraction_error` names the original value. Not in the JSON schema,
         never written, no file migrated; all 9 saved runs load (`tests/test_legacy_saved_runs.py`).
+
+### Stage 9: end-to-end evaluation (23-24 Nov 2026)
+
+-   **Spending control** (`backend/app/stage9/`, `docs/stage9-budget.md`): budget mode when
+    `STAGE9_LEDGER_PATH` is set. A persistent SQLite ledger (atomic reservations), a reservation
+    before each run (`BudgetedRunManager`), and an HTTP meter on every Exa / OpenRouter attempt
+    (retries included) that refuses any attempt whose worst case would exceed the run's
+    reservation. Paid clients built outside a budgeted run are refused. Unit prices have no
+    defaults; the verified maxima (23 Nov 2026) are passed on the command line: Exa $0.007 / search
+    (auto, <= 10 results, contents included), $0.001 / page; LLM $0.25 / $1.00 per M input / output
+    tokens (highest gpt-6-luna endpoint incl. cache write). Unresolved: Exa live-crawl and
+    failed-request billing; whether every route counts reasoning in `max_completion_tokens`.
+    Accounting errors fail closed; unresolved runs block new ones.
+-   **Evaluation** (`docs/stage9/`): six products (SB-001, SB-028, SB-017, SB-030, SB-090, SB-055);
+    answer key `docs/stage9/answer-key.json`, approved by the user on 23 Nov 2026 as a
+    hypothesis-based specification (labels VERIFIED / HYPOTHESIS / UNKNOWN unchanged); SB-001 and
+    SB-028 excluded from price scoring (baselines not confirmed). Harness drives `POST /api/runs`
+    in-process on an isolated review database (`data/stage9/review.sqlite3`); scoring reports raw
+    counts and what was left out; human verification via `review_pack` worksheets
+    (`docs/stage9/human-verification.md`).
+-   **Live runs** (all RECONCILED, git-ignored artifacts in `data/stage9/runs/`): smoke (SB-001,
+    Andertons + Gear4music, $0.0229); Run A (SB-001, SB-028, SB-017; discovery on; 13 configured
+    retailers; $0.523); Run B (SB-030, SB-090, SB-055; $0.478). Ledger: $1.977 of $3.00 left.
+-   **Matching fixes from the runs:** bundles with included extras are never exact
+    (`attributes.bundle_evidence`; guitars "with case / gig bag" go to review); similar matches need
+    a compatible product type (`attributes.product_type`; retailer names and category paths never
+    set it); "ITB" is an Iced Tea Burst alias; a verified Colour / Finish specification can confirm
+    a finish. Thomann's "F" is NOT accepted as Figured (pending a decision). The scorer uses the
+    same bundle semantics. See `docs/product-matching.md`.
+-   **Domains:** `publicsuffixlist==1.1.2.20261122` (bundled list, offline) with the previous rule
+    as fallback; it fixed `x.com.ua` being stored as `com.ua` (four shops merged in one Run B record,
+    left as it is, undecided).
+-   **Exception-based review** (`docs/competitor-discovery.md`): insufficient evidence (no product
+    or business-profile page), non-retail wording on the domain's own pages, or a shared company
+    name sends a domain to review, with reasons and evidence URLs. Industry-neutral; the
+    competitor class stays independent of eligibility; never benchmark permission.
+-   **Decisions (user, 23 Nov 2026), applied only to the evaluation database:** APPROVE (search
+    only, benchmark false) absolutemusic.co.uk, audiodirect.co.uk, bonnersmusic.co.uk,
+    ccmusicshop.co.uk, giggear.co.uk, guitarspedalsampsandstuff.co.uk, hotroxuk.com,
+    joaniesmusic.com, peachguitars.com, promenademusic.co.uk, themusicbank.co.uk; REJECT
+    fairdealmusic.co.uk, justpedals.co.uk; the other 15 candidates undecided. Automatic search
+    stays off (`PIPELINE_SEARCH_AUTO_APPROVED=false`, also forced off by the Stage 9 commands).
 
 ### UK relevance evidence, Option B (18-19 Nov 2026) — SUPERSEDED by Stage 8.1 (history only)
 

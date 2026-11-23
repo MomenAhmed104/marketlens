@@ -208,7 +208,7 @@ def test_a_rerun_without_classification_keeps_every_llm_field_including_the_vers
     for f in LLM_FIELDS:
         assert getattr(merged, f) == getattr(old, f), f
     assert merged.classification_version == CLASSIFICATION_VERSION and merged.sells_new_musical_instruments is False
-    assert len(merged.evidence) == 3  # evidence still accumulates
+    assert len(merged.evidence) == 4  # evidence still accumulates (incl. the default profile page)
 
 
 def test_a_new_completed_classification_replaces_every_llm_field():

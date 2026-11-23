@@ -179,7 +179,7 @@ def test_all_records_are_processed_with_safe_statuses(catalogue, db_copy):
     assert (b.proposed_competitor_class, b.final_competitor_class, b.changed) == (D, D, True)
     assert b.classification_reasons[-1] == "Accepted: DIRECT_COMPETITOR" and b.classification_model == "fake/llm-1@2026"
     # 2 = two product pages (shared fixture)
-    assert b.review_status is ReviewStatus.APPROVED and b.has_usable_evidence and b.evidence_count == 2
+    assert b.review_status is ReviewStatus.APPROVED and b.has_usable_evidence and b.evidence_count == 3  # 2 pages + profile
 
     for domain in ("broken.co.uk", "silent.co.uk", "crash.co.uk", "corrupt.co.uk", "no-evidence.co.uk", "blank.co.uk",
                    "andertons.co.uk"):  # fmt: skip
@@ -239,7 +239,7 @@ def test_dry_run_leaves_the_copy_byte_for_byte_unchanged(catalogue, source_db, d
     rows = {r[0]: r for r in after["review_candidates"]}
     beck = json.loads(rows["beckettsmusic.co.uk"][5])
     assert rows["beckettsmusic.co.uk"][3:5] == ("run-2", 2)
-    assert beck["candidate"]["competitor_class"] == "NEEDS_REVIEW" and len(beck["candidate"]["evidence"]) == 2
+    assert beck["candidate"]["competitor_class"] == "NEEDS_REVIEW" and len(beck["candidate"]["evidence"]) == 3
     assert beck["candidate"]["review_decision"] is None
 
 

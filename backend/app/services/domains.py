@@ -1,6 +1,13 @@
-"""Deterministic domain normalisation."""
+"""Deterministic domain normalisation.
+
+Registrable domains come from the Public Suffix List bundled with the pinned `publicsuffixlist`
+package (offline: its built-in copy is read, nothing is downloaded; private suffixes such as
+github.io count as suffixes, so each user site is its own domain). The previous deterministic
+rule is kept as a fallback if the library cannot be loaded or gives no answer.
+"""
 
 import re
+from functools import lru_cache
 from urllib.parse import urlsplit
 
 
@@ -30,6 +37,44 @@ _TWO_LABEL_SUFFIXES = {
 }  # fmt: skip
 
 
+# Generic second-level labels that country-code registries use as public suffixes
+# ("shop.com.ua", "x.org.uk", "y.co.jp"). Under a two-letter country-code TLD these are
+# treated as part of the suffix (Stage 9.2 fix: "x.com.ua" was recorded as "com.ua").
+# An interim deterministic rule, not the full Public Suffix List (see docs/stage9).
+_GENERIC_SECOND_LEVEL = {"com", "co", "org", "net", "ac", "gov", "edu", "ltd", "plc", "me", "biz", "info",
+                         "nom", "or", "ne", "go", "gob", "mil"}  # fmt: skip
+
+
+@lru_cache(maxsize=1)
+def _psl():
+    """The bundled Public Suffix List (no network), or None if the package is unavailable."""
+    try:
+        from publicsuffixlist import PublicSuffixList
+    except ImportError:  # pragma: no cover - the package is a pinned requirement
+        return None
+    return PublicSuffixList()  # source=None: the copy shipped inside the package
+
+
+def is_public_suffix(host: str) -> bool:
+    """True for a public suffix ('co.uk', 'com.ua', 'github.io'), never for a registrable domain."""
+    psl = _psl()
+    h = host.lower().strip(".")
+    if psl is not None and "." in h:
+        try:
+            return bool(psl.is_public(h))
+        except Exception:
+            pass
+    return _fallback_is_public_suffix(h)
+
+
+def _fallback_is_public_suffix(host: str) -> bool:
+    labels = host.lower().strip(".").split(".")
+    if len(labels) != 2:
+        return False
+    return host.lower() in _TWO_LABEL_SUFFIXES or (len(labels[1]) == 2 and labels[1].isalpha()
+                                                   and labels[0] in _GENERIC_SECOND_LEVEL)  # fmt: skip
+
+
 def registrable_domain(url_or_host: str) -> str:
     """The domain a company registers, e.g. 'blog.andertons.co.uk' -> 'andertons.co.uk'.
 
@@ -37,8 +82,22 @@ def registrable_domain(url_or_host: str) -> str:
     competitors. Raises ValueError like normalize_hostname.
     """
     host = normalize_hostname(url_or_host)
+    psl = _psl()
+    if psl is not None:
+        try:
+            found = psl.privatesuffix(host)
+        except Exception:
+            found = None
+        if found:
+            return found
+    return fallback_registrable_domain(host)
+
+
+def fallback_registrable_domain(host: str) -> str:
+    """The previous deterministic rule (known two-label suffixes and generic second-level labels
+    under a two-letter country code); used when the Public Suffix List gives no answer."""
     labels = host.split(".")
-    if len(labels) >= 3 and ".".join(labels[-2:]) in _TWO_LABEL_SUFFIXES:
+    if len(labels) >= 3 and _fallback_is_public_suffix(".".join(labels[-2:])):
         return ".".join(labels[-3:])
     return ".".join(labels[-2:])
 
@@ -62,7 +121,7 @@ def canonical_domain(value: str) -> str:
     labels = host.split(".")
     if len(labels) < 2 or not all(_LABEL.match(label) for label in labels):
         raise ValueError(f"Not a bare domain name: {value!r} (no scheme, path, port or invalid characters)")
-    if host in _TWO_LABEL_SUFFIXES:
+    if is_public_suffix(host):
         raise ValueError(f"{value!r} is a public suffix, not a domain")
     if registrable_domain(host) != host:
         raise ValueError(f"{value!r} is a subdomain; give the registrable domain {registrable_domain(host)!r}")

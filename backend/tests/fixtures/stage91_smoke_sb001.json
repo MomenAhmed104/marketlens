@@ -1,0 +1,898 @@
+{
+ "_note": "SB-001 product-intelligence record from the Stage 9.1 smoke run run-20261123T182346Z-b23f4743 (23 Nov 2026), search snippets removed. Regression case for bundle matching.",
+ "retrieved_at": "2026-11-23T18:23:56.238415Z",
+ "intelligence": {
+  "product": {
+   "product_id": "SB-001",
+   "product_name": "Boss RC-5 Loop Station Guitar Effect Pedal",
+   "brand": "Boss",
+   "manufacturer_model": "RC-5"
+  },
+  "queries": [
+   "Boss RC-5 Loop Station Guitar Effect Pedal"
+  ],
+  "domains": [
+   {
+    "domain": "andertons.co.uk",
+    "queries": [
+     "Boss RC-5 Loop Station Guitar Effect Pedal"
+    ],
+    "results": 5,
+    "out_of_scope_dropped": 0,
+    "pages_selected": 2,
+    "errors": []
+   },
+   {
+    "domain": "gear4music.com",
+    "queries": [
+     "Boss RC-5 Loop Station Guitar Effect Pedal"
+    ],
+    "results": 5,
+    "out_of_scope_dropped": 0,
+    "pages_selected": 2,
+    "errors": []
+   }
+  ],
+  "candidates": [
+   {
+    "candidate_id": "SB-001:e7bdd533fb45",
+    "stompbox_product_id": "SB-001",
+    "competitor": {
+     "domain": "andertons.co.uk",
+     "company_name": "Andertons",
+     "company_type": "retailer",
+     "approval_status": "PRECONFIGURED",
+     "price_benchmark": true
+    },
+    "product_url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal",
+    "search": {
+     "domain": "andertons.co.uk",
+     "query_text": "Boss RC-5 Loop Station Guitar Effect Pedal",
+     "provider": "exa",
+     "provider_request_id": "052a51d235dbcad21ce6845894bb657b",
+     "rank": 1,
+     "url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal/",
+     "canonical_url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal",
+     "hostname": "andertons.co.uk",
+     "title": "Boss RC-5 Loop Station Pedal",
+     "snippet": null,
+     "published_raw": null,
+     "retrieved_at": "2026-11-23T18:23:51.732577Z",
+     "mentions_model": true,
+     "mentions_brand": true
+    },
+    "page": {
+     "status": "OK",
+     "provider": "exa",
+     "provider_request_id": "9e59e7d77702395b34d4366060070a49",
+     "requested_url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal",
+     "final_url": "https://www.andertons.co.uk/boss-rc-5-loop-station-pedal",
+     "title": "Boss RC-5 Loop Station Pedal",
+     "content_chars": 17358,
+     "chars_sent_to_llm": 12000,
+     "retrieved_at": "2026-11-23T18:23:56.238415Z",
+     "cache_source": "crawled",
+     "error": null
+    },
+    "extraction_status": "COMPLETED",
+    "extraction_error": null,
+    "page_type": "product_page",
+    "product_title": "Boss RC-5 Loop Station Pedal",
+    "brand": "Boss",
+    "model": "RC-5",
+    "sku": "RC5",
+    "price": "219.00",
+    "currency": "GBP",
+    "price_text": "£219.00",
+    "availability": "10+ In Stock",
+    "specifications": [
+     {
+      "name": "Sampling Frequency",
+      "value": "44.1 kHz",
+      "key": "sampling_frequency",
+      "category": "other"
+     },
+     {
+      "name": "AD/DA Conversion",
+      "value": "32 bits",
+      "key": "ad_da_conversion",
+      "category": "other"
+     },
+     {
+      "name": "Processing",
+      "value": "32-bit floating point",
+      "key": "processing",
+      "category": "other"
+     },
+     {
+      "name": "Effect",
+      "value": "Reverb (only for rhythm part)",
+      "key": "effect",
+      "category": "other"
+     },
+     {
+      "name": "Memory",
+      "value": "99",
+      "key": "memory",
+      "category": "other"
+     },
+     {
+      "name": "Display",
+      "value": "Graphic LCD (96 x 32 dots, RGB backlit LCD)",
+      "key": "display",
+      "category": "other"
+     },
+     {
+      "name": "Nominal Input Level",
+      "value": "INPUT A/MONO, B: -20 dBu",
+      "key": "nominal_input_level",
+      "category": "other"
+     },
+     {
+      "name": "Input Impedance",
+      "value": "INPUT A/MONO, B: 1 M ohm",
+      "key": "input_impedance",
+      "category": "other"
+     },
+     {
+      "name": "Nominal Output Level",
+      "value": "OUTPUT A/MONO, B:-20 dBu",
+      "key": "nominal_output_level",
+      "category": "other"
+     },
+     {
+      "name": "Output Impedance",
+      "value": "OUTPUT A/MONO, B: 1 k ohm",
+      "key": "output_impedance",
+      "category": "other"
+     },
+     {
+      "name": "Maximum Recording Time",
+      "value": "Approx. 1.5 hours (1 track), Approx.13 hours (total of All memories)",
+      "key": "recording_time",
+      "category": "other"
+     },
+     {
+      "name": "Rhythm Type",
+      "value": "57 Patterns x 2 Variations",
+      "key": "rhythm_type",
+      "category": "other"
+     },
+     {
+      "name": "Rhythm Kit",
+      "value": "7 types",
+      "key": "rhythm_kit",
+      "category": "other"
+     },
+     {
+      "name": "Weight",
+      "value": "450 g (1 lb)",
+      "key": "weight",
+      "category": "other"
+     },
+     {
+      "name": "Dimensions (mm)",
+      "value": "73 (W) x 129 (D) x 56 (H)",
+      "key": "dimensions",
+      "category": "other"
+     }
+    ],
+    "sale_indicated": false,
+    "ignored_prices": [
+     "£0.00",
+     "£0.00",
+     "You'll get £6.57 to spend on your next order.",
+     "Free & Next Day delivery to most UK locations when spending over £199"
+    ],
+    "ignored_price_details": [
+     {
+      "text": "£0.00",
+      "category": "OTHER"
+     },
+     {
+      "text": "£0.00",
+      "category": "OTHER"
+     },
+     {
+      "text": "You'll get £6.57 to spend on your next order.",
+      "category": "OTHER"
+     },
+     {
+      "text": "Free & Next Day delivery to most UK locations when spending over £199",
+      "category": "DELIVERY"
+     }
+    ],
+    "field_evidence": [
+     {
+      "field": "product_title",
+      "status": "EXTRACTED",
+      "value": "Boss RC-5 Loop Station Pedal",
+      "quote": "Boss RC-5 Loop Station Pedal",
+      "note": null
+     },
+     {
+      "field": "brand",
+      "status": "EXTRACTED",
+      "value": "Boss",
+      "quote": "## Boss",
+      "note": null
+     },
+     {
+      "field": "model",
+      "status": "EXTRACTED",
+      "value": "RC-5",
+      "quote": "Boss RC-5 Loop Station Pedal",
+      "note": null
+     },
+     {
+      "field": "sku",
+      "status": "EXTRACTED",
+      "value": "RC5",
+      "quote": "SKU: RC5",
+      "note": null
+     },
+     {
+      "field": "availability",
+      "status": "EXTRACTED",
+      "value": "10+ In Stock",
+      "quote": "10+ In Stock",
+      "note": null
+     },
+     {
+      "field": "price",
+      "status": "EXTRACTED",
+      "value": "£219.00",
+      "quote": "£219.00",
+      "note": null
+     }
+    ],
+    "llm_confidence": 0.99,
+    "llm_notes": null,
+    "llm_request_ids": [
+     "gen-1795458240-OpTIymJ36dGTuDf0GBtU"
+    ],
+    "options": [],
+    "option_prices": [],
+    "extraction_issues": [],
+    "availability_status": "IN_STOCK",
+    "availability_proposed": "IN_STOCK",
+    "availability_reason": "Verified text '10+ In Stock'",
+    "match_proposal": {
+     "classification": "EXACT_MATCH",
+     "corresponding_status": "EXACT_MATCH",
+     "reasons": [
+      {
+       "text": "The page identifies the same Boss RC-5 Loop Station pedal as the catalogue product.",
+       "quote": "# Boss RC-5 Loop Station Pedal",
+       "verified": true
+      },
+      {
+       "text": "The page confirms the RC-5 model designation.",
+       "quote": "Step up to the RC-5 and prime your pedalboard with maximum looping range.",
+       "verified": true
+      },
+      {
+       "text": "The item is offered as an in-stock product.",
+       "quote": "10+ In Stock",
+       "verified": true
+      }
+     ],
+     "differing_attributes": [],
+     "confidence": 0.99,
+     "notes": null,
+     "request_ids": [
+      "gen-1795458252-Bx6tpSzpzpdXLlAMOWmJ"
+     ]
+    },
+    "match_proposal_status": "COMPLETED",
+    "match_proposal_error": null,
+    "image": null
+   },
+   {
+    "candidate_id": "SB-001:eb1a9f54d311",
+    "stompbox_product_id": "SB-001",
+    "competitor": {
+     "domain": "gear4music.com",
+     "company_name": "Gear4music",
+     "company_type": "retailer",
+     "approval_status": "PRECONFIGURED",
+     "price_benchmark": true
+    },
+    "product_url": "https://www.gear4music.com/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal/3LJT",
+    "search": {
+     "domain": "gear4music.com",
+     "query_text": "Boss RC-5 Loop Station Guitar Effect Pedal",
+     "provider": "exa",
+     "provider_request_id": "7cbd0abdec2653710520272b4e61c14e",
+     "rank": 2,
+     "url": "https://www.gear4music.com/us/en/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal/3LJT",
+     "canonical_url": "https://www.gear4music.com/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal/3LJT",
+     "hostname": "gear4music.com",
+     "title": "Boss RC-5 Loop Station Guitar Loop Pedal at Gear4music",
+     "snippet": null,
+     "published_raw": null,
+     "retrieved_at": "2026-11-23T18:23:51.933237Z",
+     "mentions_model": true,
+     "mentions_brand": true
+    },
+    "page": {
+     "status": "OK",
+     "provider": "exa",
+     "provider_request_id": "9e59e7d77702395b34d4366060070a49",
+     "requested_url": "https://www.gear4music.com/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal/3LJT",
+     "final_url": "https://www.gear4music.com/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal/3LJT",
+     "title": "Boss RC-5 Loop Station Guitar Loop Pedal at Gear4music",
+     "content_chars": 14421,
+     "chars_sent_to_llm": 12000,
+     "retrieved_at": "2026-11-23T18:23:56.238415Z",
+     "cache_source": "crawled",
+     "error": null
+    },
+    "extraction_status": "COMPLETED",
+    "extraction_error": null,
+    "page_type": "product_page",
+    "product_title": "Boss RC-5 Loop Station Guitar Loop Pedal",
+    "brand": "Boss",
+    "model": "RC-5",
+    "sku": null,
+    "price": "194.50",
+    "currency": "GBP",
+    "price_text": "£ 194.50",
+    "availability": "20+ in stock",
+    "specifications": [],
+    "sale_indicated": false,
+    "ignored_prices": [
+     "EXPRESS CLICK & COLLECT locally £3.49",
+     "NEXT available Working Day delivery £5.49",
+     "SPECIFIC day delivery, MON-FRI £6.49",
+     "SATURDAY delivery, 1hr window notification £6.99",
+     "SUNDAY delivery, 1hr window notification £7.99",
+     "SPECIFIC MORNING delivery, MON-FRI £9.99",
+     "SPECIFIC MORNING delivery by 10.30AM, MON-FRI £13.49"
+    ],
+    "ignored_price_details": [
+     {
+      "text": "EXPRESS CLICK & COLLECT locally £3.49",
+      "category": "DELIVERY"
+     },
+     {
+      "text": "NEXT available Working Day delivery £5.49",
+      "category": "DELIVERY"
+     },
+     {
+      "text": "SPECIFIC day delivery, MON-FRI £6.49",
+      "category": "DELIVERY"
+     },
+     {
+      "text": "SATURDAY delivery, 1hr window notification £6.99",
+      "category": "DELIVERY"
+     },
+     {
+      "text": "SUNDAY delivery, 1hr window notification £7.99",
+      "category": "DELIVERY"
+     },
+     {
+      "text": "SPECIFIC MORNING delivery, MON-FRI £9.99",
+      "category": "DELIVERY"
+     },
+     {
+      "text": "SPECIFIC MORNING delivery by 10.30AM, MON-FRI £13.49",
+      "category": "DELIVERY"
+     }
+    ],
+    "field_evidence": [
+     {
+      "field": "product_title",
+      "status": "EXTRACTED",
+      "value": "Boss RC-5 Loop Station Guitar Loop Pedal",
+      "quote": "# Boss RC-5 Loop Station Guitar Loop Pedal",
+      "note": null
+     },
+     {
+      "field": "brand",
+      "status": "EXTRACTED",
+      "value": "Boss",
+      "quote": "Boss RC-5 Loop Station Guitar Loop Pedal",
+      "note": null
+     },
+     {
+      "field": "model",
+      "status": "EXTRACTED",
+      "value": "RC-5",
+      "quote": "Boss RC-5 Loop Station Guitar Loop Pedal",
+      "note": null
+     },
+     {
+      "field": "sku",
+      "status": "NOT_FOUND",
+      "value": null,
+      "quote": null,
+      "note": null
+     },
+     {
+      "field": "availability",
+      "status": "EXTRACTED",
+      "value": "20+ in stock",
+      "quote": "20+ in stock",
+      "note": null
+     },
+     {
+      "field": "price",
+      "status": "EXTRACTED",
+      "value": "£ 194.50",
+      "quote": "£ 194.50 Price Includes VAT @ 20%",
+      "note": null
+     }
+    ],
+    "llm_confidence": 0.99,
+    "llm_notes": null,
+    "llm_request_ids": [
+     "gen-1795458242-pQG4CRtllqsxYoeDuTdm"
+    ],
+    "options": [],
+    "option_prices": [],
+    "extraction_issues": [],
+    "availability_status": "IN_STOCK",
+    "availability_proposed": "IN_STOCK",
+    "availability_reason": "Verified text '20+ in stock'",
+    "match_proposal": {
+     "classification": "EXACT_MATCH",
+     "corresponding_status": "EXACT_MATCH",
+     "reasons": [
+      {
+       "text": "The page identifies the product as the Boss RC-5 Loop Station guitar pedal, matching the catalogue model and product.",
+       "quote": "# Boss RC-5 Loop Station Guitar Loop Pedal",
+       "verified": true
+      },
+      {
+       "text": "The page states that the product is new unless otherwise stated.",
+       "quote": "This product is new unless stated",
+       "verified": true
+      }
+     ],
+     "differing_attributes": [],
+     "confidence": 0.99,
+     "notes": null,
+     "request_ids": [
+      "gen-1795458249-DTf0Nu6Mr703KIpeigtk"
+     ]
+    },
+    "match_proposal_status": "COMPLETED",
+    "match_proposal_error": null,
+    "image": null
+   },
+   {
+    "candidate_id": "SB-001:e38ec89e51d2",
+    "stompbox_product_id": "SB-001",
+    "competitor": {
+     "domain": "gear4music.com",
+     "company_name": "Gear4music",
+     "company_type": "retailer",
+     "approval_status": "PRECONFIGURED",
+     "price_benchmark": true
+    },
+    "product_url": "https://www.gear4music.com/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal-with-Power-Supply/40BW",
+    "search": {
+     "domain": "gear4music.com",
+     "query_text": "Boss RC-5 Loop Station Guitar Effect Pedal",
+     "provider": "exa",
+     "provider_request_id": "7cbd0abdec2653710520272b4e61c14e",
+     "rank": 3,
+     "url": "https://www.gear4music.com/us/en/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal-with-Power-Supply/40BW",
+     "canonical_url": "https://www.gear4music.com/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal-with-Power-Supply/40BW",
+     "hostname": "gear4music.com",
+     "title": "Boss RC-5 Loop Station Guitar Loop Pedal with Power Supply at Gear4music",
+     "snippet": null,
+     "published_raw": null,
+     "retrieved_at": "2026-11-23T18:23:51.933237Z",
+     "mentions_model": true,
+     "mentions_brand": true
+    },
+    "page": {
+     "status": "OK",
+     "provider": "exa",
+     "provider_request_id": "9e59e7d77702395b34d4366060070a49",
+     "requested_url": "https://www.gear4music.com/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal-with-Power-Supply/40BW",
+     "final_url": "https://www.gear4music.com/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal-with-Power-Supply/40BW",
+     "title": "Boss RC-5 Loop Station Guitar Loop Pedal with Power Supply at Gear4music",
+     "content_chars": 14813,
+     "chars_sent_to_llm": 12000,
+     "retrieved_at": "2026-11-23T18:23:56.238415Z",
+     "cache_source": "crawled",
+     "error": null
+    },
+    "extraction_status": "COMPLETED",
+    "extraction_error": null,
+    "page_type": "product_page",
+    "product_title": "Boss RC-5 Loop Station Guitar Loop Pedal with Power Supply",
+    "brand": "Boss",
+    "model": "RC-5",
+    "sku": null,
+    "price": "219.00",
+    "currency": "GBP",
+    "price_text": "£ 219.00",
+    "availability": "Not currently in stock, but available to order",
+    "specifications": [
+     {
+      "name": "recording time",
+      "value": "13 hours",
+      "key": "recording_time",
+      "category": "other"
+     },
+     {
+      "name": "preset rhythms",
+      "value": "57 preset rhythms",
+      "key": "preset_rhythms",
+      "category": "other"
+     },
+     {
+      "name": "drumkits",
+      "value": "seven drumkits",
+      "key": "drumkits",
+      "category": "other"
+     },
+     {
+      "name": "power supply",
+      "value": "Boss PSA-230 power supply",
+      "key": "power_supply",
+      "category": "power_supply"
+     }
+    ],
+    "sale_indicated": false,
+    "ignored_prices": [],
+    "ignored_price_details": [],
+    "field_evidence": [
+     {
+      "field": "product_title",
+      "status": "EXTRACTED",
+      "value": "Boss RC-5 Loop Station Guitar Loop Pedal with Power Supply",
+      "quote": "Boss RC-5 Loop Station Guitar Loop Pedal with Power Supply",
+      "note": null
+     },
+     {
+      "field": "brand",
+      "status": "EXTRACTED",
+      "value": "Boss",
+      "quote": "Boss RC-5 Loop Station Guitar Loop Pedal with Power Supply",
+      "note": null
+     },
+     {
+      "field": "model",
+      "status": "EXTRACTED",
+      "value": "RC-5",
+      "quote": "Boss RC-5 Loop Station Guitar Loop Pedal with Power Supply",
+      "note": null
+     },
+     {
+      "field": "sku",
+      "status": "NOT_FOUND",
+      "value": null,
+      "quote": null,
+      "note": null
+     },
+     {
+      "field": "availability",
+      "status": "EXTRACTED",
+      "value": "Not currently in stock, but available to order",
+      "quote": "Not currently in stock, but available to order",
+      "note": null
+     },
+     {
+      "field": "price",
+      "status": "EXTRACTED",
+      "value": "£ 219.00",
+      "quote": "£ 219.00 Price Includes VAT @ 20%",
+      "note": null
+     }
+    ],
+    "llm_confidence": 0.97,
+    "llm_notes": null,
+    "llm_request_ids": [
+     "gen-1795458241-0ANdLUlOQ5ng9jMyytrz"
+    ],
+    "options": [],
+    "option_prices": [],
+    "extraction_issues": [],
+    "availability_status": "UNKNOWN",
+    "availability_proposed": "BACKORDER",
+    "availability_reason": "Availability text 'Not currently in stock, but available to order' mixes several statuses (BACKORDER, OUT_OF_STOCK)",
+    "match_proposal": {
+     "classification": "EXACT_MATCH",
+     "corresponding_status": "EXACT_MATCH",
+     "reasons": [
+      {
+       "text": "The page identifies the same Boss RC-5 Loop Station guitar pedal as the catalogue product.",
+       "quote": "Boss RC-5 Loop Station Guitar Loop Pedal",
+       "verified": true
+      },
+      {
+       "text": "The page describes the power supply as an included accessory, not a different pedal model.",
+       "quote": "Comes with high quality Boss PSA-230 power supply",
+       "verified": true
+      },
+      {
+       "text": "The page states the product is new unless otherwise stated, consistent with the catalogue condition.",
+       "quote": "This product is new unless stated",
+       "verified": true
+      }
+     ],
+     "differing_attributes": [],
+     "confidence": 0.99,
+     "notes": "The page bundles the RC-5 pedal with a power supply; no difference to the pedal's model or variant is shown.",
+     "request_ids": [
+      "gen-1795458246-XpD0DzkHNMSnK5YrT3fV"
+     ]
+    },
+    "match_proposal_status": "COMPLETED",
+    "match_proposal_error": null,
+    "image": null
+   },
+   {
+    "candidate_id": "SB-001:0af28a4e743c",
+    "stompbox_product_id": "SB-001",
+    "competitor": {
+     "domain": "andertons.co.uk",
+     "company_name": "Andertons",
+     "company_type": "retailer",
+     "approval_status": "PRECONFIGURED",
+     "price_benchmark": true
+    },
+    "product_url": "https://www.andertons.co.uk/boss-rc-500-loop-station-pedal",
+    "search": {
+     "domain": "andertons.co.uk",
+     "query_text": "Boss RC-5 Loop Station Guitar Effect Pedal",
+     "provider": "exa",
+     "provider_request_id": "052a51d235dbcad21ce6845894bb657b",
+     "rank": 4,
+     "url": "https://www.andertons.co.uk/boss-rc-500-loop-station-pedal/",
+     "canonical_url": "https://www.andertons.co.uk/boss-rc-500-loop-station-pedal",
+     "hostname": "andertons.co.uk",
+     "title": "Boss RC-500 Loop Station Pedal",
+     "snippet": null,
+     "published_raw": null,
+     "retrieved_at": "2026-11-23T18:23:51.732577Z",
+     "mentions_model": false,
+     "mentions_brand": true
+    },
+    "page": {
+     "status": "OK",
+     "provider": "exa",
+     "provider_request_id": "9e59e7d77702395b34d4366060070a49",
+     "requested_url": "https://www.andertons.co.uk/boss-rc-500-loop-station-pedal",
+     "final_url": "https://www.andertons.co.uk/boss-rc-500-loop-station-pedal",
+     "title": "Boss RC-500 Loop Station Pedal - Andertons Music Co.",
+     "content_chars": 9576,
+     "chars_sent_to_llm": 9576,
+     "retrieved_at": "2026-11-23T18:23:56.238415Z",
+     "cache_source": "crawled",
+     "error": null
+    },
+    "extraction_status": "COMPLETED",
+    "extraction_error": null,
+    "page_type": "product_page",
+    "product_title": "Boss RC-500 Loop Station Pedal",
+    "brand": "Boss",
+    "model": "RC-500",
+    "sku": null,
+    "price": "299.00",
+    "currency": "GBP",
+    "price_text": "£299.00",
+    "availability": "8 In Stock",
+    "specifications": [
+     {
+      "name": "Sampling Frequency",
+      "value": "44.1 kHz",
+      "key": "sampling_frequency",
+      "category": "other"
+     },
+     {
+      "name": "AD/DA Conversion",
+      "value": "32 bits",
+      "key": "ad_da_conversion",
+      "category": "other"
+     },
+     {
+      "name": "Processing",
+      "value": "32-bit floating point",
+      "key": "processing",
+      "category": "other"
+     },
+     {
+      "name": "Memory",
+      "value": "99",
+      "key": "memory",
+      "category": "other"
+     },
+     {
+      "name": "Number of Tracks",
+      "value": "2",
+      "key": "number_of_tracks",
+      "category": "other"
+     },
+     {
+      "name": "Data Format",
+      "value": "WAV (44.1 kHz, 32-bit float, stereo)",
+      "key": "data_format",
+      "category": "other"
+     },
+     {
+      "name": "Maximum Recording Time",
+      "value": "Approx. 1.5 hours (1 track), Approx.13 hours (total of All memories)",
+      "key": "recording_time",
+      "category": "other"
+     },
+     {
+      "name": "Rhythm Type",
+      "value": "57 Patterns x 2 Variations",
+      "key": "rhythm_type",
+      "category": "other"
+     },
+     {
+      "name": "Rhythm Kit",
+      "value": "16 types",
+      "key": "rhythm_kit",
+      "category": "other"
+     },
+     {
+      "name": "Weight",
+      "value": "950 g (2.1 lbs)",
+      "key": "weight",
+      "category": "other"
+     },
+     {
+      "name": "Dimensions (mm)",
+      "value": "170 (W) x 138 (D) x 60. (H)",
+      "key": "dimensions",
+      "category": "other"
+     },
+     {
+      "name": "Power Supply",
+      "value": "Alkaline battery (x4, AA, LR6), AC adaptor (PSA-S series: sold separately)",
+      "key": "power_supply",
+      "category": "power_supply"
+     }
+    ],
+    "sale_indicated": false,
+    "ignored_prices": [],
+    "ignored_price_details": [],
+    "field_evidence": [
+     {
+      "field": "product_title",
+      "status": "EXTRACTED",
+      "value": "Boss RC-500 Loop Station Pedal",
+      "quote": "# Boss RC-500 Loop Station Pedal",
+      "note": null
+     },
+     {
+      "field": "brand",
+      "status": "EXTRACTED",
+      "value": "Boss",
+      "quote": "Boss RC-500 Loop Station Pedal",
+      "note": null
+     },
+     {
+      "field": "model",
+      "status": "EXTRACTED",
+      "value": "RC-500",
+      "quote": "Boss RC-500 Loop Station Pedal",
+      "note": null
+     },
+     {
+      "field": "sku",
+      "status": "NOT_FOUND",
+      "value": null,
+      "quote": null,
+      "note": null
+     },
+     {
+      "field": "availability",
+      "status": "EXTRACTED",
+      "value": "8 In Stock",
+      "quote": "8 In Stock",
+      "note": null
+     },
+     {
+      "field": "price",
+      "status": "EXTRACTED",
+      "value": "£299.00",
+      "quote": "£299.00",
+      "note": null
+     }
+    ],
+    "llm_confidence": 0.98,
+    "llm_notes": null,
+    "llm_request_ids": [
+     "gen-1795458251-sTmiDhinqXpKliMmXCxr"
+    ],
+    "options": [],
+    "option_prices": [],
+    "extraction_issues": [
+     {
+      "kind": "MISSING_INFORMATION",
+      "fields": [
+       "sku"
+      ],
+      "description": "No labelled retailer SKU or product code is shown.",
+      "quotes": [],
+      "verified": false
+     }
+    ],
+    "availability_status": "IN_STOCK",
+    "availability_proposed": "IN_STOCK",
+    "availability_reason": "Verified text '8 In Stock'",
+    "match_proposal": {
+     "classification": "SIMILAR_ALTERNATIVE",
+     "corresponding_status": "SIMILAR_MATCH",
+     "reasons": [
+      {
+       "text": "The page identifies a different model from the catalogue product.",
+       "quote": "# Boss RC-500 Loop Station Pedal",
+       "verified": true
+      },
+      {
+       "text": "The page describes a two-track looper with features specific to the RC-500.",
+       "quote": "Advanced two-track looper with onboard mixing and deep control options",
+       "verified": true
+      }
+     ],
+     "differing_attributes": [
+      {
+       "attribute": "model",
+       "catalogue_value": "RC-5",
+       "page_value": "RC-500",
+       "quote": "# Boss RC-500 Loop Station Pedal",
+       "verified": true,
+       "cosmetic": false
+      }
+     ],
+     "confidence": 1.0,
+     "notes": "The page is for the Boss RC-500, not the catalogue's Boss RC-5.",
+     "request_ids": [
+      "gen-1795458259-mr8oe9EuY1emFjAOzPs3"
+     ]
+    },
+    "match_proposal_status": "COMPLETED",
+    "match_proposal_error": null,
+    "image": null
+   }
+  ],
+  "not_selected": [
+   {
+    "domain": "gear4music.com",
+    "url": "https://www.gear4music.com/us/en/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal-Nearly-New/4MU5",
+    "title": "Boss RC-5 Loop Station Guitar Loop Pedal - Nearly New at Gear4music",
+    "reason": "Over the per-domain page limit (2)"
+   },
+   {
+    "domain": "gear4music.com",
+    "url": "https://www.gear4music.com/us/en/Guitar-and-Bass/Boss-RC-5-Loop-Station-Guitar-Loop-Pedal-Secondhand/7V55",
+    "title": "Boss RC-5 Loop Station Guitar Loop Pedal - Secondhand at Gear4music",
+    "reason": "Over the per-domain page limit (2)"
+   },
+   {
+    "domain": "gear4music.com",
+    "url": "https://www.gear4music.com/blog/boss-loop-stations-explained/",
+    "title": "BOSS Loop Stations Explained | Gear4music",
+    "reason": "Over the per-domain page limit (2)"
+   },
+   {
+    "domain": "andertons.co.uk",
+    "url": "https://www.andertons.co.uk/browse/brands/boss-pedals/boss-looper-utility-pedals/",
+    "title": "Boss Looper & Utility Pedals",
+    "reason": "Over the per-domain page limit (2)"
+   },
+   {
+    "domain": "andertons.co.uk",
+    "url": "https://www.andertons.co.uk/guitar-looper-pedal-guide",
+    "title": "Looper Pedals: The Complete Guide",
+    "reason": "Neither brand nor model in the result title/URL"
+   },
+   {
+    "domain": "andertons.co.uk",
+    "url": "https://www.andertons.co.uk/browse/guitar-pedals/looper-pedals/",
+    "title": "Looper Pedals",
+    "reason": "Neither brand nor model in the result title/URL"
+   }
+  ]
+ }
+}

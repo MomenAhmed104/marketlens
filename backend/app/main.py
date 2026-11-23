@@ -16,6 +16,8 @@ from app.services.images.catalogue import apply_catalogue_images, load_catalogue
 from app.orchestration.pipeline import PipelineDeps, RunManager
 from app.orchestration.store import InMemoryRunStore
 from app.services.review_store import ReviewStore
+from app.stage9.context import budget_mode
+from app.stage9.manager import BudgetedRunManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +45,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = settings
         app.state.review_store = ReviewStore(settings.review_db_path, settings.discovery_excluded_competitor_domains)
         # Phase 7: temporary, in-memory run state (cleared on restart).
-        app.state.run_manager = RunManager(
+        # Stage 9 budget mode (STAGE9_LEDGER_PATH set): every run reserves budget first and is metered.
+        manager_cls = BudgetedRunManager if budget_mode(settings) else RunManager
+        app.state.run_manager = manager_cls(
             InMemoryRunStore(settings.pipeline_max_runs_retained, settings.pipeline_run_ttl_minutes),
             PipelineDeps.default(settings, catalogue, app.state.review_store),
         )
+        if budget_mode(settings):
+            logger.warning("Stage 9 budget mode: ledger %s; paid calls only inside budgeted runs",
+                           settings.stage9_ledger_path)  # fmt: skip
         yield
         await app.state.run_manager.shutdown()  # cancel active runs on shutdown
 

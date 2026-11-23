@@ -36,6 +36,11 @@ def _compact(text: str) -> str:
     return re.sub(r"[^0-9a-z]+", "", text.casefold().replace("&", "and"))
 
 
+def compact_name(text: str) -> str:
+    """Company names compared case- and punctuation-insensitively ('Gear 4 Music' == 'gear4music')."""
+    return _compact(text)
+
+
 def name_in_evidence(name: str, evidence: list[EvidenceItem]) -> bool:
     """True if the company name is written in a title or snippet from this domain.
 
@@ -103,13 +108,74 @@ class EligibilityPolicy:
 
     excluded_domains: frozenset[str] = field(default_factory=frozenset)  # own site, platforms, removed competitors
     marketplace_labels: tuple[str, ...] = ()
+    # Discovery looks for business-profile pages (about / contact / delivery) for each candidate;
+    # when it does, a candidate without any such page has insufficient evidence.
+    require_profile_evidence: bool = False
 
 
 def policy_from_settings(settings) -> EligibilityPolicy:
     excluded = (*settings.own_domains, *settings.discovery_excluded_domains,
                 *settings.discovery_excluded_competitor_domains)  # fmt: skip
     return EligibilityPolicy(excluded_domains=frozenset(d.strip().lower() for d in excluded),
-                             marketplace_labels=tuple(settings.marketplace_domain_labels))  # fmt: skip
+                             marketplace_labels=tuple(settings.marketplace_domain_labels),
+                             require_profile_evidence=bool(settings.discovery_profile_results))  # fmt: skip
+
+
+# Industry-neutral wording, on the domain's own pages, that contradicts a retailer label: the
+# business trades with other businesses, points buyers elsewhere, hosts other sellers or compares
+# prices. Any match sends the domain to human review with the quote (never an automatic rejection).
+NON_RETAIL_SIGNALS: tuple[tuple[str, re.Pattern], ...] = tuple((name, re.compile(p, re.IGNORECASE)) for name, p in (
+    ("trade-only seller", r"\btrade[\s-]only\b|\btrade customers only\b|\bwholesale only\b"),
+    ("distributor or wholesaler", r"\b(?:official|exclusive|uk|sole|national)\s+distributors?\b"
+                                  r"|\bdistributors? (?:of|for)\b|\bwholesalers?\b"),
+    ("points buyers to other sellers", r"\bfind an? (?:dealer|retailer|stockist|store)\b|\bwhere to buy\b"
+                                       r"|\bdealer locator\b|\bstore locator\b"),
+    ("hosts third-party sellers", r"\bthird[\s-]party sellers?\b|\bmarketplace sellers?\b|\bbecome a seller\b"),
+    ("compares prices or does not sell", r"\bcompare prices\b|\bprice comparison\b"
+                                         r"|\brather than sell(?:ing)?\b|\bwe (?:do not|don't|dont) sell\b"),
+))  # fmt: skip
+
+
+def _quote(text: str, m: re.Match, width: int = 80) -> str:
+    return " ".join(text[max(0, m.start() - width): m.end() + width].split())
+
+
+def non_retail_signals(candidate: DiscoveredCompetitor) -> list[str]:
+    """Each signal found in the domain's own evidence, with its quote and URL (first per kind)."""
+    found, seen = [], set()
+    for e in candidate.evidence:
+        text = f"{e.title or ''} {e.snippet or ''}"
+        for name, pattern in NON_RETAIL_SIGNALS:
+            if name in seen:
+                continue
+            m = pattern.search(text)
+            if m:
+                seen.add(name)
+                found.append(f'{name}: "{_quote(text, m)}" ({e.url})')
+    return found
+
+
+def find_identity_conflicts(candidates: list[DiscoveredCompetitor], known_names: dict[str, str]) -> None:
+    """Python, after classification: a company name shared by two discovered domains, or with a
+    configured competitor on another domain, is an identity conflict (human review). `known_names`
+    maps compact company names of configured competitors to their domains. Sets
+    `identity_conflicts` on each affected candidate."""
+    by_name: dict[str, list[DiscoveredCompetitor]] = {}
+    for c in candidates:
+        if c.company_name and c.classification_status is ClassificationStatus.COMPLETED:
+            by_name.setdefault(_compact(c.company_name), []).append(c)
+    for key, group in by_name.items():
+        if len(key) < 3:
+            continue
+        for c in group:
+            others = sorted(o.domain for o in group if o.domain != c.domain)
+            known = known_names.get(key)
+            notes = []
+            if others:
+                notes.append(f"company name {c.company_name!r} is also claimed by {', '.join(others)}")
+            if known and known != c.domain:
+                notes.append(f"company name {c.company_name!r} belongs to the configured competitor {known}")
+            c.identity_conflicts = notes
 
 
 @dataclass(frozen=True)
@@ -139,6 +205,13 @@ def is_search_eligible(
       9. it is not confirmed to sell only used instruments (`sells_new_musical_instruments`
          is False). Unknown (None) never blocks; a used-only retailer can still be approved
          by a reviewer, which never grants benchmark permission on its own.
+    Exception-based review (Stage 9.2): these also send a domain to human review, each with
+    the reason and its evidence:
+     10. insufficient evidence: no discovery page on the domain names a searched product's brand or
+         model; or (when discovery looks for them) no business-profile page;
+     11. conflicting business type: labelled a retailer, but the domain's own pages contain
+         non-retail wording (`NON_RETAIL_SIGNALS`), quoted in the reason;
+     12. conflicting identity: the same company name on another discovered or configured domain.
     Never used: serves_uk_customers (even "no"), relevance, confidence, a .uk domain, GBP
     prices or a UK address. Eligibility never grants price-benchmark permission.
     """
@@ -171,6 +244,23 @@ def is_search_eligible(
     if c.sells_new_musical_instruments is False:
         unmet.append("the evidence shows it sells only used instruments (used-only retailers are not searched "
                      "automatically; a reviewer can approve it)")
+    # 10. Insufficient evidence.
+    discovery = [e for e in c.evidence if e.kind is EvidenceKind.DISCOVERY_RESULT]
+    if not any(e.mentions_product_model or e.mentions_brand for e in discovery):
+        unmet.append(f"insufficient evidence: none of the {len(discovery)} discovery page(s) on this domain names a "
+                     "searched product's brand or model")  # fmt: skip
+    if policy.require_profile_evidence and not any(e.kind is EvidenceKind.DOMAIN_PROFILE for e in c.evidence):
+        unmet.append("insufficient evidence: no business-profile page (about / contact / delivery) was found")
+    # 11. Conflicting business type (only for a retailer label: other types are already excluded above).
+    # The competitor class (Direct / Related / Needs Review) stays independent of eligibility
+    # (Stage 8.1 design); only website wording is used here.
+    if c.company_type in AUTO_SEARCH_TYPES:
+        for signal in non_retail_signals(c):
+            unmet.append(f"conflicting business type: labelled {c.company_type.value}, but its own page shows "
+                         f"{signal}")  # fmt: skip
+    # 12. Conflicting identity.
+    for conflict in c.identity_conflicts:
+        unmet.append(f"conflicting identity: {conflict}")
     if unmet:
         return SearchEligibility(False, unmet)
     return SearchEligibility(True, [f"Automatically searchable: {c.company_type.value} named in the discovery "
@@ -204,7 +294,16 @@ def decide(candidate: DiscoveredCompetitor, policy: EligibilityPolicy = Eligibil
         c.approval_status, c.decision_reasons = DomainApprovalStatus.AUTO_APPROVED, list(e.reasons)
     else:
         c.approval_status = DomainApprovalStatus.APPROVAL_REQUIRED
-        c.decision_reasons = [f"Needs review: {r}" for r in e.reasons]
+        c.decision_reasons = [f"Needs review: {r}" for r in e.reasons] + [f"Needs review: {evidence_line(c)}"]
+
+
+def evidence_line(c: DiscoveredCompetitor, limit: int = 4) -> str:
+    """The evidence pages behind a review outcome, so a reviewer starts from them (cited first)."""
+    urls = list(dict.fromkeys([*c.cited_evidence_urls, *(e.url for e in c.evidence)]))
+    if not urls:
+        return "evidence reviewed: none (no discovery pages on this domain)"
+    more = f" (+{len(urls) - limit} more)" if len(urls) > limit else ""
+    return f"evidence reviewed: {', '.join(urls[:limit])}{more}"
 
 
 # --------------------------------------------------------------------------- competitor classification

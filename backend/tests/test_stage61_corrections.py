@@ -273,6 +273,7 @@ def test_alias_is_used_for_variant_price_association(catalogue):
 
 
 def test_alias_registry_is_controlled():
-    assert A.FINISH_ALIASES == {"iced tea burst": ("ice tea", "iced tea")}  # "iced tea" approved 20 Nov 2026
-    assert A.finish_names("Iced Tea Burst") == ["iced tea burst", "ice tea", "iced tea"]
+    # "iced tea" approved 20 Nov 2026; "itb" (Thomann abbreviation) approved 23 Nov 2026.
+    assert A.FINISH_ALIASES == {"iced tea burst": ("ice tea", "iced tea", "itb")}
+    assert A.finish_names("Iced Tea Burst") == ["iced tea burst", "ice tea", "iced tea", "itb"]
     assert A.finish_names("Vintage Sunburst") == ["vintage sunburst"]  # no implicit aliases

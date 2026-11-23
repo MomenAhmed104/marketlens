@@ -179,6 +179,38 @@ class Settings(BaseSettings):
     pipeline_max_events_per_run: int = Field(default=5000, ge=100)
     pipeline_sse_heartbeat_seconds: float = Field(default=15, gt=0)
 
+    # --- Stage 9 spending control (app/stage9; docs/stage9-budget.md). Off unless a ledger path
+    # is set. When on, every /api/runs run must reserve budget first, every Exa and OpenRouter HTTP
+    # attempt is metered against that reservation, and the standalone paid endpoints are refused.
+    # The unit prices have NO defaults: they must be the providers' maximum prices, confirmed by
+    # the user. While any needed price is unset, every run is refused.
+    stage9_ledger_path: Path | None = None
+    stage9_exa_usd_per_search_max: Decimal | None = Field(default=None, gt=0)  # one /search call
+    stage9_exa_search_max_results: int = Field(default=10, ge=1, le=100)  # the price above covers up to this
+    stage9_exa_usd_per_page_max: Decimal | None = Field(default=None, gt=0)  # one page in a /contents call
+    stage9_llm_usd_per_input_token_max: Decimal | None = Field(default=None, gt=0)
+    stage9_llm_usd_per_output_token_max: Decimal | None = Field(default=None, gt=0)
+    # Largest LLM request body allowed (bytes); bigger requests are refused. Input tokens are
+    # bounded by request bytes (a byte-level tokenizer never makes more tokens than bytes) plus
+    # stage9_llm_token_overhead for chat framing.
+    stage9_llm_max_request_bytes: int = Field(default=160_000, ge=1_000)
+    stage9_llm_token_overhead: int = Field(default=1_000, ge=0)
+    # Optional operator cap on one run's reservation. The meter then refuses any call that could
+    # take the run past it (the run continues with partial results). Unset = reserve the full
+    # worst case. Not a price.
+    stage9_max_reservation_per_run_usd: Decimal | None = Field(default=None, gt=0)
+
+    @field_validator(
+        "stage9_exa_usd_per_search_max", "stage9_exa_usd_per_page_max", "stage9_llm_usd_per_input_token_max",
+        "stage9_llm_usd_per_output_token_max", "stage9_ledger_path", "stage9_max_reservation_per_run_usd",
+        mode="before",
+    )  # fmt: skip
+    @classmethod
+    def _blank_stage9_is_unset(cls, v: object) -> object:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     @field_validator(
         "llm1_model", "llm2_model", "llm1_temperature", "llm2_temperature",
         "llm1_reasoning_effort", "llm2_reasoning_effort", mode="before",

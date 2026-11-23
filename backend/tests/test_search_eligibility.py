@@ -25,7 +25,7 @@ from tests.pipeline_fakes import harness
 from tests.search_fakes import make_settings
 from tests.store_fakes import CONFIGURED_13
 from tests.test_discovery_agent import CLASSIFICATIONS, PLAN
-from tests.test_discovery_rules import CATS, candidate, cls, ev
+from tests.test_discovery_rules import CATS, candidate, cls, ev, profile_ev
 from tests.test_pipeline import searched_domains
 from tests.test_review_store import run as run_result
 from tests.test_search_targets import evaluate, fresh
@@ -39,7 +39,7 @@ def eligible(domain, name=None, products=("SB-001",), pages=1, product_ids=("SB-
     """A stored-style candidate that passes `is_search_eligible` (current classification)."""
     name = name or domain.split(".")[0].title()
     evidence = [ev(f"https://{domain}/p{i}", f"Boss RC-5 - {name}", "£189", product=product_ids[i % len(product_ids)])
-                for i in range(pages)]  # fmt: skip
+                for i in range(pages)] + [profile_ev(domain, name)]  # fmt: skip
     c = candidate(domain, name, evidence=evidence, products=products)
     apply_classification(c, cls(domain=domain, company_name=name, company_type=T.RETAILER,
                                 evidence_urls=[f"https://{domain}/p0"]), CATS)  # fmt: skip

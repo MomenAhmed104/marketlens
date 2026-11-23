@@ -369,3 +369,52 @@ Stompbox page recorded on 10 November 2026 showed as the current price with
 price is assumed. A direct SB-028 comparison (only on an `EXACT_MATCH`) uses the
 catalogue £579 exactly as for every other product; that baseline is not
 independently verified and awaits the user's confirmation.
+
+## Bundles with included extras (Stage 9.1 fix, 23 Nov 2026)
+
+Found in the Stage 9.1 smoke run: Gear4music "Boss RC-5 ... with Power Supply" was EXACT_MATCH and
+price-compared, because bundle detection only knew the words bundle / pack / kit / package /
+starter set / " + ". `attributes.bundle_evidence` now classifies a listing's title / URL /
+extracted model text:
+
+| Kind | Example | Bundle check | Result for a standalone Stompbox product |
+|---|---|---|---|
+| BUNDLE | "with power supply", "includes USB cable", "& PSA adaptor", "hard case included", "bundle", "2 pack" | CONFLICT | SIMILAR_MATCH, never price-compared |
+| OPTIONAL | "power supply not included", "sold separately", "requires 9V power supply", "without ..." | not applicable | unchanged (can be EXACT) |
+| AMBIGUOUS | "Boss RC-5 Loop Station Power Supply" (an extra named, inclusion unclear) | UNVERIFIED | REVIEW_REQUIRED (`bundle` is in CONFIRM_REQUIRED) |
+| STANDALONE | no extra named | not applicable | unchanged |
+
+- Extras recognised: power supply / PSU / adaptor, cable, case, bag / gig bag, strap, stand,
+  footswitch, picks, headphones, batteries. Product features (Bluetooth, vibrola), tuners and
+  strings are not extras.
+- A guitar listed only "with case / gig bag" goes to review (UNVERIFIED), not CONFLICT: guitars
+  are often supplied with one as standard.
+- A Stompbox bundle ("... with Deluxe Gig Bag", SB-033) matches only the same extras; different
+  extras are a CONFLICT and an unspecified "bundle" is UNVERIFIED. A standalone listing against a
+  Stompbox bundle keeps its previous result (not applicable).
+- A catalogue product that is itself an accessory is never read as a bundle of itself.
+- Tests: `tests/test_bundle_matching.py` (including the smoke-run regression fixture
+  `tests/fixtures/stage91_smoke_sb001.json`, snippets removed).
+
+## Similar matches need a compatible product type; finish from specifications (Stage 9.2, 23 Nov 2026)
+
+- Same brand + different model is SIMILAR_MATCH only when the listing's product type equals the
+  Stompbox product's (`attributes.product_type`: cabinet, combo amp, amp head, tuner, looper,
+  tremolo, drive, delay, reverb, modulation, pedalboard, bass guitar, guitar; first match wins).
+  Otherwise NO_MATCH. Generic words (watt, pedal, amplifier) are never type evidence. The listing
+  type is read from the extracted title, then search title, page title, URL. Catalogue products
+  with no type in the vocabulary (8: multi-effects, pitch shifter, noise gates...) keep the
+  previous rule. Effect on history: 5 of 74 recomputed candidates (all Run A) went SIMILAR ->
+  NO_MATCH (Boss TR-2 for RC-5; Ashdown cabinet, combos and "Studio 15" for SX-50H); RC-500 stays
+  SIMILAR; no exact match or price comparison changed.
+- "ITB" is an Iced Tea Burst alias. When title / URL are silent on the finish, an explicit,
+  verified "Colour" / "Finish" / "Body colour" specification can confirm it (textures such as
+  gloss / satin are ignored); it never creates a conflict, mixed values stay UNVERIFIED, and a
+  title conflict is never overridden. Thomann "60s F ITB LH" (SB-028): finish now MATCH, still
+  REVIEW_REQUIRED because "F" is not accepted as Figured (pending a decision).
+- Tests: `tests/test_similar_and_finish_rules.py` (Run A fixture `tests/fixtures/stage92_runA.json`).
+- Retailer names never establish a product type (23 Nov 2026): title segments that are the
+  retailer's own name ("– Langley Guitar Centre", "| guitarguitar", "at Gear4music", "– Thomann UK")
+  are removed before the type is read, and URLs contribute only their final product slug (never
+  category navigation such as `/collections/electric-guitars/`). "Ashdown Studio 15" is now
+  "type not stated" (NO_MATCH) instead of "guitar".

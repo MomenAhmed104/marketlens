@@ -162,6 +162,9 @@ class DiscoveredCompetitor(BaseModel):
     # Deterministic checks and decision
     name_verified: bool = False
     validation_notes: list[str] = Field(default_factory=list)
+    # Same company name as another discovered domain or a configured competitor (set by Python
+    # after classification; any entry sends the domain to human review). Empty in older records.
+    identity_conflicts: list[str] = Field(default_factory=list)
     approval_status: DomainApprovalStatus = DomainApprovalStatus.APPROVAL_REQUIRED
     decision_reasons: list[str] = Field(default_factory=list)
     price_benchmark: bool = False

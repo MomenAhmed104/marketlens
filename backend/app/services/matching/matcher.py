@@ -69,13 +69,14 @@ from app.services.matching.schemas import (
     ProductMatchSummary,
     ProposalAgreement,
 )
+from app.services.domains import registrable_domain
 from app.services.text_match import url_text
 
 MAX_REF_CHARS = 200
 # An UNVERIFIED result on these blocks EXACT_MATCH (the Stompbox product defines
 # them and listings normally state them). Others only block on CONFLICT.
 CONFIRM_REQUIRED = {"handedness", "finish", "generation", "edition", "configuration",
-                    "pickups", "electronics", "electro_acoustic", "designation"}  # fmt: skip
+                    "pickups", "electronics", "electro_acoustic", "designation", "bundle"}  # fmt: skip
 # Only specifications categorised as electronics or pickup configuration take part in the
 # electronics rules (Stage 6.1). Controls, power supply and output power never do.
 # The only attributes whose conflict alone allows EQUIVALENT_VARIANT (approved decision U-1).
@@ -123,6 +124,9 @@ class Evidence:
         self.fields = [_ref(src, v) for src, v in ((EvidenceSource.EXTRACTED_MODEL, c.model),
                                                    (EvidenceSource.EXTRACTED_SKU, c.sku)) if v]  # fmt: skip
         self.brand_field = _ref(EvidenceSource.EXTRACTED_BRAND, c.brand) if c.brand else None
+        # The retailer's own names: never product evidence for the product type (Stage 9.2).
+        self.site_tokens = _site_tokens(c.competitor.domain, c.competitor.company_name)
+        self.product_url = c.product_url
         self.availability = _ref(EvidenceSource.AVAILABILITY, c.availability) if c.availability else None
         # Electronics specifications (verified against the page in Task B). Kept out of `identity`:
         # they never count as model evidence, only as electronics evidence.
@@ -134,6 +138,9 @@ class Evidence:
             for s, cat in cats if s.category is not None and s.category is not cat]  # fmt: skip
         elec = [(s, cat) for s, cat in cats if cat in ELECTRONICS_CATEGORIES]
         self.specs = [_ref(EvidenceSource.EXTRACTED_SPEC, f"{s.name}: {s.value}") for s, _ in elec]
+        # Verified Colour / Finish specifications (value found in the page text in Task B).
+        self.finish_specs = [_ref(EvidenceSource.EXTRACTED_SPEC, f"{s.name}: {s.value}")
+                             for s in c.specifications if A.is_finish_spec_name(s.name)]  # fmt: skip
         self.pickup_values = [s.value for s, cat in elec if cat is SpecCategory.PICKUP_CONFIGURATION]
         self.electronics_values = [s.value for s, cat in elec if cat is SpecCategory.ELECTRONICS]
 
@@ -213,6 +220,91 @@ def check_model(p: StompboxProduct, ev: Evidence) -> tuple[AttributeCheck, set[s
                           note="Model not found in titles, URL or extracted fields"), set(), siblings  # fmt: skip
 
 
+_TITLE_SEP = re.compile(r"\s+(?:[|\u2013\u2014-]|::)\s+|\s+at\s+(?=[A-Z0-9])")
+
+
+def _site_tokens(domain: str | None, company_name: str | None) -> tuple[str, ...]:
+    """Compact forms of the retailer's names: the registrable domain's label and the company name."""
+    tokens = []
+    if domain:
+        label = registrable_domain(domain).split(".")[0]
+        tokens.append(A.compact(label))
+    if company_name:
+        tokens.append(A.compact(company_name))
+    return tuple(t for t in tokens if len(t) >= 3)
+
+
+def strip_site_names(title: str, site_tokens: tuple[str, ...]) -> str:
+    """Drop title segments that are the retailer's own name ("... – Langley Guitar Centre",
+    "... | guitarguitar", "... at Gear4music", "... – Thomann UK")."""
+    kept = []
+    for part in _TITLE_SEP.split(title or ""):
+        c = A.compact(part)
+        if c and any(t in c or c in t for t in site_tokens):
+            continue
+        kept.append(part)
+    return " ".join(kept)
+
+
+def listing_type(ev: Evidence) -> str | None:
+    """The listing's product type, from the most specific identity text first: extracted title,
+    search title, page title (each without the retailer's own name), then the URL's final product
+    slug. Retailer names and site navigation never establish the product type."""
+    order = (EvidenceSource.EXTRACTED_TITLE, EvidenceSource.SEARCH_TITLE, EvidenceSource.PAGE_TITLE)
+    for src in order:
+        for r in ev.titles:
+            if r.source is src and (t := A.product_type(strip_site_names(r.text, ev.site_tokens))):
+                return t
+    slug = url_text(ev.product_url).rstrip("/").rsplit("/", 1)[-1]
+    return A.product_type(strip_site_names(re.sub(r"[-_+.]+", " ", slug), ev.site_tokens))
+
+
+def _finish_from_specs(prof: A.ProductProfile, ev: Evidence, comp: set[str]) -> AttributeCheck:
+    """Title / URL silent on the finish: an explicit, verified Colour/Finish specification may confirm
+    it (Stage 9.2, user-approved). It never creates a conflict, and mixed values stay unverified."""
+    U, M = CheckResult.UNVERIFIED, CheckResult.MATCH
+    for ref in ev.finish_specs:
+        value = ref.text.split(":", 1)[1]
+        if A.finish_in(prof.finish, value):
+            extra = A.other_finish_colours(prof.finish, value, prof.name_words | A.FINISH_TEXTURES)
+            if extra:
+                return _check("finish", U, prof.finish, comp, [ref],
+                              f"Mixed finish in the specification: {prof.finish!r} with {sorted(extra)}")  # fmt: skip
+            return _check("finish", M, prof.finish, comp, [ref], "Confirmed by a verified Colour/Finish specification")
+    return _check("finish", U, prof.finish, comp, _refs(ev, A.colour_words), "Finish not confirmed")
+
+
+def _bundle_check(prof: A.ProductProfile, ev: Evidence, text: str) -> AttributeCheck:
+    M, C, U, NA = CheckResult.MATCH, CheckResult.CONFLICT, CheckResult.UNVERIFIED, CheckResult.NOT_APPLICABLE
+    be = A.bundle_evidence(text, prof.own_extras)
+    refs = _refs(ev, lambda t: A.bundle_evidence(t, prof.own_extras).kind in ("BUNDLE", "AMBIGUOUS"))
+    bundle_label = f"bundle with {', '.join(sorted(prof.bundle_items))}" if prof.bundle_items else "bundle"
+    expected = bundle_label if prof.bundle else "single product"
+    if be.kind == "BUNDLE":
+        found = sorted(be.included) or ["bundle"]
+        if not prof.bundle:
+            # Guitars are often supplied with a case or gig bag as standard: "with gig bag" alone is
+            # not proof of a bundle, but not proof of the standalone product either -> review.
+            if prof.strings_default is not None and be.included and be.included <= A.INSTRUMENT_STANDARD_EXTRAS \
+                    and not A.is_bundle(text):  # fmt: skip
+                return _check("bundle", U, expected, found, refs,
+                              f"Listed with {', '.join(sorted(be.included))}: may be supplied as standard with the "
+                              "instrument or sold as a bundle; needs review")  # fmt: skip
+            what = f"includes {', '.join(sorted(be.included))}" if be.included else "bundle / pack offer"
+            return _check("bundle", C, expected, found, refs, f"Bundle: {what} ({'; '.join(be.phrases)})")
+        if prof.bundle_items and be.included:
+            if be.included == prof.bundle_items:
+                return _check("bundle", M, expected, found, refs)
+            return _check("bundle", C, expected, found, refs, "Different extras from the Stompbox bundle")
+        return _check("bundle", U, expected, found, refs, "Bundle contents could not be compared with the Stompbox bundle")
+    if be.kind == "AMBIGUOUS":
+        return _check("bundle", U, expected, sorted(be.mentioned), refs,
+                      f"Names {', '.join(sorted(be.mentioned))} without saying whether it is included")  # fmt: skip
+    if be.kind == "OPTIONAL":
+        return _check("bundle", NA, expected, note="Extras mentioned only as optional / not included: single product")
+    return _check("bundle", NA, expected)
+
+
 def _check(attribute, result, expected, found=(), evidence=(), note=None, critical=True) -> AttributeCheck:
     return AttributeCheck(attribute=attribute, result=result, critical=critical, expected=expected,
                           found=sorted(found), evidence=list(evidence), note=note)  # fmt: skip
@@ -260,7 +352,7 @@ def check_variants(prof: A.ProductProfile, ev: Evidence, model_matched_exactly: 
         elif comp and not comp & prof.finish_colours:
             out.append(_check("finish", C, prof.finish, comp, _refs(ev, A.colour_words), "Different colour/finish"))
         else:
-            out.append(_check("finish", U, prof.finish, comp, _refs(ev, A.colour_words), "Finish not confirmed"))
+            out.append(_finish_from_specs(prof, ev, comp))
     else:
         out.append(_check("finish", NA, None, note="Stompbox product names no finish"))
 
@@ -297,11 +389,11 @@ def check_variants(prof: A.ProductProfile, ev: Evidence, model_matched_exactly: 
     else:
         out.append(_check("configuration", NA, None))
 
-    # Bundle / pack offers are not the same product offer.
-    bundle = A.is_bundle(text)
-    out.append(_check("bundle", C if bundle and not prof.bundle else (M if bundle else NA),
-                      "bundle" if prof.bundle else "single product", ["bundle"] if bundle else [],
-                      _refs(ev, A.is_bundle), "Bundle/pack offer" if bundle and not prof.bundle else None))  # fmt: skip
+    # Bundles (Stage 9.1 fix): a listing that includes extras (power supply, cable, case, bag...)
+    # or says bundle / pack / kit is not the standalone product. Extras named only as optional /
+    # not included / sold separately / required leave it standalone. An extra named without saying
+    # whether it is included needs review. A Stompbox bundle matches only the same extras.
+    out.append(_bundle_check(prof, ev, text))
 
     # Generation / version and editions.
     comp_g, st_g = A.generations(text), prof.generations
@@ -502,8 +594,17 @@ def decide(
     same_brand = brand.result is CheckResult.MATCH
     if model.result is CheckResult.CONFLICT:
         if same_brand or siblings:
-            return MatchStatus.SIMILAR_MATCH, MatchConfidence.LOW, [
-                f"Same brand, different model: {model.found} instead of {model.expected!r}"], []
+            # Stage 9.2 (user-approved): a different model is a similar alternative only when it is
+            # the same kind of product (RC-500 for RC-5: both loopers). A tremolo for a looper, or a
+            # cabinet / bass combo for an amp head, is not. Unknown catalogue type: previous rule.
+            listing = listing_type(ev)
+            if prof.product_type is None or listing == prof.product_type:
+                return MatchStatus.SIMILAR_MATCH, MatchConfidence.LOW, [
+                    f"Same brand, different model: {model.found} instead of {model.expected!r}"
+                    + (f" (same product type: {listing})" if listing else "")], []
+            return MatchStatus.NO_MATCH, MatchConfidence.LOW, [
+                f"Same brand, different model {model.found} and a different product type "
+                f"({listing or 'not stated'} vs {prof.product_type})"], []
         return MatchStatus.NO_MATCH, MatchConfidence.LOW, [f"Different model: {model.found}"], []
     if model.found:  # core model without its generation marker
         gen = by.get("generation")

@@ -4,3 +4,4 @@ pydantic==2.14.3
 pydantic-settings==2.16.2
 openpyxl==3.1.5
 httpx==0.28.1
+publicsuffixlist==1.1.2.20261122

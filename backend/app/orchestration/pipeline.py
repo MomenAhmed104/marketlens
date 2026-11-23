@@ -573,10 +573,17 @@ class RunManager:
 
     def start(self, req: RunRequest) -> ExecutionRun:
         products, req = self.validate(req)
+        return self._launch(self.new_run_id(), products, req)
+
+    def new_run_id(self) -> str:
+        return f"run-{self.d.clock().strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+
+    def _launch(self, run_id: str, products: list[StompboxProduct], req: RunRequest) -> ExecutionRun:
+        """Create the run's state and start its task (the task copies the current context)."""
         now = self.d.clock()
         self.store.prune(now)
-        run = ExecutionRun(run_id=f"run-{now.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}", request=req,
-                           created_at=now, stages=[StageState(name=n) for n in StageName])  # fmt: skip
+        run = ExecutionRun(run_id=run_id, request=req, created_at=now,
+                           stages=[StageState(name=n) for n in StageName])  # fmt: skip
         result = PipelineResult(products=[ProductRunResult(product_id=p.product_id) for p in products])
         self.store.create(run, result)
         pipeline = PipelineRun(run, result, products, self.store, self.d)

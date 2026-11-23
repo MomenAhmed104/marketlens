@@ -42,3 +42,6 @@ data/backfill_reports/
 
 # Product image cache (MarketLens; copies of third-party images, re-fetchable)
 data/image_cache/
+
+# Stage 9 evaluation: budget ledger, isolated review database and run artifacts (third-party page data)
+data/stage9/

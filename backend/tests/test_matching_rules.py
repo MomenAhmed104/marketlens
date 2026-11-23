@@ -402,7 +402,8 @@ def _slug(text):
     (", Iced Tea Burst", CheckResult.MATCH, M.EXACT_MATCH),  # exact catalogue finish
     (", Ice Tea", CheckResult.MATCH, M.EXACT_MATCH),  # existing alias
     (" in Iced Tea", CheckResult.MATCH, M.EXACT_MATCH),  # alias approved 20 Nov 2026
-    (" in Iced Tea with Gig Bag", CheckResult.MATCH, M.EXACT_MATCH),  # Wildwire title shape
+    # Wildwire title shape: the finish matches; "with Gig Bag" on a guitar needs review (Stage 9.1 bundle rule).
+    (" in Iced Tea with Gig Bag", CheckResult.MATCH, M.REVIEW_REQUIRED),
     (", Iced Tea / Ebony", CheckResult.UNVERIFIED, M.REVIEW_REQUIRED),  # mixed finish stays protected
     (", Iced Tea Sunburst", CheckResult.UNVERIFIED, M.REVIEW_REQUIRED),  # never exact
     (", Bourbon Burst", CheckResult.UNVERIFIED, M.REVIEW_REQUIRED),  # different finish sharing "burst"
@@ -431,7 +432,11 @@ def test_iced_tea_alias_never_overrides_a_stricter_llm2_proposal(run):
     c = candidate(url, title, llm=True, product_title=title, model="Les Paul Standard 60s Figured", price="599.00",
                   quote="£599.00", competitor=target("wildwireguitars.com", T.SPECIALIST_RETAILER, benchmark=False,
                                                     status=DomainApprovalStatus.APPROVED))  # fmt: skip
-    assert run("SB-028", c).match_status is M.EXACT_MATCH  # Python alone: finish now confirmed
+    # Python alone: the finish is confirmed, but "with Gig Bag" on a guitar needs review (Stage 9.1
+    # bundle rule), so it is not EXACT_MATCH either way.
+    first = run("SB-028", c)
+    assert variant(first, "finish").result is CheckResult.MATCH and variant(first, "bundle").result is CheckResult.UNVERIFIED
+    assert first.match_status is M.REVIEW_REQUIRED
     c.match_proposal = MatchProposalRecord(
         classification=ProposedMatch.SIMILAR_ALTERNATIVE,
         corresponding_status=PROPOSAL_STATUS[ProposedMatch.SIMILAR_ALTERNATIVE],

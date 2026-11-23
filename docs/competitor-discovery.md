@@ -311,3 +311,32 @@ writes a JSON report (default `data/backfill_reports/`, git-ignored). Code:
   adds alternative-product rows (never benchmark prices); reject the domain to stop it.
 - The Stage 8.1 prompt has not run against the real model yet (no paid run since); discovery
   relevance under it is unmeasured.
+
+## Exception-based review (Stage 9.2, 23 Nov 2026)
+
+Same pipeline (LLM 1 proposes, `rules.is_search_eligible` / `decide` decide); three additions so a
+human only sees cases the evidence cannot settle. All are industry-neutral and use only the
+evidence discovery already collects (titles and snippets of the domain's own pages):
+
+- **Insufficient evidence** -> review: no discovery page on the domain names a searched product's
+  brand or model; or, when discovery runs its business-profile search (`DISCOVERY_PROFILE_RESULTS`
+  > 0), no about / contact / delivery page was found.
+- **Conflicting business type** -> review: labelled retailer / specialist retailer, but the
+  domain's own pages say trade-only, distributor / wholesaler, "find a dealer / where to buy",
+  third-party sellers, price comparison or "rather than selling / we don't sell"
+  (`rules.NON_RETAIL_SIGNALS`). The reason quotes the wording and gives the URL. Never an
+  automatic rejection.
+- **Conflicting identity** -> review: the same company name on another discovered domain or on a
+  configured competitor's domain (`find_identity_conflicts`, stored as `identity_conflicts`, kept
+  with the classification by `merge_candidate`).
+- Every review outcome ends with `Needs review: evidence reviewed: <URLs>` (cited pages first).
+
+Unchanged: exclusions (marketplace, directory, manufacturer and other types, excluded domains,
+used-only), human rejection always wins, human approval keeps its behaviour and benchmark flag,
+automatic eligibility never grants benchmark eligibility, the competitor class stays independent of
+eligibility, LLM relevance / confidence and `serves_uk_customers` stay informational, the per-run
+cap (`MAX_AUTO_SEARCH_TARGETS`) and `PIPELINE_SEARCH_AUTO_APPROVED` still apply.
+
+On the 28 Stage 9 candidates (read-only recompute): only justpedals.co.uk changes (automatic ->
+review: its about page says it shows "where to buy" "rather than selling"); all 11 user-approved
+domains still qualify automatically.

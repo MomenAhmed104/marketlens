@@ -80,6 +80,14 @@ class ProviderHttpClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    def add_event_hooks(self, *, request=None, response=None) -> None:
+        """Run `request(req)` before every HTTP attempt (retries included) and `response(resp)` after
+        each one. Used by the Stage 9 budget meter; a request hook may raise to stop the attempt."""
+        if request is not None:
+            self._client.event_hooks["request"].append(request)
+        if response is not None:
+            self._client.event_hooks["response"].append(response)
+
     async def request_json(
         self,
         method: str,

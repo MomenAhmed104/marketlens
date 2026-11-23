@@ -45,7 +45,9 @@ from app.agents.discovery.rules import (
     apply_classification,
     apply_review_decision,
     classify_competitor,
+    compact_name,
     decide,
+    find_identity_conflicts,
     policy_from_settings,
 )
 from app.agents.discovery.schemas import (
@@ -393,6 +395,9 @@ class CompetitorDiscoveryAgent:
                     c.evidence += self._evidence(resp, EvidenceKind.DOMAIN_PROFILE, None)
 
         await self.classify(candidates, products)
+        # Identity conflicts (same company name on another discovered or configured domain) are
+        # found by Python across this run's classified candidates; they send a domain to review.
+        find_identity_conflicts(candidates, {compact_name(k.name): registrable_domain(k.domain) for k in self.known})
         for c in candidates:
             decide(c, self.policy)
             classify_competitor(c, self.s.marketplace_domain_labels)  # independent of approval

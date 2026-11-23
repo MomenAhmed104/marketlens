@@ -112,6 +112,103 @@ def is_bundle(text: str | None) -> bool:
     return bool(_BUNDLE.search(text or ""))
 
 
+# --- Bundles with included extras (Stage 9.1 fix) -------------------------------------------
+# Extras a listing can include with the product. Deliberately narrow: words that also name a
+# product feature or another attribute (tuner, strings, lead, Bluetooth, vibrato) are not here.
+_EXTRA_NAMES: dict[str, str] = {
+    r"power\s+suppl(?:y|ies)|psu|(?:ac\s+|mains\s+|power\s+)?adapt[oe]rs?": "power supply",
+    r"(?:patch\s+|instrument\s+|guitar\s+|usb\s+)?cables?": "cable",
+    r"(?:hard\s+|soft\s+|flight\s+|carry(?:ing)?\s+)?cases?": "case",
+    r"(?:deluxe\s+|padded\s+)?(?:gig\s*|carry\s+)?bags?": "bag",
+    r"straps?": "strap",
+    r"stands?": "stand",
+    r"foot\s*switch(?:es)?": "footswitch",
+    r"picks?|plectrums?": "picks",
+    r"headphones": "headphones",
+    r"batter(?:y|ies)": "batteries",
+}
+_EXTRA = "(?:" + "|".join(_EXTRA_NAMES) + ")"
+# Extras an instrument is often supplied with as standard (not proof of a bundle on their own).
+INSTRUMENT_STANDARD_EXTRAS = frozenset({"case", "bag"})
+_FILLER = r"(?:(?:a|an|the|free|official|matching|genuine)\s+)?(?:[a-z0-9][a-z0-9-]*\s+){0,3}?"
+# Extras that are explicitly NOT included (optional, sold separately, required but absent).
+_EXCLUDED = re.compile(
+    rf"\b(?:without|excluding|excludes|exc\.?|no)\s+{_FILLER}{_EXTRA}\b"
+    rf"|\b(?:optional|available\s+separately)\s+{_FILLER}{_EXTRA}\b"
+    rf"|\brequires?\s+{_FILLER}{_EXTRA}\b"
+    rf"|\b{_EXTRA}\s*(?:\(\s*)?(?:is\s+|are\s+)?(?:not\s+included|not\s+supplied|sold\s+separately|"
+    rf"available\s+separately|optional|required|not\s+provided)\b",
+    re.IGNORECASE,
+)
+# Extras that ARE included: "with / plus / + / & / includes / including / comes with … <extra>",
+# or "<extra> included".
+_INCLUDED = re.compile(
+    rf"(?:\b(?:with|w/|plus|includes?|including|inc\.?|incl\.?|comes\s+with|supplied\s+with|and\s+free|free)"
+    rf"|\s[+&]|\band)\s+{_FILLER}({_EXTRA})\b"
+    rf"|\b({_EXTRA})\s+(?:is\s+|are\s+)?(?:included|supplied|inc\.?|incl\.?)(?!\s*not)\b",
+    re.IGNORECASE,
+)
+_EXTRA_ONLY = re.compile(rf"\b({_EXTRA})\b", re.IGNORECASE)
+
+
+def _canonical_extra(word: str) -> str:
+    w = re.sub(r"\s+", " ", word.lower().strip())
+    for pattern, name in _EXTRA_NAMES.items():
+        if re.fullmatch(pattern, w, re.IGNORECASE):
+            return name
+    return w
+
+
+@dataclass(frozen=True)
+class BundleEvidence:
+    """What a listing's identity text says about extras sold with the product.
+
+    kind:
+      STANDALONE  no extras named (and no bundle / pack / kit wording);
+      OPTIONAL    extras named only as not included / optional / sold separately / required;
+      BUNDLE      extras explicitly included, or bundle / pack / kit / package wording;
+      AMBIGUOUS   an extra is named but neither included nor excluded ("RC-5 Power Supply").
+    """
+
+    kind: str
+    included: frozenset[str] = frozenset()
+    mentioned: frozenset[str] = frozenset()
+    phrases: tuple[str, ...] = ()
+
+
+def bundle_evidence(text: str | None, own_words: frozenset[str] = frozenset()) -> BundleEvidence:
+    """Classify extras in `text`. `own_words`: words of the catalogue product's own name, so a product
+    that IS an accessory (a power supply, a case) is not read as a bundle of itself."""
+    t = text or ""
+    own = {_canonical_extra(w) for w in own_words}
+    excluded_spans = [m.span() for m in _EXCLUDED.finditer(t)]
+
+    def outside_excluded(span):
+        return not any(a <= span[0] and span[1] <= b for a, b in excluded_spans)
+
+    included, phrases = set(), []
+    for m in _INCLUDED.finditer(t):
+        if not outside_excluded(m.span()):
+            continue
+        word = m.group(1) or m.group(2)
+        name = _canonical_extra(word)
+        if name not in own:
+            included.add(name)
+            phrases.append(m.group(0).strip())
+    if included:
+        return BundleEvidence("BUNDLE", frozenset(included), frozenset(included), tuple(phrases))
+    if _BUNDLE.search(t):  # bundle / pack / kit / package / starter set / " + " (unchanged rule)
+        return BundleEvidence("BUNDLE", phrases=(_BUNDLE.search(t).group(0).strip(),))
+    mentioned = {_canonical_extra(m.group(1)) for m in _EXTRA_ONLY.finditer(t) if outside_excluded(m.span())}
+    mentioned -= own
+    if mentioned:
+        return BundleEvidence("AMBIGUOUS", mentioned=frozenset(mentioned),
+                              phrases=tuple(sorted(mentioned)))  # fmt: skip
+    if excluded_spans:
+        return BundleEvidence("OPTIONAL", phrases=tuple(t[a:b] for a, b in excluded_spans))
+    return BundleEvidence("STANDALONE")
+
+
 def pickup_configs(text: str | None) -> set[str]:
     """Pickup layout codes written in the text (HSS, SSS, HH, HSH, SSH), normalised to upper case."""
     return {m.upper() for m in _PICKUPS.findall(text or "")}
@@ -274,6 +371,12 @@ class ProductProfile:
     electro: bool | None = None
     # Approved model designation missing from the catalogue record (see APPROVED_DESIGNATIONS).
     designation: ApprovedDesignation | None = None
+    # Product type from the subcategory and name (similar-match compatibility); None = unknown.
+    product_type: str | None = None
+    # Extras the Stompbox product itself includes ("with Deluxe Gig Bag" -> {"bag"}); empty = standalone.
+    bundle_items: frozenset[str] = frozenset()
+    # Extras that ARE the Stompbox product (a power supply, a case), never read as a bundle of it.
+    own_extras: frozenset[str] = frozenset()
 
 
 # Approved product-identity decisions: catalogue products whose model designation is part of the
@@ -324,8 +427,46 @@ def sku_in(skus: tuple[str, ...], text: str | None) -> set[str]:
 FINISH_ALIASES: dict[str, tuple[str, ...]] = {
     # "ice tea": Gear4music "Epiphone Les Paul Standard 60s, Ice Tea" (Stage 6, 19 Nov 2026).
     # "iced tea": Wildwire "... Figured Left-Handed in Iced Tea with Gig Bag" (Stage 7, 20 Nov 2026; user-approved).
-    "iced tea burst": ("ice tea", "iced tea"),
+    # "itb": Thomann "Epiphone Les Paul Standard 60s F ITB LH" (Stage 9.2, 23 Nov 2026; user-approved).
+    "iced tea burst": ("ice tea", "iced tea", "itb"),
 }
+# Surface textures, not colours: ignored when a Colour/Finish specification is read ("high-gloss").
+FINISH_TEXTURES = frozenset({"gloss", "glossy", "satin", "matte", "matt", "high", "finish", "polished", "vintage"})
+_FINISH_SPEC_NAME = re.compile(r"^\s*(?:body\s+)?(?:colou?r|finish|colou?r\s*/\s*finish)\s*$", re.IGNORECASE)
+
+
+def is_finish_spec_name(name: str | None) -> bool:
+    """A specification that states the colour / finish ("Colour", "Finish", "Body colour")."""
+    return bool(_FINISH_SPEC_NAME.match(name or ""))
+
+
+# 2. Product types for similar matches (Stage 9.2, user-approved). First match wins, whole words.
+# Same brand + different model is SIMILAR only between compatible types; generic words (watt,
+# pedal, amplifier) are never type evidence.
+_PRODUCT_TYPES: tuple[tuple[str, re.Pattern], ...] = tuple((name, re.compile(p, re.IGNORECASE)) for name, p in (
+    ("cabinet", r"\b(?:speaker\s+)?cab(?:inet)?s?\b|(?<![0-9a-z])[1248]\s?x\s?(?:8|10|12|15)(?![0-9a-z])"),
+    ("combo amp", r"\bcombos?\b"),
+    ("amp head", r"\bheads?\b"),
+    ("tuner", r"\btuners?\b"),
+    ("looper", r"\bloop(?:er)?s?\b"),
+    ("tremolo", r"\btremolos?\b"),
+    ("drive", r"\b(?:over)?drives?\b|\bboost(?:er)?s?\b|\bdistortion\b|\bfuzz\b"),
+    ("delay", r"\bdelays?\b|\becho\b"),
+    ("reverb", r"\breverbs?\b"),
+    ("modulation", r"\bchorus\b|\bflangers?\b|\bphasers?\b|\bvibrato\b"),
+    ("pedalboard", r"\bpedal\s*boards?\b"),
+    ("bass guitar", r"\bbass(?:\s+guitars?)?\b|\bbasses\b"),
+    ("guitar", r"\b(?:electric|acoustic|electro[\s-]?acoustic|classical)\s+guitars?\b|\bles\s+paul\b"
+               r"|\bstrat(?:ocaster)?\b|\btele(?:caster)?\b|\bguitars?\b"),
+))  # fmt: skip
+
+
+def product_type(text: str | None) -> str | None:
+    """The product type named in a title / subcategory, or None when no type word is present."""
+    for name, pattern in _PRODUCT_TYPES:
+        if pattern.search(text or ""):
+            return name
+    return None
 
 
 def finish_key(text: str | None) -> str:
@@ -388,6 +529,7 @@ def profile(p: StompboxProduct) -> ProductProfile:
     text = " ".join(x for x in (p.product_name, p.manufacturer_model, p.subcategory, p.specifications or "") if x)
     finish = _finish(p.product_name)
     name_wo_finish = p.product_name.replace(finish, " ") if finish else p.product_name
+    own_bundle = bundle_evidence(p.product_name)
     return ProductProfile(
         product=p, identity_text=text, finish=finish, finish_colours=colour_words(finish),
         handedness=handedness(f"{p.product_name} {p.manufacturer_model} {p.subcategory}") or "right",
@@ -396,7 +538,11 @@ def profile(p: StompboxProduct) -> ProductProfile:
                          "4" if re.search(r"\bbass\b", f"{p.subcategory} {p.product_name}", re.I) else "6"),
         wattages=wattages(p.product_name), cab_configs=cab_configs(f"{p.product_name} {p.manufacturer_model}"),
         amp_forms=amp_forms(f"{p.product_name} {p.manufacturer_model} {p.subcategory}"),
-        bundle=is_bundle(p.product_name) or bool(re.search(r"\bwith\b.*\b(bag|case)\b", p.product_name, re.I)),
+        bundle=is_bundle(p.product_name) or bool(re.search(r"\bwith\b.*\b(bag|case)\b", p.product_name, re.I))
+        or own_bundle.kind == "BUNDLE",
+        bundle_items=own_bundle.included,
+        product_type=product_type(p.subcategory) or product_type(p.product_name),
+        own_extras=own_bundle.mentioned if own_bundle.kind == "AMBIGUOUS" else frozenset(),
         generations=generations(f"{p.manufacturer_model} {p.product_name}"),
         editions=editions(p.product_name), type_stems=type_stems(f"{p.subcategory} {p.product_name}"),
         name_words=set(words(f"{p.brand} {p.manufacturer_model} {name_wo_finish}")),

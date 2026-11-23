@@ -102,7 +102,7 @@ CLASS_FIELDS = ("proposed_competitor_class", "competitor_class", "competitor_cla
 LLM_FIELDS = ("classification_status", "classification_version", "company_name", "company_type",
               "relevant_categories", "serves_uk_customers", "serves_uk_customers_note",
               "sells_new_musical_instruments", "relevance", "confidence", "rationale", "cited_evidence_urls",
-              "name_verified", "validation_notes", *CLASS_FIELDS)  # fmt: skip
+              "name_verified", "validation_notes", "identity_conflicts", *CLASS_FIELDS)  # fmt: skip
 
 
 def has_llm_competitor_class(c: DiscoveredCompetitor) -> bool:
